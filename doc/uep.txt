@@ -1,0 +1,287 @@
+*UEP.txt* For UEP.nvim                          vim: ft=help
+
+==============================================================================
+CONTENTS                                                 *UEP-contents*
+
+  1. Introduction................................. |UEP-introduction|
+  2. Usage........................................ |UEP-usage|
+     - Command List............................... |UEP-commands-list|
+     - Command Details............................ |UEP-commands-detail|
+  3. Configuration................................ |UEP-configuration|
+     - Setup...................................... |UEP-setup|
+     - Project-specific Settings (.unlrc.json)... |UEP-unlrc|
+     - Full Configuration......................... |UEP-default-configuration|
+  4. Lua API...................................... |UEP-api|
+  5. Integration Examples (neo-tree).............. |UEP-integration-examples|
+  6. License...................................... |UEP-license|
+
+==============================================================================
+1. Introduction                                     *UEP-introduction*
+
+*UEP.nvim* (Unreal Engine Project Explorer) is a Neovim plugin designed to
+understand and navigate the structure of Unreal Engine projects.
+
+By asynchronously parsing and caching the module and file information for the
+entire project, it provides an incredibly fast and intelligent file navigation
+experience without blocking the UI.
+
+It is a core plugin in the *Unreal Neovim Plugin Stack* and depends on the
+*UNL.nvim* library as its foundation.
+
+Main Features:
+- Fast, Asynchronous Caching:
+  Scans and caches information for game and engine modules in the background.
+  It also allows sharing of the engine cache across multiple projects.
+- Powerful File Search:
+  Instantly search for files within your project by specifying the module
+  scope (Game/Engine) and dependency depth (shallow/deep).
+- UI Abstraction Layer:
+  Automatically selects and uses the best available UI, such as Telescope,
+  fzf-lua, or the native Neovim UI, depending on your environment.
+- Extensible API:
+  Easily integrates with filer plugins like `neo-tree`.
+
+==============================================================================
+2. Usage                                                      *UEP-usage*
+
+All commands for *UEP.nvim* begin with `:UEP`.
+
+------------------------------------------------------------------------------
+Command List                                           *UEP-commands-list*
+
+:UEP refresh [Game|Engine]
+    Updates the project cache.
+
+:UEP files[!] [Game|Engine] [--no-deps|--all-deps]
+    Searches for and selects files using a UI.
+
+:UEP module_files[!] [ModuleName]
+    Searches for files belonging to a specific module.
+
+:UEP cd
+    Selects a destination from a list of known projects to change to.
+
+:UEP delete
+    Deletes a project from the list of known projects.
+
+:UEP tree
+    Opens the module root in a filer.
+
+------------------------------------------------------------------------------
+Command Details                                     *UEP-commands-detail*
+
+:UEP refresh [Game|Engine]
+    Scans the current project and updates the module and file cache. This is
+    the most important command in this plugin.
+    - `[Game|Engine]`: (Optional, default: `Game`)
+      - `Game`: Scans only the modules of the current game project. If the
+                cache for the associated engine does not exist, the engine
+                will be scanned automatically first.
+      - `Engine`: Scans only the modules of the associated engine.
+
+:UEP files[!] [Game|Engine] [--no-deps|--all-deps]
+    Opens a file search UI based on the cached information.
+    - `[!](bang)`: (Optional)
+      If `!` is added, it forces a regeneration of the cache before opening
+      the UI. This is a shortcut for running `:UEP refresh` followed by
+      `:UEP files`.
+    - `[Game|Engine]`: (Optional, default: `Game`)
+      Specifies the base scope of modules for the search.
+    - `[--no-deps|--all-deps]`: (Optional, default: `--no-deps`)
+      - `--no-deps`: Searches only within the modules of the base scope.
+      - `--all-deps`: Includes all modules that the base scope's modules
+                      depend on (including transitive dependencies) in the
+                      search.
+
+:UEP module_files[!] [ModuleName]
+    Displays a list of files belonging to a specific module.
+    - `[!](bang)`: (Optional)
+      If `!` is added, it performs a lightweight update of only the specified
+      module's file list before displaying the files.
+    - `[ModuleName]`: (Optional)
+      If omitted, a UI will open to select from all modules, and then the
+      files for the selected module will be displayed.
+
+:UEP cd
+    Displays a UI with a list of known cached projects and changes the current
+    directory to the root of the selected project.
+
+:UEP delete
+    Displays a UI with a list of known projects and removes the selected
+    project from the list. The actual project files are not deleted.
+
+:UEP tree
+    Opens a UI to select a module and then opens the root directory of the
+    selected module in a filer (like neo-tree).
+
+==============================================================================
+3. Configuration                                       *UEP-configuration*
+
+The configuration for *UEP.nvim* is managed through the settings system of its
+dependency library, *UNL.nvim*.
+
+------------------------------------------------------------------------------
+Setup                                                          *UEP-setup*
+
+If you are using `lazy.nvim`, pass a configuration table to the `opts` key. It
+is mandatory to specify `UNL.nvim` in the `dependencies` of `UEP.nvim`.
+
+Example:
+>lua
+  return {
+    'taku25/UEP.nvim',
+    dependencies = { 'taku25/UNL.nvim' },
+    opts = {
+      -- Configure UEP through UNL.nvim
+      files_extensions = { "cpp", "h", "hpp", "inl", "ini", "cs", "uproject" },
+      ui = {
+        picker = { mode = "telescope" },
+      },
+    },
+  }
+<
+
+For details on available options, see |UEP-default-configuration|.
+
+------------------------------------------------------------------------------
+Project-specific Settings (.unlrc.json)                  *UEP-unlrc*
+
+By creating a JSON file named `.unlrc.json` in the root directory of your
+project, you can override global settings for that project only. This feature
+is provided by *UNL.nvim*.
+
+Example:
+>json
+  {
+    "files_extensions": [ "cpp", "h", "ini", "cs", "md" ]
+  }
+<
+
+------------------------------------------------------------------------------
+Full Configuration                           *UEP-default-configuration*
+
+The following are all configurable options related to *UEP.nvim* with their
+default values. These settings are treated as part of the *UNL.nvim*
+configuration table.
+
+>lua
+{
+  -- File extensions to be scanned by the ':UEP refresh' command
+  files_extensions = {
+    "cpp", "h", "hpp", "inl", "ini", "cs",
+  },
+
+  -- UI backend settings (inherited from UNL.nvim)
+  ui = {
+    picker = {
+      mode = "auto", -- "auto", "telescope", "fzf_lua", "native"
+      prefer = { "telescope", "fzf_lua", "native" },
+    },
+    progress = {
+      enable = true,
+      mode = "auto", -- "auto", "fidget", "window", "notify"
+      prefer = { "fidget", "window", "notify" },
+    },
+  },
+}
+<
+
+==============================================================================
+4. Lua API                                                     *UEP-api*
+
+*UEP.nvim* provides a simple API for external integration. You can call functions
+similar to the commands directly from Lua.
+
+Require the API module:
+>lua
+  local uep_api = require("UEP.api")
+<
+
+*uep_api.refresh({opts})*
+    Updates the cache.
+    `opts` table:
+      - `type` (string, optional): `"Game"` or `"Engine"`.
+
+*uep_api.files({opts})*
+    Opens the file search UI.
+    `opts` table:
+      - `has_bang` (boolean, optional): If `true`, forces cache refresh.
+      - `category` (string, optional): `"Game"`, `"Engine"`, `"All"`, etc.
+      - `deps_flag` (string, optional): `"--all-deps"`, etc.
+
+*uep_api.module_files({opts})*
+    Opens the module file search UI.
+    `opts` table:
+      - `has_bang` (boolean, optional): If `true`, performs a lightweight
+        update of the module cache.
+      - `module_name` (string, optional): Directly specify the module name.
+
+*uep_api.cd({opts})*
+    Opens the project selection UI. `opts` is not currently used.
+
+*uep_api.delete({opts})*
+    Opens the project deletion UI. `opts` is not currently used.
+
+*uep_api.tree({opts})*
+    Opens the module selection UI to display in a filer. `opts` is not
+    currently used.
+
+==============================================================================
+5. Integration Examples (neo-tree)         *UEP-integration-examples*
+
+By using the `UEP.api`, you can call the features of UEP.nvim directly from
+`neo-tree`.
+
+Example: Key mappings for neo-tree
+>lua
+  -- ... (in your neo-tree setup) ...
+  filesystem = {
+    window = {
+      mappings = {
+        -- Open project file search UI with <leader>pf
+        ["<leader>pf"] = function(state)
+          local node = state.tree:get_node()
+          local path = node.type == "directory" and node.path or vim.fs.dirname(node.path)
+          -- Set CWD inside the project before calling the API
+          vim.api.nvim_set_current_dir(path)
+          require("UEP.api").files({})
+        end,
+        -- Open a module in the filer with <leader>pt
+        ["<leader>pt"] = function(state)
+          local node = state.tree:get_node()
+          local path = node.type == "directory" and node.path or vim.fs.dirname(node.path)
+          vim.api.nvim_set_current_dir(path)
+          require("UEP.api").tree({})
+        end,
+      },
+    },
+  },
+  -- ...
+<
+
+==============================================================================
+6. License                                                *UEP-license*
+
+MIT License
+
+Copyright (c) 2025 taku25
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:

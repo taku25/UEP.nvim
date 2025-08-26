@@ -1,0 +1,283 @@
+*UEP.jax* For UEP.nvim                          vim: ft=help
+
+==============================================================================
+目次                                                     *UEP-contents*
+
+  1. はじめに..................................... |UEP-introduction|
+  2. 使い方....................................... |UEP-usage|
+     - コマンド一覧............................... |UEP-commands-list|
+     - コマンド詳細............................... |UEP-commands-detail|
+  3. 設定......................................... |UEP-configuration|
+     - セットアップ............................... |UEP-setup|
+     - プロジェクト固有の設定 (.unlrc.json)....... |UEP-unlrc|
+     - フルコンフィグ............................. |UEP-default-configuration|
+  4. Lua API...................................... |UEP-api|
+  5. 連携サンプル (neo-tree)...................... |UEP-integration-examples|
+  6. ライセンス................................... |UEP-license|
+
+==============================================================================
+1. はじめに                                         *UEP-introduction*
+
+*UEP.nvim* (Unreal Engine Project Explorer) は、Unreal Engineプロジェクトの
+構造を理解し、ナビゲートするために設計されたNeovimプラグインです。
+
+プロジェクト全体のモジュールとファイル情報を非同期で解析・キャッシュすることで、
+UIをブロックすることなく、非常に高速でインテリジェントなファイルナビゲーション
+体験を提供します。
+
+これは *Unreal Neovim Plugin Stack* の中核をなすプラグインであり、基盤ライブ
+ラリとして *UNL.nvim* に依存しています。
+
+主な機能:
+- 高速な非同期キャッシング:
+  ゲームとエンジンモジュールの情報をバックグラウンドでスキャンし、キャッシュ
+  します。複数のプロジェクトでエンジンキャッシュを共有することも可能です。
+- 強力なファイル検索:
+  モジュールのスコープ（Game/Engine）や依存関係（shallow/deep）を指定して、
+  プロジェクト内のファイルを瞬時に検索できます。
+- UI抽象化レイヤー:
+  Telescope, fzf-lua, またはNeovim標準UIを、環境に応じて自動で選択・使用
+  します。
+- 拡張性の高いAPI:
+  `neo-tree`のようなファイラープラグインと簡単に連携できます。
+
+==============================================================================
+2. 使い方                                                      *UEP-usage*
+
+*UEP.nvim* のコマンドはすべて `:UEP` から始まります。
+
+------------------------------------------------------------------------------
+コマンド一覧                                           *UEP-commands-list*
+
+:UEP refresh [Game|Engine]
+    プロジェクトのキャッシュを更新します。
+
+:UEP files[!] [Game|Engine] [--no-deps|--all-deps]
+    UIを使ってファイルを検索・選択します。
+
+:UEP module_files[!] [ModuleName]
+    指定したモジュールに属するファイルを検索します。
+
+:UEP cd
+    既知のプロジェクト一覧から移動先を選択します。
+
+:UEP delete
+    既知のプロジェクト一覧からプロジェクトを削除します。
+
+:UEP tree
+    ファイラーでモジュールルートを開きます。
+
+------------------------------------------------------------------------------
+コマンド詳細                                         *UEP-commands-detail*
+
+:UEP refresh [Game|Engine]
+    現在のプロジェクトをスキャンし、モジュールとファイルのキャッシュを更新しま
+    す。このプラグインで最も重要なコマンドです。
+    - `[Game|Engine]`: (省略可、デフォルト: `Game`)
+      - `Game`: 現在のゲームプロジェクトのモジュールのみスキャンします。
+                関連するエンジンのキャッシュが存在しない場合は、先にエンジン
+                のスキャンが自動的に実行されます。
+      - `Engine`: 関連するエンジンのモジュールのみをスキャンします。
+
+:UEP files[!] [Game|Engine] [--no-deps|--all-deps]
+    キャッシュされた情報に基づいて、ファイル検索UIを開きます。
+    - `[!](bang)`: (省略可)
+      `!`を付けると、キャッシュを強制的に再生成してからUIを開きます。
+      これは `:UEP refresh` を実行してから `:UEP files` を実行する
+      ショートカットです。
+    - `[Game|Engine]`: (省略可、デフォルト: `Game`)
+      検索のベースとなるモジュールのスコープを指定します。
+    - `[--no-deps|--all-deps]`: (省略可、デフォルト: `--no-deps`)
+      - `--no-deps`: ベーススコープのモジュールのみを検索対象とします。
+      - `--all-deps`: ベーススコープのモジュールが依存する全てのモジュール
+                      （推移的依存関係を含む）を検索対象とします。
+
+:UEP module_files[!] [ModuleName]
+    特定のモジュールに属するファイル一覧を表示します。
+    - `[!](bang)`: (省略可)
+      `!`を付けると、指定したモジュールのファイルリストのみを軽量に更新
+      してからファイル一覧を表示します。
+    - `[ModuleName]`: (省略可)
+      省略した場合、全モジュールを選択するUIが開き、選択後にそのモジュー
+      ルのファイルが表示されます。
+
+:UEP cd
+    キャッシュされている既知のプロジェクト一覧をUIで表示し、選択したプロジェ
+    クトのルートディレクトリにカレントディレクトリを変更します。
+
+:UEP delete
+    既知のプロジェクト一覧をUIで表示し、選択したプロジェクトを一覧から削除し
+    ます。実際のプロジェクトファイルは削除されません。
+
+:UEP tree
+    モジュールを選択するUIを開き、選択したモジュールのルートディレクトリを
+    ファイラー（neo-treeなど）で開きます。
+
+==============================================================================
+3. 設定                                           *UEP-configuration*
+
+*UEP.nvim* の設定は、依存ライブラリである *UNL.nvim* の設定システムを通じて
+行われます。
+
+------------------------------------------------------------------------------
+セットアップ                                                   *UEP-setup*
+
+`lazy.nvim`を使っている場合、`opts`キーに設定テーブルを渡します。`UEP.nvim`
+の `dependencies` に `UNL.nvim` を指定することが必須です。
+
+例:
+>lua
+  return {
+    'taku25/UEP.nvim',
+    dependencies = { 'taku25/UNL.nvim' },
+    opts = {
+      -- UNL.nvimを通じてUEPの設定を行う
+      files_extensions = { "cpp", "h", "hpp", "inl", "ini", "cs", "uproject" },
+      ui = {
+        picker = { mode = "telescope" },
+      },
+    },
+  }
+<
+
+利用可能なオプションの詳細は |UEP-default-configuration| を参照してください。
+
+------------------------------------------------------------------------------
+プロジェクト固有の設定 (.unlrc.json)                      *UEP-unlrc*
+
+プロジェクトのルートディレクトリに`.unlrc.json`という名前のJSONファイルを作成
+することで、グローバルな設定をそのプロジェクトでのみ上書きできます。この機能は
+*UNL.nvim* によって提供されています。
+
+例:
+>json
+  {
+    "files_extensions": [ "cpp", "h", "ini", "cs", "md" ]
+  }
+<
+
+------------------------------------------------------------------------------
+フルコンフィグ                               *UEP-default-configuration*
+
+以下は、*UEP.nvim* に関連する設定可能なすべてのオプションと、そのデフォルト値
+です。これらの設定は *UNL.nvim* の設定テーブルの一部として扱われます。
+
+>lua
+{
+  -- ':UEP refresh' コマンドによってスキャンされるファイルの拡張子
+  files_extensions = {
+    "cpp", "h", "hpp", "inl", "ini", "cs",
+  },
+
+  -- UIバックエンドの設定 (UNL.nvimから継承)
+  ui = {
+    picker = {
+      mode = "auto", -- "auto", "telescope", "fzf_lua", "native"
+      prefer = { "telescope", "fzf_lua", "native" },
+    },
+    progress = {
+      enable = true,
+      mode = "auto", -- "auto", "fidget", "window", "notify"
+      prefer = { "fidget", "window", "notify" },
+    },
+  },
+}
+<
+
+==============================================================================
+4. Lua API                                                     *UEP-api*
+
+`UEP.nvim`は、外部連携のためにシンプルなAPIを提供します。コマンドと同様の機能
+をLuaから直接呼び出すことができます。
+
+APIモジュールを`require`する:
+>lua
+  local uep_api = require("UEP.api")
+<
+
+*uep_api.refresh({opts})*
+    キャッシュを更新します。
+    `opts`テーブル:
+      - `type` (string, optional): `"Game"` または `"Engine"`。
+
+*uep_api.files({opts})*
+    ファイル検索UIを開きます。
+    `opts`テーブル:
+      - `has_bang` (boolean, optional): `true`でキャッシュを強制更新。
+      - `category` (string, optional): `"Game"`, `"Engine"`, `"All"`など。
+      - `deps_flag` (string, optional): `"--all-deps"`など。
+
+*uep_api.module_files({opts})*
+    モジュールファイル検索UIを開きます。
+    `opts`テーブル:
+      - `has_bang` (boolean, optional): `true`でモジュールキャッシュを軽量更新。
+      - `module_name` (string, optional): モジュール名を直接指定。
+
+*uep_api.cd({opts})*
+    プロジェクト選択UIを開きます。`opts`は現在使用されません。
+
+*uep_api.delete({opts})*
+    プロジェクト削除UIを開きます。`opts`は現在使用されません。
+
+*uep_api.tree({opts})*
+    モジュール選択UIを開き、ファイラーで表示します。`opts`は現在使用されません。
+
+==============================================================================
+5. 連携サンプル (neo-tree)                 *UEP-integration-examples*
+
+`UEP.api` を使うことで、`neo-tree`から直接UEP.nvimの機能を呼び出すことが
+できます。
+
+例: neo-treeのキーマッピング設定
+>lua
+  -- ... (neo-treeのセットアップ) ...
+  filesystem = {
+    window = {
+      mappings = {
+        -- <leader>pf でプロジェクトファイル検索UIを開く
+        ["<leader>pf"] = function(state)
+          local node = state.tree:get_node()
+          local path = node.type == "directory" and node.path or vim.fs.dirname(node.path)
+          -- APIを呼ぶ前にCWDをプロジェクト内に設定
+          vim.api.nvim_set_current_dir(path)
+          require("UEP.api").files({})
+        end,
+        -- <leader>pt でモジュールをファイラーで開く
+        ["<leader>pt"] = function(state)
+          local node = state.tree:get_node()
+          local path = node.type == "directory" and node.path or vim.fs.dirname(node.path)
+          vim.api.nvim_set_current_dir(path)
+          require("UEP.api").tree({})
+        end,
+      },
+    },
+  },
+  -- ...
+<
+
+==============================================================================
+6. ライセンス                                                *UEP-license*
+
+MIT License
+
+Copyright (c) 2025 taku25
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:
