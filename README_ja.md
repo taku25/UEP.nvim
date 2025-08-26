@@ -6,7 +6,7 @@
 
 `UEP.nvim`は、Unreal Engineプロジェクトの構造を理解し、ナビゲートし、管理するために設計されたNeovimプラグインです。プロジェクト全体のモジュールとファイル情報を非同期で解析・キャッシュし、非常に高速でインテリジェントなファイルナビゲーション体験を提供します。
 
-これは **Unreal Neovim Plugin Stack** の中核をなすプラグインであり、ライブラリとして [UNL.nvim](https://www.google.com/search?q=https://github.com/taku25/UNL.nvim) に依存しています。
+これは **Unreal Neovim Plugin Stack** の中核をなすプラグインであり、ライブラリとして [UNL.nvim](https://github.com/taku25/UNL.nvim) に依存しています。
 
 [UBT](https://github.com/taku25/UBT.nvim)を使うとBuildやGenerateClangDataBaseなどを非同期でNeovim上から使えるようになります
 [UCM](https://github.com/taku25/UCM.nvim)を使うとクラスの追加や削除がNeovim上からできるようになります。
