@@ -2,6 +2,13 @@
 
 # Unreal Engine Project Explorer 💓 Neovim
 
+<table>
+  <tr>
+   <td><div align=center><img width="100%" alt="UCM New Class Interactive Demo" src="https://raw.githubusercontent.com/taku25/UEP.nvim/images/assets/uep_refresh.gif" /></div></td>
+   <td><div align=center><img width="100%" alt="UCM Rename Class Interactive Demo" src="https://raw.githubusercontent.com/taku25/UEP.nvim/images/assets/uep_tree.gif" /></div></td>
+  </tr>
+</table>
+
 `UEP.nvim` is a Neovim plugin designed to understand, navigate, and manage the structure of your Unreal Engine projects. It asynchronously parses and caches all module and file information for the entire project, providing an incredibly fast and intelligent file navigation experience.
 
 It forms a core part of the **Unreal Neovim Plugin Stack** and relies on [UNL.nvim](https://github.com/taku25/UNL.nvim) as its library.
