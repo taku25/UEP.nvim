@@ -43,4 +43,6 @@ end
 function M.tree(opts)
   cmd_tree.execute(opts or {})
 end
+function M.get_solution_roots()
+end
 return M
