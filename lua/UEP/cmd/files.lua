@@ -25,7 +25,7 @@ local function show_picker(items, project_root)
   table.sort(picker_items, function(a, b) return a.label < b.label end)
   unl_picker.pick({
     kind = "file_location", 
-    title = "Source & Config Files",
+    title = "  Source & Config Files",
     items = picker_items,
     preview_enabled = true,
     conf = uep_config.get(),

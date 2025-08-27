@@ -32,7 +32,7 @@ local function show_file_picker(items, project_root)
   -- 3. UNLのピッカーを呼び出す
   unl_picker.pick({
     kind = "module_file_location",
-    title = "Module Files",
+    title = "  Module Files",
     items = picker_items,
     preview_enabled = true,
     conf = uep_config.get(),
