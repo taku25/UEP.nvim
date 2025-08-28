@@ -1,20 +1,28 @@
+はい、承知いたしました。
+あなたが更新してくれた、より洗練された `README_ja.md` を、自然でプロフェッショナルな英語に翻訳します。
+
+これが、`UEP.nvim` のための `README.md` (English) の最終・完成版です。
+
+---
+
 # UEP.nvim
 
 # Unreal Engine Project Explorer 💓 Neovim
 
 <table>
   <tr>
-   <td><div align=center><img width="100%" alt="UCM New Class Interactive Demo" src="https://raw.githubusercontent.com/taku25/UEP.nvim/images/assets/uep_refresh.gif" /></div></td>
-   <td><div align=center><img width="100%" alt="UCM Rename Class Interactive Demo" src="https://raw.githubusercontent.com/taku25/UEP.nvim/images/assets/uep_tree.gif" /></div></td>
+   <td><div align=center><img width="100%" alt="UEP Refresh Demo" src="https://raw.githubusercontent.com/taku25/UEP.nvim/images/assets/uep_refresh.gif" /></div></td>
+   <td><div align=center><img width="100%" alt="UEP Logical Tree Demo" src="https://raw.githubusercontent.com/taku25/UEP.nvim/images/assets/uep_tree.gif" /></div></td>
   </tr>
 </table>
 
-`UEP.nvim` is a Neovim plugin designed to understand, navigate, and manage the structure of your Unreal Engine projects. It asynchronously parses and caches all module and file information for the entire project, providing an incredibly fast and intelligent file navigation experience.
+`UEP.nvim` is a Neovim plugin designed to understand, navigate, and manage Unreal Engine projects. It asynchronously parses and caches module and file information for the entire project, providing an exceptionally fast and intelligent file navigation experience.
 
-It forms a core part of the **Unreal Neovim Plugin Stack** and relies on [UNL.nvim](https://github.com/taku25/UNL.nvim) as its library.
+This is a core plugin of the **Unreal Neovim Plugin Sweet**, and it depends on [UNL.nvim](https://github.com/taku25/UNL.nvim) as a library.
 
-Using [UBT](https://github.com/taku25/UBT.nvim) allows you to run tasks like Build and GenerateClangDataBase asynchronously from within Neovim.
-Using [UCM](https://www.google.com/search?q=https://github.com/taku25/UCM.nvim) allows you to add and delete classes from within Neovim.
+*   Use [UBT.nvim](https://github.com/taku25/UBT.nvim) to run tasks like Build and GenerateClangDataBase asynchronously from within Neovim.
+*   Use [UCM.nvim](https://github.com/taku25/UCM.nvim) to add or remove classes from within Neovim.
+*   Use [neo-tree-unl.nvim](https://github.com/taku25/neo-tree-unl.nvim) to display an IDE-like project explorer.
 
 [English](README.md) | [日本語 (Japanese)](README_ja.md)
 
@@ -22,66 +30,69 @@ Using [UCM](https://www.google.com/search?q=https://github.com/taku25/UCM.nvim) 
 
 ## ✨ Features
 
-  * **Fast, Asynchronous Caching**:
-      * Scans the entire project (both Game and linked Engine modules) in the background without blocking the UI.
-      * Intelligently separates Game and Engine caches, allowing multiple projects to share a single Engine cache for maximum efficiency.
-      * The `generation` hash system ensures that the file list is always in sync with the module structure.
-  * **Powerful File Finding**:
-      * Provides a flexible `:UEP files` command to instantly find files.
-      * Filter files by scope (**Game**, **Engine**).
-      * Include module dependencies (**--no-deps** `dependencies` or **--all-deps** `dependencies`) in your search.
+  * **Fast Asynchronous Caching**:
+      * Scans the entire project (both the game and its linked engine modules) in the background without blocking the UI.
+      * Intelligently separates game and engine caches, allowing multiple projects to share a single engine cache for maximum efficiency.
+      * A `generation` hash system ensures that the file list is always in sync with the module structure.
+  * **Powerful File Searching**:
+      * Provides a flexible `:UEP files` command to find files instantly.
+      * Allows filtering files by scope (**Game**, **Engine**).
+      * Supports including module dependencies (**shallow** `dependencies` or **deep** `dependencies`) in the search.
   * **UI Integration**:
-      * Leverages `UNL.nvim`'s UI abstraction layer to automatically use UI frontends like [Telescope](https://github.com/nvim-telescope/telescope.nvim) or [fzf-lua](https://github.com/ibhagwan/fzf-lua).
-      * Falls back to the native Neovim UI if no UI plugin is installed.
-  * **File Tree Display for Single Modules**:
-      * The `:UEP tree` command can display the root of a module in a filer plugin like [Neo-tree](https://github.com/nvim-neo-tree/neo-tree.nvim).
-
------
+      * Leverages the UI abstraction layer of `UNL.nvim` to automatically use UI frontends like [Telescope](https://github.com/nvim-telescope/telescope.nvim) or [fzf-lua](https://github.com/ibhagwan/fzf-lua).
+      * Falls back to Neovim's native UI if no supported UI plugin is installed.
+  * **IDE-like Logical Tree View**:
+      * Integrates with **[neo-tree-unl.nvim](https://github.com/taku25/neo-tree-unl.nvim)** to provide a logical tree view similar to a solution explorer in an IDE.
+      * The `:UEP tree` command gives a bird's-eye view of the entire project structure (Game, Plugins, Engine).
+      * The `:UEP module_tree` command switches to a focused view on a single module.
+      * Running `:UEP refresh` automatically updates the open tree view to the latest state.
 
 ## 🔧 Requirements
 
-  * Neovim v0.11.3 or higher
-  * [**UNL.nvim**](https://www.google.com/search?q=https://github.com/taku25/UNL.nvim) (**Required**)
-  * [fd](https://github.com/sharkdp/fd) (**Required** for project scanning)
-  * **Optional (Strongly recommended for an enhanced UI experience):**
-      * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
-      * [fzf-lua](https://github.com/ibhagwan/fzf-lua)
-      * [neo-tree.nvim](https://github.com/nvim-neo-tree/neo-tree.nvim) (Recommended for the `:UEP tree` command)
-
------
+  * Neovim v0.8+
+  * [**UNL.nvim**](https://github.com/taku25/UNL.nvim) (**Required**)
+  * [fd](https://github.com/sharkdp/fd) (**Required for project scanning**)
+  * **Optional (Strongly recommended for the best UI experience):**
+      * **UI (Picker):**
+          * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
+          * [fzf-lua](https://github.com/ibhagwan/fzf-lua)
+      * **UI (Tree View):**
+          * [**neo-tree.nvim**](https://github.com/nvim-neo-tree/neo-tree.nvim)
+          * [**neo-tree-unl.nvim**](https://github.com/taku25/neo-tree-unl.nvim) (**Required** to use the `:UEP tree` and `:UEP module_tree` commands)
 
 ## 🚀 Installation
 
-Install using your favorite plugin manager.
+Install with your favorite plugin manager.
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim)
 
 ```lua
 return {
   'taku25/UEP.nvim',
-  -- UNL.nvim is a mandatory dependency
-  dependencies = { 'taku25/UNL.nvim' },
-  -- All configuration is inherited from UNL.nvim, but can be overridden here
+  -- UNL.nvim is a required dependency
+  dependencies = {
+     'taku25/UNL.nvim',
+     'nvim-telescope/telescope.nvim', -- Optional
+  },
+  -- All settings are inherited from UNL.nvim, but can be overridden here
   opts = {
-    -- Your UEP-specific configurations can go here
+    -- Any UEP-specific settings would go here
   },
 }
 ```
 
------
-
 ## ⚙️ Configuration
 
-This plugin is configured via the setup function of its library, `UNL.nvim`. However, you can pass `opts` directly to `UEP.nvim` to set the configuration for the `UEP` namespace.
+This plugin is configured through the setup function of its library, `UNL.nvim`. However, you can also configure `UEP` namespace settings by passing `opts` directly to the `UEP.nvim` spec.
 
-The following shows the default values relevant to `UEP.nvim`.
+The following are the default values related to `UEP.nvim`.
 
 ```lua
--- In your lazy.nvim spec for UEP.nvim or UNL.nvim:
+-- Place inside the spec for UEP.nvim or UNL.nvim in lazy.nvim
 opts = {
-  -- UEP specific settings
+  -- UEP-specific settings
   uep = {
-    -- This section is for future UEP-specific settings
+    -- Section for future UEP-specific settings
   },
 
   -- File extensions to be scanned by the ':UEP refresh' command
@@ -89,7 +100,7 @@ opts = {
     "cpp", "h", "hpp", "inl", "ini", "cs",
   },
 
-  -- Settings for the UI backend (inherited from UNL.nvim)
+  -- UI backend settings (inherited from UNL.nvim)
   ui = {
     picker = {
       mode = "auto", -- "auto", "telescope", "fzf_lua", "native"
@@ -104,97 +115,74 @@ opts = {
 }
 ```
 
------
-
 ## ⚡ Usage
 
-All commands begin with `:UEP`.
+All commands start with `:UEP`.
 
 ```viml
-" Re-scans the project and updates the cache. This is the most important command.
+" Rescan the project and update the cache. This is the most important command.
 :UEP refresh [Game|Engine]
 
-" Opens a UI to find files based on various criteria.
-:UEP files[!] [Game|Engine|All] [--no-deps|--all-deps]
+" Open a UI to search for files with various conditions.
+:UEP files[!] [Game|Engine] [--all-deps]
 
-" Finds files belonging to a specific module.
+" Search for files belonging to a specific module.
 :UEP module_files[!] [ModuleName]
 
-" Opens a UI to select a known project and changes the current directory to it.
+" Display a logical view of the entire project (requires neo-tree-unl.nvim)
+:UEP tree
+
+" Display a logical view of a single module (requires neo-tree-unl.nvim)
+:UEP module_tree [ModuleName]
+
+" Show a UI list of known projects and change the current directory to the selected one.
 :UEP cd
 
-" Removes a project from the known projects list (does not delete files).
+" Remove a project from the list of known projects (does not delete files).
 :UEP delete
-
-" Opens the module root in a filer.
-:UEP tree
 ```
 
 ### Command Details
 
   * **`:UEP refresh`**:
-      * `Game` (default): Scans only the modules of the current game project. If the linked engine hasn't been cached, it will be scanned first automatically.
+      * `Game` (default): Scans only the modules of the current game project. If a linked engine cache does not exist, the engine will be scanned automatically first.
       * `Engine`: Scans only the modules of the linked engine.
   * **`:UEP files[!]`**:
       * Without `!`: Selects files from the existing cache data.
       * With `!`: Deletes the cache and creates a new one before selecting files.
-      * `[Game|Engine]` (default `Game`): The scope of modules to search within.
-      * `[--no-deps|--all-deps]` (default `--no-deps`):
-          * `--no-deps`: Searches only within the modules of the specified scope.
-          * `--all-deps`: Includes all modules that are dependencies (uses `deep_dependencies`).
+      * `[Game|Engine]` (default `Game`): The scope of modules to search.
+      * `[--all-deps]` (default behavior is shallow dependencies):
+          * shallow: Searches only within the modules of the specified scope.
+          * `--all-deps`: Includes all dependent modules in the search (uses `deep_dependencies`).
   * **`:UEP module_files[!]`**:
-      * Without `!`: Searches for files in the specified module using the existing cache.
-      * With `!`: Forces a lightweight refresh of only the specified module's files before searching.
-
------
+      * Without `!`: Uses the existing cache to search for files in the specified module.
+      * With `!`: Performs a lightweight update of the file cache for only the specified module before searching.
+  * **`:UEP tree`**:
+      * Only works if `neo-tree-unl.nvim` is installed.
+      * Opens a complete logical tree in `neo-tree`, including the "Game," "Plugins," and "Engine" categories for the entire project.
+  * **`:UEP module_tree [ModuleName]`**:
+      * Only works if `neo-tree-unl.nvim` is installed.
+      * If `ModuleName` is passed as an argument, it displays a tree rooted at that module.
+      * If run without arguments, it displays a picker UI to select a module from the project.
 
 ## 🤖 API & Automation Examples
 
-You can use the `UEP.api` module to integrate with other parts of your Neovim config.
+You can use the `UEP.api` module to integrate with other Neovim configurations.
 
-### Quick File Finder Keymap
+### Create a Keymap for File Searching
 
-Create a keymap to quickly open the file finder for the current project.
+Create a keymap to quickly search for files in the current project.
 
 ```lua
--- in your init.lua or a dedicated keymaps file
+-- in your init.lua or keymaps.lua
 vim.keymap.set('n', '<leader>pf', function()
   -- The API is simple and clean
   require('UEP.api').files({})
 end, { desc = "[P]roject [F]iles" })
 ```
+*(The `Neo-treeとの連携` section was removed as the new recommended way is via the `:UEP tree` command)*
 
-### Neo-tree Integration
-
-Add a keymap in Neo-tree to open the UEP filer focused on the selected directory's project.
-
-```lua
--- Example Neo-tree config
-opts = {
-  filesystem = {
-    window = {
-      mappings = {
-        ["<leader>pf"] = function(state)
-          -- Get the directory of the currently selected node
-          local node = state.tree:get_node()
-          local path = node:get_id()
-          if node.type ~= "directory" then
-            path = require("vim.fs").dirname(path)
-          end
-
-          -- Ensure CWD is inside the project before calling the API
-          vim.api.nvim_set_current_dir(path)
-          require("UEP.api").tree({})
-        end,
-      },
-    },
-  },
-}
-```
-
------
-
-## 📜 License
+## 📜 ライセンス (License)
 
 MIT License
 

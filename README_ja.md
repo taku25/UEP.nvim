@@ -11,10 +11,12 @@
 
 `UEP.nvim`は、Unreal Engineプロジェクトの構造を理解し、ナビゲートし、管理するために設計されたNeovimプラグインです。プロジェクト全体のモジュールとファイル情報を非同期で解析・キャッシュし、非常に高速でインテリジェントなファイルナビゲーション体験を提供します。
 
-これは **Unreal Neovim Plugin Stack** の中核をなすプラグインであり、ライブラリとして [UNL.nvim](https://github.com/taku25/UNL.nvim) に依存しています。
+これは **Unreal Neovim Plugin sweet** の中核をなすプラグインであり、ライブラリとして [UNL.nvim](https://github.com/taku25/UNL.nvim) に依存しています。
 
 [UBT](https://github.com/taku25/UBT.nvim)を使うとBuildやGenerateClangDataBaseなどを非同期でNeovim上から使えるようになります
 [UCM](https://github.com/taku25/UCM.nvim)を使うとクラスの追加や削除がNeovim上からできるようになります。
+[neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)を使うとIDEのようなプロジェクトエクスプローラーを表示できます。
+
 
 [English](README.md) | [日本語 (Japanese)](README_ja.md)
 
@@ -33,8 +35,11 @@
   * **UI統合**:
       * `UNL.nvim`のUI抽象化レイヤーを活用し、[Telescope](https://github.com/nvim-telescope/telescope.nvim)や[fzf-lua](https://github.com/ibhagwan/fzf-lua)のようなUIフロントエンドを自動的に使用します。
       * UIプラグインがインストールされていない場合でも、NeovimネイティブのUIにフォールバックします。
-  * **モジュール単体のファイルツリー表示**:
-      * `:UEP tree`コマンドは、関連するすべてのモジュールのルートを、[Neo-tree](https://github.com/nvim-neo-tree/neo-tree.nvim)のようなファイラープラグインで単一の統一されたツリーとして表示できます。
+  * **IDEライクな論理ツリービュー**:
+      * **[neo-tree-unl.nvim](https://github.com/taku25/neo-tree-unl.nvim)** との連携により、IDEのソリューションエクスプローラーのような論理的なツリービューを提供します。
+      * `:UEP tree`コマンドで、プロジェクト全体の構造（Game, Plugins, Engine）を俯瞰できます。
+      * `:UEP module_tree`コマンドで、単一のモジュールのみにフォーカスしたビューに切り替えられます。
+      * `:UEP refresh`を実行すると、開いているツリーが自動的に最新の状態に更新されます。
 
 
 
@@ -43,10 +48,14 @@
   * Neovim v0.11.3 以上
   * [**UNL.nvim**](https://www.google.com/search?q=https://github.com/taku25/UNL.nvim) (**必須**)
   * [fd](https://github.com/sharkdp/fd) (**プロジェクトのスキャンに必須**)
-  * **オプション (UI体験の向上のために、いずれかの導入を強く推奨):**
-      * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
-      * [fzf-lua](https://github.com/ibhagwan/fzf-lua)
-      * [neo-tree.nvim](https://github.com/nvim-neo-tree/neo-tree.nvim) (`:UEP filer`コマンドでマルチルート機能を使う場合に推奨)
+  * **オプション (完全な体験のために、導入を強く推奨):**
+      * **UI (Picker):**
+          * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
+          * [fzf-lua](https://github.com/ibhagwan/fzf-lua)
+      * **UI (Tree View):**
+          * [**neo-tree.nvim**](https://github.com/nvim-neo-tree/neo-tree.nvim)
+          * [**neo-tree-unl.nvim**](https://github.com/taku25/neo-tree-unl.nvim) (`:UEP tree`, `:UEP module_tree` コマンドの利用に**必須**)
+
 
 ## 🚀 インストール (Installation)
 
@@ -58,7 +67,10 @@
 return {
   'taku25/UEP.nvim',
   -- UNL.nvim は必須の依存関係です
-  dependencies = { 'taku25/UNL.nvim' },
+  dependencies = {
+     'taku25/UNL.nvim',
+     'nvim-telescope/telescope.nvim', --オプション
+  },
   -- 全ての設定はUNL.nvimから継承されますが、ここで上書きも可能です
   opts = {
     -- UEP固有の設定があればここに記述します
@@ -109,36 +121,36 @@ opts = {
 :UEP refresh [Game|Engine]
 
 " 様々な条件でファイルを検索するためのUIを開きます。
-:UEP files[!] [Game|Engine|All] [--no-deps|--all-deps]
+:UEP files[!] [Game|Engine] [--all-deps]
 
 " 特定のモジュールに属するファイルを検索します。
 :UEP module_files[!] [ModuleName]
+
+" プロジェクト全体の論理ツリーを表示します (neo-tree-unl.nvim が必要)
+:UEP tree
+
+" 特定のモジュールの論理ツリーを表示します (neo-tree-unl.nvim が必要)
+:UEP module_tree [ModuleName]
 
 " 既知のプロジェクト一覧をUIで表示し、選択したプロジェクトにカレントディレクトリを変更します。
 :UEP cd
 
 " プロジェクトを既知のプロジェクトリストから削除します（ファイルは削除しません）。
 :UEP delete
-
-" モジュールルートをファイラーで開きます。
-:UEP tree
 ```
 
 ### コマンド詳細
 
-  * **`:UEP refresh`**:
-      * `Game` (デフォルト): 現在のゲームプロジェクトのモジュールのみをスキャンします。リンクされたエンジンのキャッシュがない場合は、先にエンジンが自動でスキャンされます。
-      * `Engine`: リンクされたエンジンのモジュールのみをスキャンします。
-  * **`:UEP files[!]`**:
-      * `!`なし: 既存のキャッシュデータからファイルを選択します
-      * `!`あり: キャッシュを削除して新しいキャッシュを作成してからファイルを選択します
-      * `[Game|Engine]` (デフォルト `Game`): 検索対象とするモジュールのスコープです。
-      * `[--no-deps|--all-deps]` (デフォルト `--no-deps`):
-          * `--no-deps`: 指定されたスコープのモジュール内のみを検索します。
-          * `--all-deps`: 依存関係にある全てのモジュールを検索対象に含めます（`deep_dependencies`を使用）。
-  * **`:UEP module_files[!]`**:
-      * `!`なし: 既存のキャッシュを使って指定されたモジュールのファイルを検索します。
-      * `!`あり: 検索前に、指定されたモジュールのファイルキャッシュのみを軽量に更新します。
+(**:UEP refresh**, **:UEP files**, **:UEP module_files** のセクションは変更ありません)
+
+  * **`:UEP tree`**:
+      * `neo-tree-unl.nvim` がインストールされている場合にのみ機能します。
+      * プロジェクト全体の「Game」「Plugins」「Engine」のカテゴリを含む、完全な論理ツリーを`neo-tree`で開きます。
+  * **`:UEP module_tree [ModuleName]`**:
+      * `neo-tree-unl.nvim` がインストールされている場合にのみ機能します。
+      * `ModuleName`を引数として渡すと、そのモジュールのみをルートとしたツリーが表示されます。
+      * 引数なしで実行すると、プロジェクト内の全モジュールを選択するためのピッカーUIが表示されます。
+      
 
 ## 🤖 API & 自動化 (Automation Examples)
 
