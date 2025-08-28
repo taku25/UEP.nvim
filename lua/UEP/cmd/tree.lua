@@ -1,89 +1,40 @@
 -- lua/UEP/cmd/tree.lua
--- :UEP tree コマンドの実処理
--- Pickerでモジュールを一つ選択し、そのルートをファイラーで開く
+-- :UEP tree コマンドの実処理 (イベント発行モデル)
+-- 責務: 1. 引数を解釈し, 2. キャッシュからデータを構築し, 3. グローバルイベントを発行する
 
-local project_cache = require("UEP.cache.project")
-local uep_config = require("UEP.config")
-local log = require("UEP.logger").get()
--- ★UNLのPickerとFilerを直接利用する
-local unl_picker = require("UNL.backend.picker")
-local unl_filer = require("UNL.backend.filer")
+local unl_finder = require("UNL.finder")
+local unl_events = require("UNL.event.events")
+local unl_event_types = require("UNL.event.types")
+local tree_model_context = require("UEP.state.tree_model_context")
+local tree_model_controller = require("UEP.core.tree_model_controller")
+local uep_event_hub = require("UEP.event.hub")
 
+local uep_config   = require("UEP.config")
 local M = {}
 
+---
+-- キャッシュからノードを構築するヘルパー関数
+-- (この関数はコマンド間で共通化して別ファイルに切り出すのが理想的)
+--
 function M.execute(opts)
-  -- 1. GameとEngineの全モジュール情報をロードして集約する (これは以前と同じ)
-  local game_data = project_cache.load(vim.loop.cwd())
-  if not game_data then
-    log.error("Project cache not found. Run :UEP refresh first.")
+  -- ★★★ 最初に、UIの存在をチェックする ★★★
+  local ok_neotree, _ = pcall(require, "neo-tree.command")
+  local ok_unl_source, _ = pcall(require, "neo-tree-unl")
+  if not (ok_neotree and ok_unl_source) then
+    uep_log.get().warn("Optional UI plugins ('neo-tree.nvim', 'neo-tree-unl.nvim') are not available.")
     return
   end
-  local engine_data = game_data.link_engine_cache_root
-    and project_cache.load(game_data.link_engine_cache_root) or nil
-  local all_modules = {}
-  if game_data and game_data.modules then
-    for name, meta in pairs(game_data.modules) do all_modules[name] = meta end
+  
+  -- (これ以降は、UIが存在することが保証されている)
+  tree_model_context.set_last_args(opts)
+  local project_root = unl_finder.project.find_project_root(vim.fn.getcwd())
+  if not project_root then return end
+  
+  local ok, nodes_to_render = tree_model_controller.build(project_root, opts)
+  if ok then
+    require("UEP.event.hub").request_tree_update(nodes_to_render)
+    require("neo-tree.command").execute({ source = "uproject", action = "focus" })
   end
-  if engine_data and engine_data.modules then
-    for name, meta in pairs(engine_data.modules) do
-      if not all_modules[name] then all_modules[name] = meta end
-    end
-  end
-
-  if not next(all_modules) then
-    log.warn("No modules found in the cache.")
-    return
-  end
-
-  -- 2. Pickerで表示するためのアイテムリストを作成する
-  local picker_items = {}
-  for name, meta in pairs(all_modules) do
-    if meta.module_root then -- ルートパスが存在するモジュールのみ対象
-      table.insert(picker_items, {
-        -- 表示ラベル: "MyGame (Game)"
-        label = string.format("%s (%s)", name, meta.category),
-        -- 選択されたときにFilerに渡す値
-        value = {
-          name = name,
-          path = meta.module_root,
-        },
-      })
-    end
-  end
-  -- 見やすいように名前でソート
-  table.sort(picker_items, function(a, b) return a.label < b.label end)
-
-  -- 3. UNLのPickerを起動して、ユーザーにモジュールを選択させる
-  unl_picker.pick({
-    kind = "uep_module_select_for_tree",
-    title = "Select a Module to Open in Filer",
-    items = picker_items,
-    conf = uep_config.get(),
-     preview_enabled = false,
-    logger_name = require("UEP.logger").name,
-    format = function(item) return item.label end,
-
-    -- ユーザーがモジュールを選択したときの処理
-    on_submit = function(selected_module)
-      if not selected_module or not selected_module.path then return end
-
-      log.info("Opening module '%s' in filer at path: %s", selected_module.name, selected_module.path)
-
-      -- 4. ★★★ UNLのFilerプロバイダーを呼び出す ★★★
-      -- これでneo-treeや将来の他のファイラーもサポートできる
-      unl_filer.open({
-        conf = uep_config.get(),
-        logger_name = require("UEP.logger").name,
-        -- Filerに渡すのは単一のルート
-        roots = {
-          {
-            name = selected_module.name,
-            path = selected_module.path,
-          }
-        },
-      })
-    end,
-  })
 end
 
 return M

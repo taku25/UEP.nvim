@@ -66,6 +66,14 @@ local command_spec = {
         { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
       },
     },
+    module_tree = {
+      handler = uep_api.module_tree,
+      desc = "Open a project-aware filer (requires neo-tree or nvim-tree)",
+      args = {
+        { name = "module_name", required = false },
+        { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
+      },
+    },
   },
 }
 

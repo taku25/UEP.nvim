@@ -34,7 +34,7 @@ local function show_file_picker(items, project_root)
     kind = "module_file_location",
     title = "  Module Files",
     items = picker_items,
-    preview_enabled = true,
+    preview_enabled = false,
     conf = uep_config.get(),
     logger_name = uep_log.name,
     on_submit = function(selection)

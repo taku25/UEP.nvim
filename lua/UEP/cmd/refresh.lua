@@ -11,6 +11,9 @@ local project_cache     = require("UEP.cache.project")
 local projects_cache    = require("UEP.cache.projects")
 local uep_log           = require("UEP.logger")
 local files_disk_cache  = require("UEP.cache.files")
+-- local event_types = require("UEP.event.types")
+local unl_events = require("UNL.event.events")
+local unl_events = require("UNL.event.types")
 
 local M = {}
 
@@ -60,63 +63,107 @@ local function create_fd_command(search_paths)
   return fd_cmd
 end
 
+---
+-- フラットなファイルパスのリストから、ネストした階層構造を構築する
+-- @param file_list table ファイルパスの文字列のリスト
+-- @param root_path string 階層の基点となるパス
+-- @return table neo-tree 形式のノードのリスト
+--
+local function build_fs_tree_from_flat_list(file_list, root_path)
+  local root = {}
+  for _, file_path in ipairs(file_list) do
+    local current_level = root
+    local relative_path = file_path:sub(#root_path + 2)
+    local parts = vim.split(relative_path, "[/]")
+    for i, part in ipairs(parts) do
+      if not current_level[part] then current_level[part] = {} end
+      current_level = current_level[part]
+    end
+  end
+  local function table_to_nodes(tbl, current_path)
+    local nodes = {}
+    for name, content in pairs(tbl) do
+      local new_path = fs.joinpath(current_path, name)
+      local node_type = "file"
+      local children_nodes = nil
+      if next(content) then
+        node_type = "directory"
+        children_nodes = table_to_nodes(content, new_path)
+      end
+      table.insert(nodes, { id = new_path, name = name, path = new_path, type = node_type, children = children_nodes })
+    end
+    table.sort(nodes, function(a, b) return a.name < b.name end)
+    return nodes
+  end
+  return table_to_nodes(root, root_path)
+end
+---
+-- 解析済みのモジュールリストから、neo-treeで表示するための階層ノードを構築する
+-- @param modules_meta table<string, ModuleInfo> 解析済みのモジュール情報
+-- @param project_type string "Game" または "Engine"
+-- @param files_by_module table<string, table<string>> モジュール名とそのファイルリストのマップ
+-- @return table UI非依存の階層データ
+--
+local function build_hierarchy_nodes(modules_meta, project_type, files_by_module)
+  local root_nodes = {
+    Game = { id = project_type .. "_Game", name = "Game", type = "directory", extra = { uep_type = "category" }, children = {} },
+    Plugins = { id = project_type .. "_Plugins", name = "Plugins", type = "directory", extra = { uep_type = "category" }, children = {} },
+  }
+  if project_type == "Engine" then
+    root_nodes["Engine"] = { id = project_type .. "_Engine", name = "Engine", type = "directory", extra = { uep_type = "category" }, children = {} }
+  end
+  local plugin_nodes = {}
+  for name, meta in pairs(modules_meta) do
+    if meta.module_root then
+      local module_files = files_by_module[name] or {}
+      local file_tree = build_fs_tree_from_flat_list(module_files, meta.module_root)
+      local node = { id = meta.module_root, name = name, path = meta.module_root, type = "directory", extra = { uep_type = "module" }, children = file_tree }
+      if meta.location == "in_plugins" then
+        local plugin_name = meta.module_root:match("[/\\]Plugins[/\\]([^/\\]+)")
+        if plugin_name then
+          if not plugin_nodes[plugin_name] then
+            local plugin_path = meta.module_root:match("(.+[/\\]Plugins[/\\][^/\\]+)")
+            plugin_nodes[plugin_name] = { id = plugin_path, name = plugin_name, path = plugin_path, type = "directory", extra = { uep_type = "plugin" }, children = {} }
+          end
+          table.insert(plugin_nodes[plugin_name].children, node)
+        else
+          table.insert(root_nodes.Plugins.children, node)
+        end
+      elseif meta.location == "in_source" then
+        local category_key = (project_type == "Engine") and "Engine" or "Game"
+        if root_nodes[category_key] then table.insert(root_nodes[category_key].children, node) end
+      end
+    end
+  end
+  for _, plugin_node in pairs(plugin_nodes) do table.insert(root_nodes.Plugins.children, plugin_node) end
+  local final_nodes = {}
+  local categories_order = { "Game", "Engine", "Plugins" }
+  for _, category_name in ipairs(categories_order) do
+    local category_node = root_nodes[category_name]
+    if category_node and #category_node.children > 0 then
+      category_node.path = category_node.id
+      table.insert(final_nodes, category_node)
+    end
+  end
+  return final_nodes
+end
+
 local function create_file_cache(scope, project_data, engine_data, progress, on_complete)
-  uep_log.get().info("Creating '%s' file cache for project: %s", scope, project_data.root)
-  if progress then
-    progress:stage_update("create_file_cache", 0.5, "Indexing source files with fd...")
-  end
-
-  local search_path
-  if scope == "Game" then
-    search_path = project_data.root
-  elseif scope == "Engine" then
-    search_path = project_data.root
-  else
-    uep_log.get().error("Invalid scope provided for file cache creation: %s", tostring(scope))
-    if on_complete then on_complete(false) end
-    return
-  end
-  
+  local search_path = (scope == "Game" or scope == "Engine") and project_data.root or nil
   if not search_path then
-    uep_log.get().error("Could not determine search path for file cache scope: %s", scope)
-    if on_complete then on_complete(false) end
-    return
+    if on_complete then on_complete(false) end; return
   end
-
   local fd_cmd = create_fd_command({ search_path })
   local found_files = {}
-
   vim.fn.jobstart(fd_cmd, {
     stdout_buffered = true,
-    on_stdout = function(_, data)
-      if data then
-        for _, line in ipairs(data) do
-          if line ~= "" then table.insert(found_files, line) end
-        end
-      end
-    end,
-    on_stderr = function(_, data)
-      if data then
-        for _, line in ipairs(data) do
-          if line and line ~= "" then uep_log.get().error("fd command stderr: %s", line) end
-        end
-      end
-    end,
+    on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(found_files, line) end end end end,
     on_exit = function(_, code)
-      if code ~= 0 then
-        if on_complete then on_complete(false) end
-        return
-      end
-      
+      if code ~= 0 then if on_complete then on_complete(false) end; return end
       local all_files_by_module = {}
       local all_modules_meta = vim.tbl_extend("force", {}, engine_data and engine_data.modules or {}, project_data and project_data.modules or {})
-      
       local sorted_modules = {}
-      for name, meta in pairs(all_modules_meta) do
-        if meta.module_root then
-          table.insert(sorted_modules, { name = name, root = meta.module_root .. "/" })
-        end
-      end
+      for name, meta in pairs(all_modules_meta) do if meta.module_root then table.insert(sorted_modules, { name = name, root = meta.module_root .. "/" }) end end
       table.sort(sorted_modules, function(a, b) return #a.root > #b.root end)
       for _, file_path in ipairs(found_files) do
         local owner = find_owner_module(file_path, sorted_modules)
@@ -125,21 +172,11 @@ local function create_file_cache(scope, project_data, engine_data, progress, on_
           table.insert(all_files_by_module[owner], file_path)
         end
       end
-      
-      local cache_to_save = {
-        category = scope,
-        generation = project_data.generation,
-        owner_project_root = project_data.root,
-        files_by_module = all_files_by_module,
-      }
-      
+      local hierarchy_data = build_hierarchy_nodes(project_data.modules, scope, all_files_by_module)
+      local cache_to_save = { category = scope, generation = project_data.generation, owner_project_root = project_data.root, files_by_module = all_files_by_module, hierarchy_nodes = hierarchy_data }
       files_disk_cache.save(project_data.root, cache_to_save)
-      
-      local full_in_memory_cache = require("UNL.context").use("UEP"):key(project_data.root):get("file_cache") or {}
-      full_in_memory_cache[scope] = cache_to_save
-      require("UNL.context").use("UEP"):key(project_data.root):set("file_cache", full_in_memory_cache)
-      
-      uep_log.get().info("File cache for scope '%s' created successfully with %d files.", scope, #found_files)
+      -- ★★★ ファイルキャッシュ保存後にイベント発行 ★★★
+      unl_events.publish(unl_events.ON_AFTER_FILE_CACHE_SAVE)
       if on_complete then on_complete(true) end
     end,
   })
@@ -149,11 +186,15 @@ end
 -- Coroutine and Job Management
 -------------------------------------------------
 
+-- cmd/refresh.lua
+
+
+
+-- Coroutine and Job Management
 local function processor_coroutine(params)
   local progress = params.progress
-
-  -- ステージ1: Build.cs ファイルの解析
   progress:stage_define("parse_modules", #params.build_cs_files)
+
   local modules_meta = {}
   for i, raw_path in ipairs(params.build_cs_files) do
     local build_cs_path = unl_path.normalize(raw_path)
@@ -161,89 +202,56 @@ local function processor_coroutine(params)
     progress:stage_update("parse_modules", i, "Parsing: " .. module_name)
     local module_root = vim.fn.fnamemodify(build_cs_path, ":h")
     local location = "unknown"
-    if build_cs_path:find("/Plugins/", 1, true) then
-      location = "in_plugins"
-    elseif build_cs_path:find("/Source/", 1, true) then
-      location = "in_source"
-    end
+    if build_cs_path:find("/Plugins/", 1, true) then location = "in_plugins" elseif build_cs_path:find("/Source/", 1, true) then location = "in_source" end
     local dependencies = unl_analyzer.parse(build_cs_path)
-    modules_meta[module_name] = {
-      name = module_name,
-      path = build_cs_path,
-      module_root = module_root,
-      category = params.type,
-      location = location,
-      dependencies = dependencies,
-    }
+    modules_meta[module_name] = { name = module_name, path = build_cs_path, module_root = module_root, category = params.type, location = location, dependencies = dependencies }
     if i % 20 == 0 then coroutine.yield() end
   end
   progress:stage_update("parse_modules", #params.build_cs_files, "All modules parsed")
   coroutine.yield()
 
-  -- ステージ2: 依存関係の解決
   progress:stage_define("resolve_deps", 1)
   progress:stage_update("resolve_deps", 0, "Building dependency graph...")
 
-
-
-  local modules_with_resolved_deps, err = uep_graph.resolve_all_dependencies(
-    modules_meta,
-    params.engine_cache and params.engine_cache.modules or nil,
-    progress
-  )
-  
-  -- 1. 依存関係の解決が失敗したか、結果がテーブルでない場合は、安全にエラー終了する
+  local modules_with_resolved_deps, err = uep_graph.resolve_all_dependencies(modules_meta, params.engine_cache and params.engine_cache.modules or nil, progress)
   if not modules_with_resolved_deps or type(modules_with_resolved_deps) ~= "table" then
-     uep_log.get().error("Failed to resolve dependencies: %s", tostring(err or "result was not a table"))
-     progress:finish(false)
-     return false, "Dependency resolution failed"
+    progress:finish(false); return false
   end
-
-  -- ステージ3: プロジェクトキャッシュの保存
   progress:stage_define("save_cache", 1)
   progress:stage_update("save_cache", 0, "Saving project cache...")
 
   local content_to_hash = vim.json.encode(modules_with_resolved_deps)
-
   local data_hash = vim.fn.sha256(content_to_hash)
-
-  local meta_to_save = {
-    generation = data_hash,
-    modules = modules_with_resolved_deps,
-  }
+  local project_data_to_save = { generation = data_hash, modules = modules_with_resolved_deps, root = params.root_path }
 
   if params.type == "Game" then
-     meta_to_save.uproject_path = unl_finder.project.find_project_file(params.root_path)
-     meta_to_save.link_engine_cache_root = params.engine_root
+    project_data_to_save.uproject_path = unl_finder.project.find_project_file(params.root_path)
+    project_data_to_save.link_engine_cache_root = params.engine_root
   end
-  local ok, save_err = project_cache.save(params.root_path, params.type, meta_to_save)
+
+  local ok, save_err = project_cache.save(params.root_path, params.type, project_data_to_save)
   if not ok then
-     uep_log.get().error("Failed to save project cache: %s", tostring(save_err))
-     progress:finish(false); return false
+    progress:finish(false); return false
   end
+  -- ★★★ プロジェクトキャッシュ保存後にイベント発行 ★★★
+  unl_events.publish(unl_events.ON_AFTER_PROJECT_CACHE_SAVE)
   progress:stage_update("save_cache", 1, "Project cache saved.")
-
-  -- ステージ4: プロジェクト一覧の更新
-  if params.type == "Game" and meta_to_save.uproject_path then
-    projects_cache.add_or_update({
-      root = params.root_path,
-      uproject_path = meta_to_save.uproject_path,
-      engine_root_path = params.engine_root, 
-    })
+  if params.type == "Game" and project_data_to_save.uproject_path then
+    projects_cache.add_or_update({ root = params.root_path, uproject_path = project_data_to_save.uproject_path, engine_root_path = params.engine_root })
   end
 
-  -- ステージ5: ファイルキャッシュの作成
   progress:stage_define("create_file_cache", 1)
   progress:stage_update("create_file_cache", 0, "Creating file cache...")
   coroutine.yield()
-  
-  local current_project_data = project_cache.load(params.root_path)
-  
-  create_file_cache(params.type, current_project_data, params.engine_cache, progress, function(ok)
+
+  create_file_cache(params.type, project_data_to_save, params.engine_cache, progress, function(ok)
     if ok then
       progress:stage_update("create_file_cache", 1, "File cache created.")
+      -- ★★★ リフレッシュ全体の完了イベントを発行 ★★★
+      unl_events.publish(unl_events.ON_AFTER_REFRESH_COMPLETED, { status = "success" })
     else
       progress:stage_update("create_file_cache", 1, "Failed to create file cache.", { error = true })
+      unl_events.publish(unl_events.ON_AFTER_REFRESH_COMPLETED, { status = "failed" })
     end
     progress:finish(true)
     if params.on_complete then params.on_complete(ok) end
@@ -252,16 +260,9 @@ end
 
 local function start_refresh_job(root_path, type, on_complete)
   local conf = uep_config.get()
-  local progress, _ = unl_progress.create_for_refresh(conf, {
-    title = ("UEP: Refreshing %s..."):format(type),
-    client_name = "UEP"
-  })
-  if not progress then
-    uep_log.get().error("Failed to create progress handler.")
-    if on_complete then on_complete(false) end
-    return
-  end
-  
+  local progress, _ = unl_progress.create_for_refresh(conf, { title = ("UEP: Refreshing %s..."):format(type), client_name = "UEP" })
+  if not progress then if on_complete then on_complete(false) end; return end
+
   local search_paths, engine_root_for_job
   if type == "Game" then
     local proj_info = unl_finder.project.find_project(root_path)
@@ -271,48 +272,24 @@ local function start_refresh_job(root_path, type, on_complete)
     engine_root_for_job = root_path
     search_paths = { fs.joinpath(root_path, "Engine", "Source"), fs.joinpath(root_path, "Engine", "Plugins") }
   end
-  
-  progress:open()
-  local fd_cmd = { "fd", "--absolute-path", "--type", "f", "Build.cs", unpack(tbl_unique(search_paths)) }
 
+  progress:open()
+
+  local fd_cmd = { "fd", "--absolute-path", "--type", "f", "Build.cs", unpack(tbl_unique(search_paths)) }
   local build_cs_files = {}
   vim.fn.jobstart(fd_cmd, {
     stdout_buffered = true,
-    on_stdout = function(_, data)
-      if data then for _, line in ipairs(data) do if line ~= "" then table.insert(build_cs_files, line) end end end
-    end,
+    on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(build_cs_files, line) end end end end,
     on_exit = function(_, code)
-      if code ~= 0 then
-        progress:finish(false); uep_log.get().error("fd command for Build.cs failed with exit code: %s", code)
-        if on_complete then on_complete(false) end
-        return
-      end
-      if #build_cs_files == 0 then
-        progress:finish(true); uep_log.get().warn("No Build.cs files found.")if params.on_complete then params.on_complete(ok) end
-        if on_complete then on_complete(true) end
-        return
-      end
-      
+      if code ~= 0 then progress:finish(false); if on_complete then on_complete(false) end; return end
+      if #build_cs_files == 0 then progress:finish(true); if on_complete then on_complete(true) end; return end
       local engine_cache_for_job = (type == "Game" and engine_root_for_job) and project_cache.load(engine_root_for_job) or nil
       local co = coroutine.create(processor_coroutine)
-      
       local function resume_handler()
-        local params = {
-          root_path = root_path, type = type, engine_root = engine_root_for_job,
-          build_cs_files = build_cs_files, progress = progress,
-          engine_cache = engine_cache_for_job,
-          on_complete = on_complete,
-        }
+        local params = { root_path = root_path, type = type, engine_root = engine_root_for_job, build_cs_files = build_cs_files, progress = progress, engine_cache = engine_cache_for_job, on_complete = on_complete }
         local status, result_or_err = coroutine.resume(co, params)
-        if not status then
-          uep_log.get().error("Coroutine CRASHED during refresh: %s", tostring(result_or_err))
-          progress:finish(false)
-          if on_complete then on_complete(false) end
-          return
-        end
-        if coroutine.status(co) ~= "dead" then
-          vim.defer_fn(resume_handler, 1)
-        end
+        if not status then progress:finish(false); if on_complete then on_complete(false) end; return end
+        if coroutine.status(co) ~= "dead" then vim.defer_fn(resume_handler, 1) end
       end
       resume_handler()
     end,

@@ -21,6 +21,9 @@ function M.setup(user_config)
   if log then
     log.debug("UEP.nvim setup complete.")
   end
+
+
+  require("UEP.event.hub").setup()
 end
 
 return M
