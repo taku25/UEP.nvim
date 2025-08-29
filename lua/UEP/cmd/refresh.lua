@@ -13,7 +13,7 @@ local uep_log           = require("UEP.logger")
 local files_disk_cache  = require("UEP.cache.files")
 -- local event_types = require("UEP.event.types")
 local unl_events = require("UNL.event.events")
-local unl_events = require("UNL.event.types")
+local unl_types = require("UNL.event.types")
 
 local M = {}
 
@@ -39,7 +39,7 @@ end
 local function create_fd_command(search_paths)
   local conf = uep_config.get()
   local extensions = conf.files_extensions or { "cpp", "h", "hpp", "inl", "ini", "cs" }
-  local full_path_regex = ".*[\\\\/](Source|Config|Plugins)[\\\\/].*\\.(" .. table.concat(extensions, "|") .. ")$"
+  local full_path_regex = ".*(Source|Config|Plugins).*.(" .. table.concat(extensions, "|") .. ")$"
   local excludes = { "Intermediate", "Binaries", "Saved" }
 
   local fd_cmd = {
@@ -176,7 +176,7 @@ local function create_file_cache(scope, project_data, engine_data, progress, on_
       local cache_to_save = { category = scope, generation = project_data.generation, owner_project_root = project_data.root, files_by_module = all_files_by_module, hierarchy_nodes = hierarchy_data }
       files_disk_cache.save(project_data.root, cache_to_save)
       -- ★★★ ファイルキャッシュ保存後にイベント発行 ★★★
-      unl_events.publish(unl_events.ON_AFTER_FILE_CACHE_SAVE)
+      unl_events.publish(unl_types.ON_AFTER_FILE_CACHE_SAVE)
       if on_complete then on_complete(true) end
     end,
   })
@@ -213,7 +213,12 @@ local function processor_coroutine(params)
   progress:stage_define("resolve_deps", 1)
   progress:stage_update("resolve_deps", 0, "Building dependency graph...")
 
-  local modules_with_resolved_deps, err = uep_graph.resolve_all_dependencies(modules_meta, params.engine_cache and params.engine_cache.modules or nil, progress)
+  local modules_with_resolved_deps, err = uep_graph.resolve_all_dependencies(modules_meta, params.engine_cache and params.engine_cache.modules or nil)
+  
+  -- 依存関係解決が完了した後に進捗を更新し、UIをブロックしないようにyieldする
+  progress:stage_update("resolve_deps", 1, "Dependency resolution complete.")
+  coroutine.yield()
+
   if not modules_with_resolved_deps or type(modules_with_resolved_deps) ~= "table" then
     progress:finish(false); return false
   end
@@ -233,8 +238,7 @@ local function processor_coroutine(params)
   if not ok then
     progress:finish(false); return false
   end
-  -- ★★★ プロジェクトキャッシュ保存後にイベント発行 ★★★
-  unl_events.publish(unl_events.ON_AFTER_PROJECT_CACHE_SAVE)
+  
   progress:stage_update("save_cache", 1, "Project cache saved.")
   if params.type == "Game" and project_data_to_save.uproject_path then
     projects_cache.add_or_update({ root = params.root_path, uproject_path = project_data_to_save.uproject_path, engine_root_path = params.engine_root })
@@ -248,10 +252,10 @@ local function processor_coroutine(params)
     if ok then
       progress:stage_update("create_file_cache", 1, "File cache created.")
       -- ★★★ リフレッシュ全体の完了イベントを発行 ★★★
-      unl_events.publish(unl_events.ON_AFTER_REFRESH_COMPLETED, { status = "success" })
+      unl_events.publish(unl_types.ON_AFTER_REFRESH_COMPLETED, { status = "success" })
     else
       progress:stage_update("create_file_cache", 1, "Failed to create file cache.", { error = true })
-      unl_events.publish(unl_events.ON_AFTER_REFRESH_COMPLETED, { status = "failed" })
+      unl_events.publish(unl_types.ON_AFTER_REFRESH_COMPLETED, { status = "failed" })
     end
     progress:finish(true)
     if params.on_complete then params.on_complete(ok) end

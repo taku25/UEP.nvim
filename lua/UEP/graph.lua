@@ -85,7 +85,7 @@ end
 -- 全モジュールの依存関係を解決するメインAPI
 --
 -- ★変更点1: 関数の引数に progress を追加
-function M.resolve_all_dependencies(primary_modules, secondary_modules, progress)
+function M.resolve_all_dependencies(primary_modules, secondary_modules)
   uep_log.get().info("Resolving dependencies for %d primary modules...", vim.tbl_count(primary_modules))
 
   local all_modules_for_graph = {}
@@ -118,25 +118,7 @@ function M.resolve_all_dependencies(primary_modules, secondary_modules, progress
   local warned_cycles = {}
   local final_result = {}
 
-  -- ★変更点2: 進捗報告の準備
-  local total_modules = vim.tbl_count(primary_modules)
-  local processed_count = 0
-  -- refresh.luaで定義済みのステージ名 "resolve_deps" をここでも使う
-  if progress then
-    progress:stage_define("resolve_deps", total_modules)
-    progress:stage_update("resolve_deps", 0, "Starting dependency resolution...")
-  end
-
   for name, original_meta in pairs(primary_modules) do
-    -- ★変更点3: ループの最初で進捗を更新
-    processed_count = processed_count + 1
-    -- 毎回更新すると少し重いので、5モジュールごとなどに間引くとより効率的
-    if progress and (processed_count % 5 == 0 or processed_count == total_modules) then
-      progress:stage_update("resolve_deps", processed_count, ("Resolving: %s"):format(name))
-      -- UIをブロックしないように、ここでもyieldするのが非常に効果的
-      coroutine.yield()
-    end
-
     local shallow_deps_list = {}
     for dep_name in pairs(graph.deps[name] or {}) do
       table.insert(shallow_deps_list, dep_name)
