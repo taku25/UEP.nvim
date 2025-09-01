@@ -3,9 +3,6 @@
 -- UNLのコアモジュールをインポート
 local unl_log = require("UNL.logging")
 local conf_default = require("UEP.config.defaults")
-local backend_progress = require("UNL.backend.progress")
-local backend_picker = require("UNL.backend.picker")
-local backend_filer = require("UNL.backend.filer")
 
 -- UEPの公開APIモジュールをインポート
 local api = require("UEP.api")
@@ -20,9 +17,6 @@ function M.setup(user_config)
   -- これで、UNLライブラリは "UEP" の設定を正しく認識する
   unl_log.setup("UEP", conf_default, user_config)
 
-  backend_progress.load_providers()
-  backend_picker.load_providers()
-  backend_filer.load_providers() -- これを追加
 
   local log = unl_log.get("UEP")
   if log then
