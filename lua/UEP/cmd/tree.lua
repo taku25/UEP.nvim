@@ -33,8 +33,16 @@ function M.execute(opts)
   
   local ok, nodes_to_render = tree_model_controller.build(project_root, opts)
   if ok then
-    require("UEP.event.hub").request_tree_update(nodes_to_render)
-    require("neo-tree.command").execute({ source = "uproject", action = "focus" })
+
+      -- :UEP tree コマンドのハンドラ (修正後)
+      -- 1. 先に neo-tree を開く（"Waiting for data..." と表示される）
+      require("neo-tree.command").execute({ source = "uproject" })
+
+      -- 2. 非同期でツリーの構築を開始する
+      --    この関数はすぐに処理を返すのでUIは固まらない
+      require("UEP.core.tree_model_controller").build_async(project_root, args)
+    -- require("UEP.event.hub").request_tree_update(nodes_to_render)
+    -- require("neo-tree.command").execute({ source = "uproject", action = "focus" })
   end
 end
 

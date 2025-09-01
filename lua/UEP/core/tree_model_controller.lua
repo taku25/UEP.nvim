@@ -5,8 +5,111 @@
 local files_cache = require("UEP.cache.files")
 local project_cache = require("UEP.cache.project")
 local uep_log = require("UEP.logger")
-
+local progress = require("UNL.backend.progress")
 local M = {}
+---
+-- 非同期でツリーモデルを構築する公開API
+-- @param project_root string
+-- @param args table
+function M.build_async(project_root, args)
+  -- ★★★ ここからが修正箇所 ★★★
+  -- 必要なモジュールと関数を、関数のトップレベルでローカル変数にキャプチャする
+  local unl_events = require("UNL.event.events")
+  local unl_event_types = require("UNL.event.types")
+  local conf = require("UNL.config").get("UEP")
+  local log = uep_log.get()
+  
+  -- vim API もローカル変数にキャプチャする
+  local fn = vim.fn
+  local defer_fn = vim.defer_fn
+  -- ★★★ 修正ここまで ★★★
+
+  -- 1. プログレスUIを作成
+  local progress_handle, provider_name = progress.create_for_refresh(conf, { title = "UEP: Building Tree" })
+  log.info("Using progress provider: %s", provider_name)
+  progress_handle:open()
+  progress_handle:stage_define("cache", 1)
+  progress_handle:stage_define("merge", 1)
+  progress_handle:stage_define("filter", 1)
+
+  local function start_async_build()
+    progress_handle:stage_update("cache", 0, "Loading cache...")
+    local game_project_data = project_cache.load(project_root)
+    if not game_project_data then
+      log.error("Failed to load project cache data.")
+      progress_handle:finish(false)
+      return
+    end
+    -- ★★★ fn.fnamemodify を呼び出す ★★★
+    local project_name = fn.fnamemodify(game_project_data.uproject_path, ":t:r") or "Unknown Project"
+    local root_node = {
+      name = project_name, type = "directory", path = project_root, id = project_root,
+      extra = { uep_type = "project_root" },
+      children = {},
+    }
+    progress_handle:stage_update("cache", 1)
+    
+    progress_handle:stage_update("merge", 0, "Merging hierarchy...")
+    
+    local hierarchy_nodes = {}
+    local game_files_data = files_cache.load(project_root)
+    local engine_files_data = game_project_data.link_engine_cache_root and 
+                              files_cache.load(game_project_data.link_engine_cache_root) or nil
+
+    local game_nodes = (game_files_data and game_files_data.hierarchy_nodes) or {}
+    local i = 1
+    local chunk_size = 500
+
+    
+    local engine_nodes = (engine_files_data and engine_files_data.hierarchy_nodes) or {}
+    local k = 1
+
+
+    local function finalize_build()
+      progress_handle:stage_update("merge", 1)
+      progress_handle:stage_update("filter", 0, "Filtering nodes...")
+      
+      if args and args.module_name then
+        -- (単一モジュールビューのロジック)
+      else
+        root_node.children = hierarchy_nodes
+      end
+      
+      progress_handle:stage_update("filter", 1)
+
+      log.info("Async build complete. Publishing ON_UPROJECT_TREE_UPDATE.")
+      unl_events.publish(unl_event_types.ON_UPROJECT_TREE_UPDATE, { root_node })
+      progress_handle:finish(true)
+    end
+    local function process_engine_chunk()
+      for j = 1, chunk_size do
+        if k > #engine_nodes then
+          defer_fn(finalize_build, 0)
+          return
+        end
+        table.insert(hierarchy_nodes, engine_nodes[k])
+        k = k + 1
+      end
+      defer_fn(process_engine_chunk, 0)
+    end
+
+    local function process_game_chunk()
+      for j = 1, chunk_size do
+        if i > #game_nodes then
+          defer_fn(process_engine_chunk, 0)
+          return
+        end
+        table.insert(hierarchy_nodes, game_nodes[i])
+        i = i + 1
+      end
+      defer_fn(process_game_chunk, 0)
+    end
+
+    defer_fn(process_game_chunk, 0)
+  end
+  
+  start_async_build()
+end
 
 function M.build(project_root, args)
   local log = uep_log.get()
