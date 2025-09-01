@@ -49,24 +49,12 @@ function M.tree(opts)
   cmd_tree.execute(opts or {})
 end
 
-function M.get_project_info()
-  -- UNLのfinderを使って、現在のディレクトリからプロジェクトルートを探す
-  local unl_finder = require("UNL.finder")
-  local project_root = unl_finder.project.find_project_root(vim.fn.getcwd())
-  
-  if not project_root then
-    -- プロジェクトが見つからなければ nil を返す
-    return nil
+function M.update_module_cache(opts, on_complete)
+  if not (opts and opts.module_name) then
+    if on_complete then on_complete(false) end
+    return
   end
-
-  -- .uproject ファイルのキャッシュをロードして、より詳細な情報を取得することもできるが、
-  -- まずはファイル名からプロジェクト名を取得するシンプルな方法で実装する。
-  local uproject_path = unl_finder.project.find_project_file(project_root)
-  local project_name = vim.fn.fnamemodify(uproject_path, ":t:r") -- ファイル名から拡張子を除いた部分
-
-  return {
-    name = project_name,
-    root = project_root,
-  }
+  -- refresh.luaにある実装を直接呼び出す
+  require("UEP.cmd.refresh").update_file_cache_for_single_module(opts.module_name, on_complete)
 end
 return M

@@ -201,7 +201,6 @@ local function create_file_cache(scope, project_data, engine_data, progress, on_
           local cache_to_save = { category = scope, generation = project_data.generation, owner_project_root = project_data.root, files_by_module = all_files_by_module, hierarchy_nodes = hierarchy_data }
 
           files_disk_cache.save(project_data.root, cache_to_save)
-          unl_events.publish(unl_types.ON_AFTER_FILE_CACHE_SAVE)
           progress:stage_update("create_file_cache", 1, "File cache for " .. scope .. " created.")
           if on_complete then on_complete(true) end
         end

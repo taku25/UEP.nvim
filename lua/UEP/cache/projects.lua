@@ -3,7 +3,8 @@
 -- 必要なUNLのコアモジュールをインポート
 local unl_cache_core = require("UNL.cache.core")
 local uep_config = require("UEP.config")
-
+local unl_events = require("UNL.event.events")
+local unl_event_types = require("UNL.event.types")
 -- Neovimの標準モジュール
 local fs = require("vim.fs")
 local json = vim.json
@@ -45,6 +46,10 @@ local function save(projects_data)
     -- エラーハンドリング (必要に応じて)
     require("UEP.logger").get().error("Failed to save projects.json: %s", tostring(err))
   end
+  unl_events.publish(unl_event_types.ON_AFTER_PROJECTS_CACHE_SAVE, {
+    status = "success",
+  })
+  
   return ok
 end
 

@@ -5,6 +5,8 @@ local unl_cache_core = require("UNL.cache.core")
 local unl_path = require("UNL.path")
 local fs = require("vim.fs")
 local uep_context = require("UEP.context") --- ★ 変更点: contextモジュールをrequire
+local unl_events = require("UNL.event.events")
+local unl_event_types = require("UNL.event.types")
 
 local M = {}
 
@@ -46,6 +48,12 @@ function M.save(root_path, type, data)
   --- ★ 変更点: 保存成功後、コンテキストキャッシュも更新する
   local context_key = get_context_key_name(root_path)
   uep_context.set(context_key, data)
+
+  unl_events.publish(unl_event_types.ON_AFTER_PROJECT_CACHE_SAVE, {
+    status = "success",
+    project_root = root_path,
+    type = type,
+  })
 
   return ok, nil
 end
