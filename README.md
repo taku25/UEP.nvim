@@ -1,10 +1,3 @@
-はい、承知いたしました。
-あなたが更新してくれた、より洗練された `README_ja.md` を、自然でプロフェッショナルな英語に翻訳します。
-
-これが、`UEP.nvim` のための `README.md` (English) の最終・完成版です。
-
----
-
 # UEP.nvim
 
 # Unreal Engine Project Explorer 💓 Neovim
