@@ -8,6 +8,7 @@ local unl_event_types = require("UNL.event.types")
 local tree_model_context = require("UEP.state.tree_model_context")
 local tree_model_controller = require("UEP.core.tree_model_controller")
 local uep_event_hub = require("UEP.event.hub")
+  local uep_log           = require("UEP.logger")
 
 local uep_config   = require("UEP.config")
 local M = {}
@@ -19,8 +20,8 @@ local M = {}
 function M.execute(opts)
   -- ★★★ 最初に、UIの存在をチェックする ★★★
   local ok_neotree, _ = pcall(require, "neo-tree.command")
-  local ok_unl_source, _ = pcall(require, "neo-tree-unl")
-  if not (ok_neotree and ok_unl_source) then
+  -- local ok_unl_source, _ = pcall(require, "neo-tree-unl")
+  if not (ok_neotree) then
     uep_log.get().warn("Optional UI plugins ('neo-tree.nvim', 'neo-tree-unl.nvim') are not available.")
     return
   end
