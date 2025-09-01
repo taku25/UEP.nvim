@@ -1,21 +1,59 @@
--- lua/UEP/cmd/delete.lua
--- :UEP delete コマンドの実処理を担うモジュール
-
 local projects_cache = require("UEP.cache.projects")
 local unl_picker     = require("UNL.backend.picker")
-local uep_log       = require("UEP.logger")
+local uep_log        = require("UEP.logger")
+local uep_config     = require("UEP.config")
+-- ★★★ イベント関連のモジュールをrequire ★★★
+local unl_events     = require("UNL.event.events")
+local unl_event_types = require("UNL.event.types")
 
 local M = {}
 
+-------------------------------------------------
+-- Core Logic
+-------------------------------------------------
+
+local function execute_project_deletion(project_root)
+  local project_name = projects_cache.load()[project_root].name or project_root
+  local prompt_str = ("Permanently remove '%s' from the project registry?"):format(project_name)
+
+  vim.ui.select(
+    { "Yes, remove from registry", "No, cancel" },
+    { prompt = prompt_str },
+    function(choice)
+      if not choice or choice ~= "Yes, remove from registry" then
+        uep_log.get().info("Project registry deletion cancelled.")
+        return vim.notify("Deletion cancelled.", vim.log.levels.INFO)
+      end
+      
+      -- 削除処理を実行し、成功したかチェック
+      local ok = projects_cache.remove(project_root)
+
+      -- ★★★ 結果に基づいてイベントを発行 ★★★
+      unl_events.publish(unl_event_types.ON_AFTER_DELETE_PROJECT_REGISTRY, {
+        status = ok and "success" or "failed",
+        project_root = project_root,
+      })
+
+      if ok then
+        uep_log.get().info("Project removed from registry: %s", project_root)
+        vim.notify("Project removed from registry: " .. project_name, vim.log.levels.INFO)
+      else
+        uep_log.get().error("Failed to remove project from registry: %s", project_root)
+        vim.notify("Error: Could not remove project from registry.", vim.log.levels.ERROR)
+      end
+    end
+  )
+end
+
+-------------------------------------------------
+-- Public API (UI Flow)
+-------------------------------------------------
 function M.execute(opts)
-  -- 1. プロジェクト一覧キャッシュを読み込む (cd と同じ)
   local projects = projects_cache.load()
-  if not next(projects) then
-    vim.notify("No known projects to delete.", vim.log.levels.WARN)
-    return
+  if not projects or not next(projects) then
+    return vim.notify("No known projects to delete.", vim.log.levels.WARN)
   end
   
-  -- 2. Pickerで表示するためのアイテムリストを作成する (cd と同じ)
   local picker_items = {}
   for root_path, meta in pairs(projects) do
     table.insert(picker_items, {
@@ -23,48 +61,16 @@ function M.execute(opts)
       value = root_path,
     })
   end
+  table.sort(picker_items, function(a, b) return a.label < b.label end)
   
-  -- 3. UNLのPickerを起動する
-  unl_picker.pick("project_delete", { -- kindは少し変えても良い
+  unl_picker.pick({
+    kind = "project_delete",
     title = "Select Project to DELETE from registry",
     items = picker_items,
-    format = function(item) return item.label end,
-     preview_enabled = false, 
-     on_submit = function(selected_root_path)
+    conf = uep_config.get(),
+    on_submit = function(selected_root_path)
       if not selected_root_path then return end
-      
-      -- 1. 確認プロンプトのメッセージを作成
-      local prompt_str = ("Delete '%s' from registry?"):format(selected_root_path)
-      
-      -- 2. vim.ui.select で確認ダイアログを表示
-      vim.ui.select(
-        -- 選択肢
-        { "Yes, remove from registry", "No, cancel" },
-        -- オプション
-        {
-          prompt = prompt_str,
-          -- (オプション) 各選択肢の見た目を少し整える
-          format_item = function(item) return "  " .. item end,
-        },
-        -- コールバック関数
-        function(choice)
-          if not choice or choice ~= "Yes, remove from registry" then
-            -- "No" が選ばれたか、<Esc> でキャンセルされた場合
-            uep_log.get().info("Project deletion cancelled by user.")
-            vim.notify("Deletion cancelled.", vim.log.levels.INFO)
-            return
-          end
-
-          -- "Yes" が選択された場合
-          uep_log.get().info("Deleting project from registry: %s", selected_root_path)
-          ProjectsCache.remove(selected_root_path)
-          vim.notify("Project removed from registry: " .. selected_root_path, vim.log.levels.INFO)
-        end
-      )
-    end,
-    
-    on_cancel = function()
-      uep_log.get().info("Project deletion picker cancelled.")
+      execute_project_deletion(selected_root_path)
     end,
   })
 end

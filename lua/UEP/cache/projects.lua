@@ -74,10 +74,11 @@ end
 
 function M.remove(project_root)
   local projects = M.load()
-  if projects[project_root] then
+  if projects and projects[project_root] then -- ★ projectsがnilでないこともチェック
     projects[project_root] = nil
-    save(projects)
+    return save(projects) -- ★ save関数の結果(true/false)をそのまま返す
   end
+  return true
 end
 
 return M

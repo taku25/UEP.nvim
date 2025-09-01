@@ -1,48 +1,30 @@
--- lua/UEP/cmd/tree.lua
--- :UEP tree コマンドの実処理 (イベント発行モデル)
--- 責務: 1. 引数を解釈し, 2. キャッシュからデータを構築し, 3. グローバルイベントを発行する
-
-local unl_finder = require("UNL.finder")
+local uep_log = require("UEP.logger")
 local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
-local tree_model_context = require("UEP.state.tree_model_context")
-local tree_model_controller = require("UEP.core.tree_model_controller")
-local uep_event_hub = require("UEP.event.hub")
-  local uep_log           = require("UEP.logger")
+local unl_finder = require("UNL.finder")
 
-local uep_config   = require("UEP.config")
 local M = {}
 
----
--- キャッシュからノードを構築するヘルパー関数
--- (この関数はコマンド間で共通化して別ファイルに切り出すのが理想的)
---
 function M.execute(opts)
-  -- ★★★ 最初に、UIの存在をチェックする ★★★
-  local ok_neotree, _ = pcall(require, "neo-tree.command")
-  -- local ok_unl_source, _ = pcall(require, "neo-tree-unl")
-  if not (ok_neotree) then
-    uep_log.get().warn("Optional UI plugins ('neo-tree.nvim', 'neo-tree-unl.nvim') are not available.")
-    return
+  local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
+  if not project_root then
+    return uep_log.get().error("Not in an Unreal Engine project.")
   end
   
-  -- (これ以降は、UIが存在することが保証されている)
-  tree_model_context.set_last_args(opts)
-  local project_root = unl_finder.project.find_project_root(vim.fn.getcwd())
-  if not project_root then return end
-  
-  local ok, nodes_to_render = tree_model_controller.build(project_root, opts)
+  local proj_info = unl_finder.project.find_project(project_root)
+  local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject, {})
+
+  unl_events.publish(unl_event_types.ON_REQUEST_UPROJECT_TREE_VIEW, {
+    project_root = project_root,
+    engine_root = engine_root,
+    -- ★ ここで引数を解釈して渡す
+    all_depth = (opts.deps_flag == "--all-deps"), 
+    target_module = nil,
+  })
+
+  local ok, neo_tree_cmd = pcall(require, "neo-tree.command")
   if ok then
-
-      -- :UEP tree コマンドのハンドラ (修正後)
-      -- 1. 先に neo-tree を開く（"Waiting for data..." と表示される）
-      require("neo-tree.command").execute({ source = "uproject" })
-
-      -- 2. 非同期でツリーの構築を開始する
-      --    この関数はすぐに処理を返すのでUIは固まらない
-      require("UEP.core.tree_model_controller").build_async(project_root, args)
-    -- require("UEP.event.hub").request_tree_update(nodes_to_render)
-    -- require("neo-tree.command").execute({ source = "uproject", action = "focus" })
+    neo_tree_cmd.execute({ source = "uproject", action = "focus" })
   end
 end
 

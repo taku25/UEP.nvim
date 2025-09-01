@@ -197,8 +197,14 @@ local function create_file_cache(scope, project_data, engine_data, progress, on_
           -- 全てのファイルの処理が完了した
           progress:stage_update("create_file_cache", 1, "Building file hierarchy...")
           -- 階層データの構築は比較的速いので、ここはyieldなしで実行
-          local hierarchy_data = build_hierarchy_nodes(project_data.modules, scope, all_files_by_module)
-          local cache_to_save = { category = scope, generation = project_data.generation, owner_project_root = project_data.root, files_by_module = all_files_by_module, hierarchy_nodes = hierarchy_data }
+          -- local hierarchy_data = build_hierarchy_nodes(project_data.modules, scope, all_files_by_module)
+          local cache_to_save = {
+            category = scope,
+            generation = project_data.generation,
+            owner_project_root = project_data.root,
+            files_by_module = all_files_by_module,
+            -- hierarchy_nodes = hierarchy_data,
+          }
 
           files_disk_cache.save(project_data.root, cache_to_save)
           progress:stage_update("create_file_cache", 1, "File cache for " .. scope .. " created.")
