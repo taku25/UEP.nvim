@@ -82,7 +82,7 @@ function M.get_files_from_cache(opts)
   -- Gameキャッシュのファイルを追加
    -- 4. Gameキャッシュの鮮度をチェック (フラットな構造に対応)
   if not (game_file_cache and game_file_cache.generation == game_project_data.generation) then
-    vim.notify("Game file cache is outdated. Please run :UEP refresh", vim.log.levels.WARN)
+    uep_log.get().warn("Game file cache is outdated. Please run :UEP refresh")
     return nil
   end
 

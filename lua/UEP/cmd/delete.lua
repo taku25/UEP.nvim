@@ -36,10 +36,8 @@ local function execute_project_deletion(project_root)
 
       if ok then
         uep_log.get().info("Project removed from registry: %s", project_root)
-        vim.notify("Project removed from registry: " .. project_name, vim.log.levels.INFO)
       else
         uep_log.get().error("Failed to remove project from registry: %s", project_root)
-        vim.notify("Error: Could not remove project from registry.", vim.log.levels.ERROR)
       end
     end
   )
@@ -51,7 +49,7 @@ end
 function M.execute(opts)
   local projects = projects_cache.load()
   if not projects or not next(projects) then
-    return vim.notify("No known projects to delete.", vim.log.levels.WARN)
+    return uep_log.get().warn("No known projects to delete.", vim.log.levels.WARN)
   end
   
   local picker_items = {}
@@ -69,7 +67,9 @@ function M.execute(opts)
     items = picker_items,
     conf = uep_config.get(),
     on_submit = function(selected_root_path)
-      if not selected_root_path then return end
+      if not selected_root_path then
+        return
+      end
       execute_project_deletion(selected_root_path)
     end,
   })

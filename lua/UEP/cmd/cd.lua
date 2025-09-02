@@ -12,7 +12,7 @@ function M.execute(opts)
   local projects = projects_cache.load()
   
   if not next(projects) then
-    vim.notify("No known projects found. Run :UEP refresh in a project first.", vim.log.levels.WARN)
+    uep_log.get().warn("No known projects found. Run :UEP refresh in a project first.", vim.log.levels.WARN)
     return
   end
   
@@ -44,7 +44,7 @@ function M.execute(opts)
         error_message = err,
       })
       if ok then
-        vim.notify("Changed directory to: " .. selected_root_path, vim.log.levels.INFO)
+        uep_log.get().info("Changed directory to: " .. selected_root_path, vim.log.levels.INFO)
       else
         uep_log.get().error("Failed to cd to '%s': %s", selected_root_path, tostring(err))
       end

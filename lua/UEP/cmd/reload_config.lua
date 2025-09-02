@@ -21,7 +21,6 @@ function M.execute(opts)
 
   -- ログと通知の両方で、ユーザーに処理が完了したことをフィードバックする
   uep_log.info(msg)
-  vim.notify(msg, vim.log.levels.INFO)
 end
 
 return M
