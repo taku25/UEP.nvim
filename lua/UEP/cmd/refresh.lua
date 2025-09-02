@@ -443,7 +443,7 @@ function M.update_file_cache_for_single_module(module_name, on_complete)
 
   local target_module = all_modules[module_name]
   if not (target_module and target_module.module_root) then
-    uep_log.get():error("Cannot update file cache: Module '%s' or its root directory not found.", module_name)
+    uep_log.get().error("Cannot update file cache: Module '%s' or its root directory not found.", module_name)
     if on_complete then on_complete(false) end
     return
   end
@@ -464,9 +464,10 @@ function M.update_file_cache_for_single_module(module_name, on_complete)
     -- ★★★ エラー処理を具体的に記述 ★★★
     on_stderr = function(_, data)
       if data then
+        -- dataはテーブルなので、各行をループで処理する
         for _, line in ipairs(data) do
-          if line ~= "" then
-            uep_log.get().error("Error during single module file search (fd): %s", line)
+          if line and line ~= "" then
+            uep_log.get().error("fd command error: %s", line)
           end
         end
       end
