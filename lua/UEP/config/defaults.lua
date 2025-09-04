@@ -28,6 +28,10 @@ local M = {
       mode = "auto",
       prefer = { "telescope", "fzf-lua", "native", "dummy" },
     },
+    grep_picker = {
+      mode = "auto",
+      prefer = { "telescope", "fzf-lua" }
+    },
 
     progress = {
       mode = "auto",

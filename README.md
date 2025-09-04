@@ -5,17 +5,18 @@
 <table>
   <tr>
    <td><div align=center><img width="100%" alt="UEP Refresh Demo" src="https://raw.githubusercontent.com/taku25/UEP.nvim/images/assets/uep_refresh.gif" /></div></td>
-   <td><div align=center><img width="100%" alt="UEP Logical Tree Demo" src="https://raw.githubusercontent.com/taku25/UEP.nvim/images/assets/uep_tree.gif" /></div></td>
+   <td><div align=center><img width="100%" alt="UEP Tree Demo" src="https://raw.githubusercontent.com/taku25/UEP.nvim/images/assets/uep_tree.gif" /></div></td>
   </tr>
 </table>
 
-`UEP.nvim` is a Neovim plugin designed to understand, navigate, and manage Unreal Engine projects. It asynchronously parses and caches module and file information for the entire project, providing an exceptionally fast and intelligent file navigation experience.
+`UEP.nvim` is a Neovim plugin designed to understand, navigate, and manage the structure of Unreal Engine projects. It asynchronously parses and caches module and file information for the entire project, providing an exceptionally fast and intelligent file navigation experience.
 
-This is a core plugin of the **Unreal Neovim Plugin Sweet**, and it depends on [UNL.nvim](https://github.com/taku25/UNL.nvim) as a library.
+This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.nvim](https://github.com/taku25/UNL.nvim) as its library.
 
-*   Use [UBT.nvim](https://github.com/taku25/UBT.nvim) to run tasks like Build and GenerateClangDataBase asynchronously from within Neovim.
-*   Use [UCM.nvim](https://github.com/taku25/UCM.nvim) to add or remove classes from within Neovim.
-*   Use [neo-tree-unl.nvim](https://github.com/taku25/neo-tree-unl.nvim) to display an IDE-like project explorer.
+With [UBT](https://github.com/taku25/UBT.nvim), you can use features like Build and GenerateClangDataBase asynchronously from within Neovim.
+With [UCM](https://github.com/taku25/UCM.nvim), you can add and delete classes from within Neovim.
+With [ULG](https://github.com/taku25/ULG.nvim), you can access UE logs, trigger Live Coding, and use `stat fps` from within Neovim.
+With [neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim), you can display an IDE-like project explorer.
 
 [English](README.md) | [日本語 (Japanese)](README_ja.md)
 
@@ -24,34 +25,42 @@ This is a core plugin of the **Unreal Neovim Plugin Sweet**, and it depends on [
 ## ✨ Features
 
   * **Fast Asynchronous Caching**:
-      * Scans the entire project (both the game and its linked engine modules) in the background without blocking the UI.
-      * Intelligently separates game and engine caches, allowing multiple projects to share a single engine cache for maximum efficiency.
-      * A `generation` hash system ensures that the file list is always in sync with the module structure.
+      * Scans the entire project (game and linked engine modules) in the background without blocking the UI.
+      * Intelligently separates game and engine caches, maximizing efficiency by allowing multiple projects to share a single engine cache.
+      * Ensures the file list is always in sync with the module structure through a `generation` hash system.
   * **Powerful File Searching**:
       * Provides a flexible `:UEP files` command to find files instantly.
-      * Allows filtering files by scope (**Game**, **Engine**).
-      * Supports including module dependencies (**shallow** `dependencies` or **deep** `dependencies`) in the search.
+      * Allows filtering files by scope (**Game**, **Engine**, **All**).
+      * Supports including module dependencies in the search (**--no-deps** `dependencies` or **--all-deps** `dependencies`).
+  * **Intelligent Content Searching (Grep)**:
+      * Performs high-speed content searches across the entire project and engine source code (requires ripgrep).
+      * The `:UEP grep` command lets you specify the search scope (**Game** (default), **Engine**).
+      * The `:UEP module_grep` command enables focused, noise-free searches within a specific module (`<module_name>`).
   * **UI Integration**:
-      * Leverages the UI abstraction layer of `UNL.nvim` to automatically use UI frontends like [Telescope](https://github.com/nvim-telescope/telescope.nvim) or [fzf-lua](https://github.com/ibhagwan/fzf-lua).
-      * Falls back to Neovim's native UI if no supported UI plugin is installed.
+      * Leverages `UNL.nvim`'s UI abstraction layer to automatically use UI frontends like [Telescope](https://github.com/nvim-telescope/telescope.nvim) and [fzf-lua](https://github.com/ibhagwan/fzf-lua).
+      * Falls back to the native Neovim UI if no UI plugin is installed.
   * **IDE-like Logical Tree View**:
-      * Integrates with **[neo-tree-unl.nvim](https://github.com/taku25/neo-tree-unl.nvim)** to provide a logical tree view similar to a solution explorer in an IDE.
-      * The `:UEP tree` command gives a bird's-eye view of the entire project structure (Game, Plugins, Engine).
-      * The `:UEP module_tree` command switches to a focused view on a single module.
-      * Running `:UEP refresh` automatically updates the open tree view to the latest state.
+      * Provides a logical tree view similar to an IDE's solution explorer through integration with **[neo-tree-unl.nvim](https://github.com/taku25/neo-tree-unl.nvim)**.
+      * The `:UEP tree` command gives you an overview of the entire project structure (Game, Plugins, Engine).
+      * The `:UEP module_tree` command allows you to switch to a view focused on a single module.
+      * Running `:UEP refresh` automatically updates the open tree to the latest state.
+
+
 
 ## 🔧 Requirements
 
-  * Neovim v0.8+
+  * Neovim v0.11.3 or later
   * [**UNL.nvim**](https://github.com/taku25/UNL.nvim) (**Required**)
   * [fd](https://github.com/sharkdp/fd) (**Required for project scanning**)
-  * **Optional (Strongly recommended for the best UI experience):**
+  * [rg](https://github.com/BurntSushi/ripgrep) (**Required for project Grep**)
+  * **Optional (Strongly recommended for the full experience):**
       * **UI (Picker):**
           * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
           * [fzf-lua](https://github.com/ibhagwan/fzf-lua)
       * **UI (Tree View):**
           * [**neo-tree.nvim**](https://github.com/nvim-neo-tree/neo-tree.nvim)
-          * [**neo-tree-unl.nvim**](https://github.com/taku25/neo-tree-unl.nvim) (**Required** to use the `:UEP tree` and `:UEP module_tree` commands)
+          * [**neo-tree-unl.nvim**](https://github.com/taku25/neo-tree-unl.nvim) (**Required** for `:UEP tree` and `:UEP module_tree` commands)
+
 
 ## 🚀 Installation
 
@@ -69,16 +78,16 @@ return {
   },
   -- All settings are inherited from UNL.nvim, but can be overridden here
   opts = {
-    -- Any UEP-specific settings would go here
+    -- UEP-specific settings can be placed here
   },
 }
 ```
 
 ## ⚙️ Configuration
 
-This plugin is configured through the setup function of its library, `UNL.nvim`. However, you can also configure `UEP` namespace settings by passing `opts` directly to the `UEP.nvim` spec.
+This plugin is configured through the setup function of its library, `UNL.nvim`. However, you can also pass `opts` directly to `UEP.nvim` to configure settings in the `UEP` namespace.
 
-The following are the default values related to `UEP.nvim`.
+Below are the default values related to `UEP.nvim`.
 
 ```lua
 -- Place inside the spec for UEP.nvim or UNL.nvim in lazy.nvim
@@ -87,6 +96,13 @@ opts = {
   uep = {
     -- Section for future UEP-specific settings
   },
+  
+
+  -- Directory names to search for files during tree construction
+  include_directory = { "Source", "Plugins", "Config", },
+
+  -- Folder names to exclude during tree construction
+  excludes_directory  = { "Intermediate", "Binaries", "Saved" },
 
   -- File extensions to be scanned by the ':UEP refresh' command
   files_extensions = {
@@ -98,6 +114,10 @@ opts = {
     picker = {
       mode = "auto", -- "auto", "telescope", "fzf_lua", "native"
       prefer = { "telescope", "fzf_lua", "native" },
+    },
+    grep_picker = {
+      mode = "auto",
+      prefer = { "telescope", "fzf-lua" }
     },
     progress = {
       enable = true,
@@ -113,22 +133,28 @@ opts = {
 All commands start with `:UEP`.
 
 ```viml
-" Rescan the project and update the cache. This is the most important command.
+" Re-scan the project and update the cache. This is the most important command.
 :UEP refresh [Game|Engine]
 
-" Open a UI to search for files with various conditions.
+" Open a UI to search for files under various conditions.
 :UEP files[!] [Game|Engine] [--all-deps]
 
 " Search for files belonging to a specific module.
 :UEP module_files[!] [ModuleName]
 
-" Display a logical view of the entire project (requires neo-tree-unl.nvim)
+" LiveGrep files belonging to a specific module.
+:UEP grep [Game|Engine] <Query>
+
+" LiveGrep files belonging to a specific module.
+:UEP module_grep <ModuleName> <Query>
+
+" Display the logical tree for the entire project (requires neo-tree-unl.nvim)
 :UEP tree
 
-" Display a logical view of a single module (requires neo-tree-unl.nvim)
+" Display the logical tree for a specific module (requires neo-tree-unl.nvim)
 :UEP module_tree [ModuleName]
 
-" Show a UI list of known projects and change the current directory to the selected one.
+" Display a list of known projects in a UI and change the current directory to the selected project.
 :UEP cd
 
 " Remove a project from the list of known projects (does not delete files).
@@ -136,46 +162,86 @@ All commands start with `:UEP`.
 ```
 
 ### Command Details
-
   * **`:UEP refresh`**:
-      * `Game` (default): Scans only the modules of the current game project. If a linked engine cache does not exist, the engine will be scanned automatically first.
+      * `Game` (default): Scans only the modules of the current game project. If the linked engine is not cached, it will be scanned automatically first.
       * `Engine`: Scans only the modules of the linked engine.
+  * **`:UEP cd`**:
+      * Changes the current directory to the root of a project managed by UEP.
+          * Projects are registered to management during `refresh`.
+  * **`:UEP delete`**:
+      * Deletes a project from UEP's management.
+          * This only removes it from UEP's internal list; the actual UE project files are not deleted.
   * **`:UEP files[!]`**:
       * Without `!`: Selects files from the existing cache data.
       * With `!`: Deletes the cache and creates a new one before selecting files.
       * `[Game|Engine]` (default `Game`): The scope of modules to search.
-      * `[--all-deps]` (default behavior is shallow dependencies):
-          * shallow: Searches only within the modules of the specified scope.
-          * `--all-deps`: Includes all dependent modules in the search (uses `deep_dependencies`).
+      * `[--no-deps|--all-deps]` (default `--no-deps`):
+          * `--no-deps`: Searches only within the modules of the specified scope.
+          * `--all-deps`: Includes all dependent modules in the search (`deep_dependencies`).
   * **`:UEP module_files[!]`**:
-      * Without `!`: Uses the existing cache to search for files in the specified module.
+      * Without `!`: Searches for files in the specified module using the existing cache.
       * With `!`: Performs a lightweight update of the file cache for only the specified module before searching.
   * **`:UEP tree`**:
       * Only works if `neo-tree-unl.nvim` is installed.
-      * Opens a complete logical tree in `neo-tree`, including the "Game," "Plugins," and "Engine" categories for the entire project.
+      * Opens a full logical tree in `neo-tree`, including "Game", "Plugins", and "Engine" categories for the entire project.
   * **`:UEP module_tree [ModuleName]`**:
       * Only works if `neo-tree-unl.nvim` is installed.
-      * If `ModuleName` is passed as an argument, it displays a tree rooted at that module.
-      * If run without arguments, it displays a picker UI to select a module from the project.
+      * If `ModuleName` is provided, it displays a tree rooted at that module only.
+      * If run without arguments, it displays a picker UI to select from all modules in the project.
+  * **`:UEP grep [Scope]`**:
+      * LiveGreps the entire project and engine source code (requires ripgrep).
+      * `Scope` can be `Game` (default) or `Engine` to limit the search area.
+      * `Game`: Searches only your project's source files and plugins.
+      * `Engine`: In addition to project code, also searches the associated engine source code.
+  * **`:UEP module_grep <ModuleName>`**:
+      * Searches for content within the directory of the specified `<ModuleName>`.
+      * Provides noise-free results when investigating the implementation of a specific feature.
+      * If no module is specified, a picker will be shown to select a module.
 
-## 🤖 API & Automation Examples
+## 🤖 API & Automation (Automation Examples)
 
 You can use the `UEP.api` module to integrate with other Neovim configurations.
 
-### Create a Keymap for File Searching
+### Create a keymap for file searching
 
 Create a keymap to quickly search for files in the current project.
 
 ```lua
--- in your init.lua or keymaps.lua
+-- in init.lua or keymaps.lua
 vim.keymap.set('n', '<leader>pf', function()
   -- The API is simple and clean
   require('UEP.api').files({})
-end, { desc = "[P]roject [F]iles" })
-```
-*(The `Neo-treeとの連携` section was removed as the new recommended way is via the `:UEP tree` command)*
+end, { desc = "[P]roject [F]iles" })```
 
-## 📜 ライセンス (License)
+### Integration with Neo-tree
+
+Add a keymap in Neo-tree to open the UEP file finder for the project to which the selected directory belongs.
+
+```lua
+-- Example Neo-tree setup
+opts = {
+  filesystem = {
+    window = {
+      mappings = {
+        ["<leader>pf"] = function(state)
+          -- Get the directory of the currently selected node
+          local node = state.tree:get_node()
+          local path = node:get_id()
+          if node.type ~= "directory" then
+            path = require("vim.fs").dirname(path)
+          end
+
+          -- Set CWD inside the project before calling the API
+          vim.api.nvim_set_current_dir(path)
+          require("UEP.api').tree({})
+        end,
+      },
+    },
+  },
+}
+```
+
+## 📜 License
 
 MIT License
 

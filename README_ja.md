@@ -15,6 +15,7 @@
 
 [UBT](https://github.com/taku25/UBT.nvim)を使うとBuildやGenerateClangDataBaseなどを非同期でNeovim上から使えるようになります
 [UCM](https://github.com/taku25/UCM.nvim)を使うとクラスの追加や削除がNeovim上からできるようになります。
+[ULG](https://github.com/taku25/ULG.nvim)を使うとUEのログやliveCoding,stat fpsなどnvim上からできるようになります
 [neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)を使うとIDEのようなプロジェクトエクスプローラーを表示できます。
 
 
@@ -32,6 +33,10 @@
       * ファイルを即座に見つけるための柔軟な`:UEP files`コマンドを提供します。
       * スコープ（**Game**, **Engine**, **All**）でファイルをフィルタリングできます。
       * モジュールの依存関係（**--no-deps** `dependencies`または**--all-deps** `dependencies`）を検索に含めることが可能です。
+  * **インテリジェントなコンテンツ検索 (Grep)**:
+      * プロジェクトとエンジンのソースコード全体を横断して、ファイルの中身を高速に検索します (ripgrepが必須)。
+      * :UEP grep コマンドで、検索範囲をスコープ (Game (デフォルト), Engine) で指定できます。
+      * :UEP module_grep コマンドで、特定のモジュール (<module_name>) 内に限定した、ノイズのない集中検索が可能です。
   * **UI統合**:
       * `UNL.nvim`のUI抽象化レイヤーを活用し、[Telescope](https://github.com/nvim-telescope/telescope.nvim)や[fzf-lua](https://github.com/ibhagwan/fzf-lua)のようなUIフロントエンドを自動的に使用します。
       * UIプラグインがインストールされていない場合でも、NeovimネイティブのUIにフォールバックします。
@@ -48,6 +53,7 @@
   * Neovim v0.11.3 以上
   * [**UNL.nvim**](https://www.google.com/search?q=https://github.com/taku25/UNL.nvim) (**必須**)
   * [fd](https://github.com/sharkdp/fd) (**プロジェクトのスキャンに必須**)
+  * [rg](https://github.com/BurntSushi/ripgrep) (**プロジェクトのGrepに必須**)
   * **オプション (完全な体験のために、導入を強く推奨):**
       * **UI (Picker):**
           * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
@@ -91,6 +97,13 @@ opts = {
   uep = {
     -- 将来的なUEP固有設定のためのセクション
   },
+  
+
+  -- Tree構築時にファイルを検索する ディレクトリ名
+  include_directory = { "Source", "Plugins", "Config", },
+
+  -- Tree構築時に排除するフォルダ名
+  excludes_directory  = { "Intermediate", "Binaries", "Saved" },
 
   -- ':UEP refresh' コマンドによってスキャンされるファイルの拡張子
   files_extensions = {
@@ -102,6 +115,10 @@ opts = {
     picker = {
       mode = "auto", -- "auto", "telescope", "fzf_lua", "native"
       prefer = { "telescope", "fzf_lua", "native" },
+    },
+    grep_picker = {
+      mode = "auto",
+      prefer = { "telescope", "fzf-lua" }
     },
     progress = {
       enable = true,
@@ -125,6 +142,13 @@ opts = {
 
 " 特定のモジュールに属するファイルを検索します。
 :UEP module_files[!] [ModuleName]
+" 様々な条件でファイルを検索するためのUIを開きます。
+
+" 特定のモジュールに属するファイルをLiveGrepします
+:UEP grep [Game|Engine] ]
+
+" 特定のモジュールに属するファイルをLiveGrepします
+:UEP module_grep [ModuleName]
 
 " プロジェクト全体の論理ツリーを表示します (neo-tree-unl.nvim が必要)
 :UEP tree
@@ -140,9 +164,25 @@ opts = {
 ```
 
 ### コマンド詳細
-
-(**:UEP refresh**, **:UEP files**, **:UEP module_files** のセクションは変更ありません)
-
+  * **`:UEP refresh`**:
+      * `Game` (デフォルト): 現在のゲームプロジェクトのモジュールのみをスキャンします。リンクされたエンジンのキャッシュがない場合は、先にエンジンが自動でスキャンされます。
+      * `Engine`: リンクされたエンジンのモジュールのみをスキャンします。
+  * **`:UEP cd`**:
+      * UEP が管理しているプロジェクトのルートに移動します
+          * refresh時に管理に登録されます
+  * **`:UEP delete`**:
+      * UEP が管理しているプロジェクトを削除します
+          * UEP側の管理から削除されるだけで実際のUEプロジェクトは削除されません
+  * **`:UEP files[!]`**:
+      * `!`なし: 既存のキャッシュデータからファイルを選択します
+      * `!`あり: キャッシュを削除して新しいキャッシュを作成してからファイルを選択します
+      * `[Game|Engine]` (デフォルト `Game`): 検索対象とするモジュールのスコープです。
+      * `[--no-deps|--all-deps]` (デフォルト `--no-deps`):
+          * `--no-deps`: 指定されたスコープのモジュール内のみを検索します。
+          * `--all-deps`: 依存関係にある全てのモジュールを検索対象に含めます（`deep_dependencies`を使用）。
+  * **`:UEP module_files[!]`**:
+      * `!`なし: 既存のキャッシュを使って指定されたモジュールのファイルを検索します。
+      * `!`あり: 検索前に、指定されたモジュールのファイルキャッシュのみを軽量に更新します。
   * **`:UEP tree`**:
       * `neo-tree-unl.nvim` がインストールされている場合にのみ機能します。
       * プロジェクト全体の「Game」「Plugins」「Engine」のカテゴリを含む、完全な論理ツリーを`neo-tree`で開きます。
@@ -150,7 +190,15 @@ opts = {
       * `neo-tree-unl.nvim` がインストールされている場合にのみ機能します。
       * `ModuleName`を引数として渡すと、そのモジュールのみをルートとしたツリーが表示されます。
       * 引数なしで実行すると、プロジェクト内の全モジュールを選択するためのピッカーUIが表示されます。
-      
+  * **`:UEP grep [Scope]`**
+      * プロジェクトとエンジンのソースコード全体からLiveGrepします検索します (ripgrepが必須)。
+      * ScopeにはGame (デフォルト) または Engine を指定でき、検索範囲を限定します。
+      * Game: あなたのプロジェクトのソースファイルとプラグインのみを検索します。
+      * Engine: プロジェクトのコードに加え、関連付けられたエンジンのソースコードも同時に検索します。
+  * **`:UEP module_grep <ModuleName>`**;
+      * 指定された<ModuleName>のディレクトリ内に限定して、ファイルの中身を検索します。
+      * 特定の機能の実装を深く調査する際に、ノイズのない検索結果を得られます。 
+      * モジュールを指定しない場合はpickerでモジュールを選択します
 
 ## 🤖 API & 自動化 (Automation Examples)
 
