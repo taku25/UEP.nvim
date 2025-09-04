@@ -7,6 +7,9 @@ local M = {
   },
   cache = { dirname = "UEP" },
 
+  include_directory = { "Source", "Plugins", "Config", },
+  excludes_directory  = { "Intermediate", "Binaries", "Saved" },
+
   files_extensions = {
     "cpp", "h", "hpp", "inl", "ini", "cs",
   },

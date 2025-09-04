@@ -74,6 +74,22 @@ local command_spec = {
         { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
       },
     },
+    grep = {
+      handler = uep_api.grep,
+      bang = true,
+      desc = ":UEP grep [game|engine]",
+      args = {
+        { name = "category", required = false },
+      },
+    },
+    module_grep = {
+      handler = uep_api.module_grep,
+      bang = true,
+      desc = ":UEP grep_module {module_name}",
+      args = {
+        { name = "module_name", required = false },
+      },
+    },
   },
 }
 

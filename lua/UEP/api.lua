@@ -8,6 +8,8 @@ local cmd_files = require("UEP.cmd.files")
 local cmd_module_files = require("UEP.cmd.module_files")
 local cmd_module_tree = require("UEP.cmd.module_tree")
 local cmd_tree = require("UEP.cmd.tree")
+local cmd_grep = require("UEP.cmd.grep")
+local cmd_module_grep = require("UEP.cmd.module_grep")
 
 local M = {}
 
@@ -56,5 +58,13 @@ function M.update_module_cache(opts, on_complete)
   end
   -- refresh.luaにある実装を直接呼び出す
   require("UEP.cmd.refresh").update_file_cache_for_single_module(opts.module_name, on_complete)
+end
+
+function M.grep(opts)
+  cmd_grep.execute(opts or {})
+end
+
+function M.module_grep(opts)
+  cmd_module_grep.execute(opts or {})
 end
 return M
