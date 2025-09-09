@@ -41,8 +41,10 @@ local M = {
       weights = {
         -- UEP.nvimが使うステージ名に合わせて重みを設定
         scanning      = 0.05, -- fd でのファイル検索
-        parse_modules = 0.40, -- Build.cs の解析
-        resolve_deps  = 0.50, -- 依存関係の解決
+        parse_modules = 0.30, -- Build.cs の解析
+        resolve_deps  = 0.30, -- 依存関係の解決
+        create_file_cache = 0.15,
+        header_analysis_detail = 0.15,
         save_cache    = 0.05, -- キャッシュの保存
       },
     },

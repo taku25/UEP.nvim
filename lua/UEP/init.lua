@@ -25,6 +25,8 @@ function M.setup(user_config)
 
 
   require("UEP.event.hub").setup()
+  require("UEP.provider").setup()
+
 end
 
 return M

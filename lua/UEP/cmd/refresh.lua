@@ -13,7 +13,7 @@ local uep_log           = require("UEP.logger")
 local files_disk_cache  = require("UEP.cache.files")
 local unl_events        = require("UNL.event.events")
 local unl_types         = require("UNL.event.types")
-
+-- local class_parser      = require("UEP.parser.class") -- 新規作成するパーサーモジュール
 local M = {}
 
 -------------------------------------------------
@@ -89,56 +89,13 @@ local function build_fs_tree_from_flat_list(file_list, root_path)
   return table_to_nodes(root, root_path)
 end
 
-local function build_hierarchy_nodes(modules_meta, project_type, files_by_module)
-  local root_nodes = {
-    Game = { id = project_type .. "_Game", name = "Game", type = "directory", extra = { uep_type = "category" }, children = {} },
-    Plugins = { id = project_type .. "_Plugins", name = "Plugins", type = "directory", extra = { uep_type = "category" }, children = {} },
-  }
-  if project_type == "Engine" then
-    root_nodes["Engine"] = { id = project_type .. "_Engine", name = "Engine", type = "directory", extra = { uep_type = "category" }, children = {} }
-  end
-  local plugin_nodes = {}
-  for name, meta in pairs(modules_meta) do
-    if meta.module_root then
-      local module_files = files_by_module[name] or {}
-      local file_tree = build_fs_tree_from_flat_list(module_files, meta.module_root)
-      local node = { id = meta.module_root, name = name, path = meta.module_root, type = "directory", extra = { uep_type = "module" }, children = file_tree }
-      if meta.location == "in_plugins" then
-        local plugin_name = meta.module_root:match("[/\\]Plugins[/\\]([^/\\]+)")
-        if plugin_name then
-          if not plugin_nodes[plugin_name] then
-            local plugin_path = meta.module_root:match("(.+[/\\]Plugins[/\\][^/\\]+)")
-            plugin_nodes[plugin_name] = { id = plugin_path, name = plugin_name, path = plugin_path, type = "directory", extra = { uep_type = "plugin" }, children = {} }
-          end
-          table.insert(plugin_nodes[plugin_name].children, node)
-        else
-          table.insert(root_nodes.Plugins.children, node)
-        end
-      elseif meta.location == "in_source" then
-        local category_key = (project_type == "Engine") and "Engine" or "Game"
-        if root_nodes[category_key] then table.insert(root_nodes[category_key].children, node) end
-      end
-    end
-  end
-  for _, plugin_node in pairs(plugin_nodes) do table.insert(root_nodes.Plugins.children, plugin_node) end
-  local final_nodes = {}
-  local categories_order = { "Game", "Engine", "Plugins" }
-  for _, category_name in ipairs(categories_order) do
-    local category_node = root_nodes[category_name]
-    if category_node and #category_node.children > 0 then
-      category_node.path = category_node.id
-      table.insert(final_nodes, category_node)
-    end
-  end
-  return final_nodes
-end
-
--------------------------------------------------
--- New & Refactored Core Functions
--------------------------------------------------
-
---- ファイルキャッシュ作成処理 (UI応答性改善版)
-local function create_file_cache(scope, project_data, engine_data, progress, on_complete)
+--- ファイルキャッシュ作成処理 (coroutineによるリファクタリング版)
+-- @param scope string "Game" or "Engine"
+-- @param project_data table
+-- @param engine_data table|nil
+-- @param progress table
+-- @param on_all_done function(ok) 全ての処理が完了したときに呼ばれるコールバック
+local function create_file_cache(scope, project_data, engine_data, progress, on_all_done)
   progress:stage_define("create_file_cache", 1)
   progress:stage_update("create_file_cache", 0, "Scanning project files for " .. scope .. "...")
 
@@ -151,81 +108,83 @@ local function create_file_cache(scope, project_data, engine_data, progress, on_
     on_stdout = function(_, data)
       if data then
         for _, line in ipairs(data) do
-          if line ~= "" then table.insert(found_files, line)
-          end
+          if line ~= "" then table.insert(found_files, line) end
         end
       end
     end,
     on_exit = function(_, code)
       if code ~= 0 then
         progress:stage_update("create_file_cache", 1, "Failed to list files.", { error = true })
-        if on_complete then on_complete(false) end
+        if on_all_done then on_all_done(false) end
         return
       end
 
-      -- ★★★ ここからが大きな変更点 ★★★
-      -- UIをブロックしないように、ループ処理をチャンクに分割して遅延実行する
-      local all_files_by_module = {}
-      local all_modules_meta = vim.tbl_extend("force", {}, engine_data and engine_data.modules or {}, project_data.modules)
-      local sorted_modules = {}
-      for name, meta in pairs(all_modules_meta) do if meta.module_root then table.insert(sorted_modules, { name = name, root = meta.module_root .. "/" }) end end
-      table.sort(sorted_modules, function(a, b) return #a.root > #b.root end)
+      -- ★★★ ここからがcoroutineを使った新しい処理フロー ★★★
+      local co = coroutine.create(function()
+        local all_files_by_module = {}
+        local all_modules_meta = vim.tbl_deep_extend("force", {}, engine_data and engine_data.modules or {}, project_data.modules)
+        local sorted_modules = {}
+        for name, meta in pairs(all_modules_meta) do
+          if meta.module_root then
+            table.insert(sorted_modules, { name = name, root = meta.module_root .. "/" })
+          end
+        end
+        table.sort(sorted_modules, function(a, b) return #a.root > #b.root end)
 
-      local i = 1
-      local total_files = #found_files
-      local chunk_size = 500 -- 一度に処理するファイル数 (この値で応答性を調整可能)
+        local total_files = #found_files
+        local chunk_size = 500
 
-      local function process_chunk()
-        progress:stage_update("create_file_cache", (i / total_files), ("Processing files (%d/%d)..."):format(i, total_files))
-
-        local chunk_limit = math.min(i + chunk_size - 1, total_files)
-        for j = i, chunk_limit do
-          local file_path = found_files[j]
-          local owner = find_owner_module(file_path, sorted_modules)
-          if owner then
-            if not all_files_by_module[owner] then all_files_by_module[owner] = {} end
-            table.insert(all_files_by_module[owner], file_path)
+        if total_files > 0 then
+          for i = 1, total_files do
+            local file_path = found_files[i]
+            local owner = find_owner_module(file_path, sorted_modules)
+            if owner then
+              if not all_files_by_module[owner] then all_files_by_module[owner] = {} end
+              table.insert(all_files_by_module[owner], file_path)
+            end
+            
+            -- チャンクごとにUIに制御を返し、プログレスバーを更新する
+            if i % chunk_size == 0 then
+              progress:stage_update("create_file_cache", i / total_files, ("Processing files (%d/%d)..."):format(i, total_files))
+              coroutine.yield() -- ここで処理を中断し、resume_handlerに制御を戻す
+            end
           end
         end
 
-        i = i + chunk_size
+        -- ループ完了後、最終的なキャッシュを作成して保存
+        local cache_to_save = {
+          category = scope,
+          generation = project_data.generation,
+          owner_project_root = project_data.root,
+          files_by_module = all_files_by_module,
+        }
+        files_disk_cache.save(project_data.root, cache_to_save)
+        progress:stage_update("create_file_cache", 1, "File cache for " .. scope .. " created.")
+        
+        -- 最後に完了コールバックを呼ぶ
+        if on_all_done then on_all_done(true) end
+      end)
 
-        if i <= total_files then
-          -- まだ処理するファイルが残っていれば、次のチャンクを遅延実行
-          vim.defer_fn(process_chunk, 1) -- 1ms後に次のチャンクへ
-        else
-          -- 全てのファイルの処理が完了した
-          progress:stage_update("create_file_cache", 1, "Building file hierarchy...")
-          -- 階層データの構築は比較的速いので、ここはyieldなしで実行
-          -- local hierarchy_data = build_hierarchy_nodes(project_data.modules, scope, all_files_by_module)
-          local cache_to_save = {
-            category = scope,
-            generation = project_data.generation,
-            owner_project_root = project_data.root,
-            files_by_module = all_files_by_module,
-            -- hierarchy_nodes = hierarchy_data,
-          }
-
-          files_disk_cache.save(project_data.root, cache_to_save)
-          progress:stage_update("create_file_cache", 1, "File cache for " .. scope .. " created.")
-          if on_complete then on_complete(true) end
+      -- coroutineを実行するためのランナー
+      local function resume_handler()
+        local status, err = coroutine.resume(co)
+        if not status then
+          uep_log.get().error("Error in create_file_cache coroutine: %s", tostring(err))
+          if on_all_done then on_all_done(false) end
+          return
+        end
+        -- coroutineがまだ終了していなければ（yieldで中断された場合）、
+        -- 次のUIティックで処理を再開するようスケジュールする
+        if coroutine.status(co) ~= "dead" then
+          vim.defer_fn(resume_handler, 0) -- 0ms or 1ms
         end
       end
 
-      -- 最初のチャンク処理を開始
-      if total_files > 0 then
-        process_chunk()
-      else
-        -- ファイルが一つもなくてもキャッシュファイルは作成する
-        local cache_to_save = { category = scope, generation = project_data.generation, owner_project_root = project_data.root, files_by_module = {}, hierarchy_nodes = {} }
-        files_disk_cache.save(project_data.root, cache_to_save)
-        progress:stage_update("create_file_cache", 1, "File cache for " .. scope .. " created (no files).")
-        if on_complete then on_complete(true) end
-      end
+      -- coroutineの実行を開始
+      resume_handler()
     end
   })
 end
-
 --- モジュール解析とハッシュ計算を行うコアロジックを独立関数に
 local function analyze_and_get_project_data(root_path, type, engine_cache, progress, on_complete)
   local search_paths
@@ -348,8 +307,91 @@ local function process_single_project_type(root_path, type, force_regenerate, en
 
     -- ★★★ filesキャッシュの作成は、projectキャッシュの更新有無に関わらず常に実行する ★★★
     create_file_cache(type, data_for_files_cache, engine_cache, progress, function(file_cache_ok)
-      -- 完了コールバックには、最終的に使われたデータを渡す
-      on_complete(file_cache_ok, data_for_files_cache)
+      if not file_cache_ok then
+        on_complete(false, data_for_files_cache)
+        return
+      end
+
+      -- ▼▼▼ ここからが追加ブロック ▼▼▼
+      -- Gameプロジェクトの深い依存関係モジュールのみを対象に、ヘッダー解析を行う
+      if type == "Game" then
+        local class_parser = require("UEP.parser.class")
+
+        progress:stage_define("parse_headers", 1)
+        progress:stage_update("parse_headers", 0, "Analyzing C++ headers...")
+
+        -- 1. 解析対象モジュールを特定
+        -- ▼▼▼ このブロックを修正します ▼▼▼
+
+        -- 1. 解析対象モジュールを特定（カテゴリの縛りをなくす）
+        local target_modules = {}
+
+        -- GameとEngineの全モジュール情報を一時的にマージして、依存関係を辿れるようにする
+        local all_modules_meta = vim.tbl_deep_extend("force", 
+        engine_cache and engine_cache.modules or {}, 
+        data_for_files_cache.modules)
+
+        for name, meta in pairs(data_for_files_cache.modules) do
+          -- Gameプロジェクトに属するモジュールは常に対象
+          if meta.category == "Game" then
+            target_modules[name] = true
+            -- そのモジュールの深い依存関係をすべて追加する（Engineモジュールも含む！）
+            if meta.deep_dependencies then
+              for _, dep_name in ipairs(meta.deep_dependencies) do
+                target_modules[dep_name] = true
+              end
+            end
+          end
+        end
+
+        -- 2. ファイルキャッシュをロードし、解析対象のヘッダーファイルリストを作成
+        -- (この部分のロジックは変更なし)
+        local files_cache = files_disk_cache.load(root_path)
+        -- Engine側のファイルキャッシュもロードする必要がある
+        local engine_files_cache = engine_cache and files_disk_cache.load(engine_cache.root) or nil
+
+        local headers_to_parse = {}
+        if files_cache and files_cache.files_by_module then
+          for module_name, _ in pairs(target_modules) do
+            -- モジュールがGameキャッシュにあるか、Engineキャッシュにあるかを探してファイルリストを取得
+            local file_list = files_cache.files_by_module[module_name] 
+            or (engine_files_cache and engine_files_cache.files_by_module[module_name])
+
+            if file_list then
+              for _, file_path in ipairs(file_list) do
+                if file_path:match("%.h$") then
+                  table.insert(headers_to_parse, file_path)
+                end
+              end
+            end
+          end
+        end
+
+        -- 3. 新しいパーサーに処理を委譲
+        if #headers_to_parse > 0 then
+          -- 解析処理を非同期で実行し、完了したらコールバック
+          class_parser.parse_headers_async(root_path, headers_to_parse, progress, function(ok, header_details)
+            if ok then
+              -- 既存のファイルキャッシュに詳細情報をマージして保存
+              local final_files_cache = files_disk_cache.load(root_path) or {}
+              final_files_cache.header_details = header_details
+              files_disk_cache.save(root_path, final_files_cache)
+              progress:stage_update("parse_headers", 1, "Header analysis complete.")
+            else
+              progress:stage_update("parse_headers", 1, "Header analysis failed.", { error = true })
+            end
+            -- 解析の成否に関わらず、refresh全体の完了コールバックを呼ぶ
+            on_complete(true, data_for_files_cache)
+          end)
+        else
+          -- 解析対象ファイルがない場合は、そのまま完了
+          on_complete(true, data_for_files_cache)
+        end
+      else
+        -- Engineプロジェクトの場合は何もしない
+        on_complete(true, data_for_files_cache)
+      end
+      -- ▲▲▲ 追加ブロックここまで ▲▲▲
     end)
   end)
 end
