@@ -60,34 +60,6 @@ local function create_fd_command(search_paths)
 
   return fd_cmd
 end
-local function build_fs_tree_from_flat_list(file_list, root_path)
-  local root = {}
-  for _, file_path in ipairs(file_list) do
-    local current_level = root
-    local relative_path = file_path:sub(#root_path + 2)
-    local parts = vim.split(relative_path, "[/]")
-    for i, part in ipairs(parts) do
-      if not current_level[part] then current_level[part] = {} end
-      current_level = current_level[part]
-    end
-  end
-  local function table_to_nodes(tbl, current_path)
-    local nodes = {}
-    for name, content in pairs(tbl) do
-      local new_path = fs.joinpath(current_path, name)
-      local node_type = "file"
-      local children_nodes = nil
-      if next(content) then
-        node_type = "directory"
-        children_nodes = table_to_nodes(content, new_path)
-      end
-      table.insert(nodes, { id = new_path, name = name, path = new_path, type = node_type, children = children_nodes })
-    end
-    table.sort(nodes, function(a, b) return a.name < b.name end)
-    return nodes
-  end
-  return table_to_nodes(root, root_path)
-end
 
 --- ファイルキャッシュ作成処理 (coroutineによるリファクタリング版)
 -- @param scope string "Game" or "Engine"

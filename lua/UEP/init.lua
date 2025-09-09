@@ -24,9 +24,16 @@ function M.setup(user_config)
   end
 
 
-  require("UEP.event.hub").setup()
   require("UEP.provider").setup()
 
+
+  local unl_events_ok, unl_events = pcall(require, "UNL.event.events")
+  if unl_events_ok then
+      local unl_types_ok, unl_event_types = pcall(require, "UNL.event.types")
+      if unl_types_ok then
+          unl_events.publish(unl_event_types.ON_PLUGIN_AFTER_SETUP, { name = "UEP" })
+      end
+  end
 end
 
 return M

@@ -1,15 +1,23 @@
-local uep_log = require("UEP.logger")
-local unl_events = require("UNL.event.events")
-local unl_event_types = require("UNL.event.types")
+-- lua/UEP/cmd/module_tree.lua (プロバイダーアーキテクチャ版)
+
+local uep_log = require("UEP.logger").get()
 local unl_finder = require("UNL.finder")
+local unl_context = require("UNL.context")
 local project_cache = require("UEP.cache.project")
 local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
+local unl_events = require("UNL.event.events")
+local unl_event_types = require("UNL.event.types")
 
 local M = {}
 
-local function publish_and_open(payload)
-  unl_events.publish(unl_event_types.ON_REQUEST_UPROJECT_TREE_VIEW, payload)
+-- 実際にリクエストを保存してneo-treeを開く共通関数
+local function store_request_and_open_neotree(payload)
+
+  unl_events.publish(unl_event_types.ON_REQUEST_UPROJECT_TREE_VIEW, payload )
+  unl_context.use("UEP"):key("pending_request:neo-tree-uproject"):set("payload", payload)
+  uep_log.info("A request to view a module tree has been stored for neo-tree.")
+
   local ok, neo_tree_cmd = pcall(require, "neo-tree.command")
   if ok then
     neo_tree_cmd.execute({ source = "uproject", action = "focus" })
@@ -22,19 +30,19 @@ function M.execute(opts)
   local proj_info = unl_finder.project.find_project(project_root)
   local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject, {})
   
+  -- 基本となるリクエスト情報を作成
   local payload = {
     project_root = project_root,
     engine_root = engine_root,
-    all_depth = (opts.deps_flag == "--all-deps"),
+    all_deps = (opts.deps_flag == "--all-deps"),
   }
 
+  -- コマンド引数でモジュール名が指定されていれば、それをpayloadに追加して実行
   if opts.module_name then
     payload.target_module = opts.module_name
-    publish_and_open(payload)
+    store_request_and_open_neotree(payload)
   else
-    -- ... (ピッカーでモジュールを選択させるロジック) ...
-    -- on_submit で選択されたモジュール名を payload.target_module にセットして publish_and_open を呼ぶ
-     -- ... ピッカーのロジック ...
+    -- モジュール名がなければ、Pickerで選択させる
     local game_data = project_cache.load(vim.loop.cwd())
     if not game_data then return end
     local engine_data = game_data.link_engine_cache_root and project_cache.load(game_data.link_engine_cache_root) or nil
@@ -55,7 +63,7 @@ function M.execute(opts)
       on_submit = function(selected_module)
         if not selected_module then return end
         payload.target_module = selected_module
-        publish_and_open(payload)
+        store_request_and_open_neotree(payload)
       end,
     })
   end
