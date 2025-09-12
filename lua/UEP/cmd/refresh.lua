@@ -17,81 +17,33 @@ local refresh_files = require("UEP.cmd.core.refresh_files")
 
 local M = {}
 
----
--- 単一のプロジェクトタイプ (Game or Engine) を更新するメインの処理フロー
+-- 単一のプロジェクトタイプ (Game or Engine) を更新するメインの処理フロー。
+-- 責務をcoreモジュールに完全に移譲した、スリムで高レベルな司令官。
+-- @param root_path string
+-- @param type "Game" | "Engine"
+-- @param force_regenerate boolean
+-- @param engine_cache table | nil
+-- @param progress table
+-- @param on_complete fun(ok: boolean, updated_data: table|nil)
 local function process_single_project_type(root_path, type, force_regenerate, engine_cache, progress, on_complete)
   local log = uep_log.get()
-  log.info("Processing '%s' project at: %s", type, root_path)
-
-  -- 1. 分析官にプロジェクト分析を依頼
-  refresh_project.analyze(root_path, type, engine_cache, progress, function(ok, new_data)
-    if not ok then on_complete(false, nil); return end
-    if not new_data then on_complete(true, project_cache.load(root_path)); return end
-
+  refresh_project.analyze(root_path, type, engine_cache, progress, function(analyze_ok, new_data)
+    if not analyze_ok or not new_data then
+      on_complete(false, nil)
+      return
+    end
     local old_data = project_cache.load(root_path)
     local needs_project_update = force_regenerate or not old_data or old_data.generation ~= new_data.generation
     local data_for_files_cache = needs_project_update and new_data or old_data
-
     if needs_project_update then
-      log.info("'%s' modules have changed. Regenerating project cache...", type)
-      progress:stage_define("save_project_cache", 1)
-      progress:stage_update("save_project_cache", 0, "Saving project cache...")
       project_cache.save(root_path, type, new_data)
-      progress:stage_update("save_project_cache", 1, "Project cache saved.")
       if type == "Game" and new_data.uproject_path then
         projects_cache.add_or_update({ root = root_path, uproject_path = new_data.uproject_path, engine_root_path = new_data.link_engine_cache_root })
       end
-    else
-      log.info("'%s' modules are up to date.", type)
     end
-
-    -- 2. 情報収集官にファイルキャッシュ作成を依頼
+    -- ★★★ 情報収集官に、ファイル、ディレクトリ、ヘッダー解析の全てを完全に一任する ★★★
     refresh_files.create_cache(type, data_for_files_cache, engine_cache, progress, function(file_cache_ok)
-      if not file_cache_ok then on_complete(false, data_for_files_cache); return end
-
-      -- 3. Gameプロジェクトの場合は、ヘッダー解析を行う (このロジックは司令官が持つ)
-      if type == "Game" then
-        progress:stage_define("parse_headers", 1)
-        progress:stage_update("parse_headers", 0, "Analyzing C++ headers...")
-        local target_modules = {}
-        local all_modules_meta = vim.tbl_deep_extend("force", engine_cache and engine_cache.modules or {}, data_for_files_cache.modules)
-        for name, meta in pairs(data_for_files_cache.modules) do
-          if meta.category == "Game" then
-            target_modules[name] = true
-            if meta.deep_dependencies then
-              for _, dep_name in ipairs(meta.deep_dependencies) do target_modules[dep_name] = true end
-            end
-          end
-        end
-        local files_cache = files_disk_cache.load(root_path)
-        local engine_files_cache = engine_cache and files_disk_cache.load(engine_cache.root) or nil
-        local headers_to_parse = {}
-        if files_cache and files_cache.files_by_module then
-          for module_name, _ in pairs(target_modules) do
-            local file_list = files_cache.files_by_module[module_name] or (engine_files_cache and engine_files_cache.files_by_module[module_name])
-            if file_list then
-              for _, file_path in ipairs(file_list) do if file_path:match("%.h$") then table.insert(headers_to_parse, file_path) end end
-            end
-          end
-        end
-        if #headers_to_parse > 0 then
-          class_parser.parse_headers_async(root_path, headers_to_parse, progress, function(parse_ok, header_details)
-            if parse_ok then
-              local final_files_cache = files_disk_cache.load(root_path) or {}
-              final_files_cache.header_details = header_details
-              files_disk_cache.save(root_path, final_files_cache)
-              progress:stage_update("parse_headers", 1, "Header analysis complete.")
-            else
-              progress:stage_update("parse_headers", 1, "Header analysis failed.", { error = true })
-            end
-            on_complete(true, data_for_files_cache)
-          end)
-        else
-          on_complete(true, data_for_files_cache)
-        end
-      else
-        on_complete(true, data_for_files_cache)
-      end
+      on_complete(file_cache_ok, data_for_files_cache)
     end)
   end)
 end

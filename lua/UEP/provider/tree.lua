@@ -1,151 +1,123 @@
--- lua/UEP/provider/tree.lua (遅延読み込み対応版)
+-- lua/UEP/provider/tree.lua (モジュール中心設計・最終完成版)
 
 local unl_context = require("UNL.context")
 local uep_log = require("UEP.logger").get()
+local uep_project_cache = require("UEP.cache.project")
+local uep_files_cache = require("UEP.cache.files")
+local fs = require("vim.fs")
+
+local M = {}
 
 -------------------------------------------------
--- ツリーモデル構築ヘルパー関数
--- (neo-tree-unl.nvimから移植)
+-- ヘルパー関数
 -------------------------------------------------
-
 
 local function directory_first_sorter(a, b)
-  if a.type == "directory" and b.type ~= "directory" then
-    return true -- a (ディレクトリ) が先
-  elseif a.type ~= "directory" and b.type == "directory" then
-    return false -- b (ディレクトリ) が先
-  else
-    -- どちらも同じタイプなら、名前でソート
-    return a.name < b.name
-  end
+  if a.type == "directory" and b.type ~= "directory" then return true
+  elseif a.type ~= "directory" and b.type == "directory" then return false
+  else return a.name < b.name end
 end
 
-local function build_fs_tree_from_flat_list(file_list, root_path)
-  local root = {}
-  for _, file_path in ipairs(file_list) do
-    local current_level = root
-    local relative_path = file_path:sub(#root_path + 2)
-    local parts = vim.split(relative_path, "[/]")
-    for i, part in ipairs(parts) do
-      if not current_level[part] then current_level[part] = {} end
-      current_level = current_level[part]
+local function build_fs_hierarchy(root_path, files, dirs)
+    local dir_set = {}
+    for _, dir_path in ipairs(dirs or {}) do
+        -- ★★★ 修正箇所: 格納する前に、末尾のスラッシュを確実に除去 ★★★
+        dir_set[dir_path:gsub("[/\\]$", "")] = true
     end
-  end
+    local all_paths = {}
+    if files then vim.list_extend(all_paths, files) end
+    if dirs then vim.list_extend(all_paths, dirs) end
+    if #all_paths == 0 then return {} end
+    local trie = {}
+    for _, raw_full_path in ipairs(all_paths) do
+        local full_path = raw_full_path:gsub("[/\\]$", "")
 
-  local function table_to_nodes(tbl, current_path)
-    local nodes = {}
-    for name, content in pairs(tbl) do
-      local new_path = vim.fs.joinpath(current_path, name)
-      local node_type = "file"
-      local children_nodes = nil
+        if full_path:find(root_path, 1, true) and full_path ~= root_path then
+            local current_level = trie
 
-      local extra_data = {}
-
-      if next(content) then
-        node_type = "directory"
-        hierarchy_data = table_to_nodes(content, new_path)
-        extra_data.is_loaded = false -- ディレクトリは未ロード状態
-      end
-      extra_data.hierarchy = hierarchy_data
-      -- ▼▼▼ 変更点 1: 'children' の代わりに 'extra.hierarchy' を使用 ▼▼▼
-      -- これにより、neo-treeが直接子ノードとして認識するのを防ぎます。
-      table.insert(nodes, {
-        id = new_path, name = name, path = new_path, type = node_type,
-        extra = extra_data,
-      })
-      -- ▲▲▲ 変更ここまで ▲▲▲
+            -- ★★★ これが、曖昧さを完全に排除した、最後の聖剣です ★★★
+            -- 1. まず、パスの先頭からroot_path部分を安全に除去する
+            local relative_path = full_path:gsub(vim.pesc(root_path), "", 1)
+            -- 2. 次に、先頭に残った可能性のあるパス区切り文字を除去する
+            relative_path = relative_path:gsub("^[/\\]", "")
+            
+            local parts = vim.split(relative_path, "[/\\]")
+            for _, part in ipairs(parts) do
+                if part ~= "" then
+                    if not current_level[part] then current_level[part] = {} end
+                    current_level = current_level[part]
+                end
+            end
+        end
     end
-    -- table.sort(nodes, function(a, b) return a.name < b.name end)
-    table.sort(nodes, directory_first_sorter)
-
-    return nodes
-  end
-
-  return table_to_nodes(root, root_path)
+    local function trie_to_nodes(sub_trie, current_path)
+        local nodes = {}
+        for name, content in pairs(sub_trie) do
+            local new_path = fs.joinpath(current_path, name)
+            local node_type = "file"
+            local hierarchy = nil
+            if dir_set[new_path] or next(content) then
+                node_type = "directory"
+                hierarchy = trie_to_nodes(content, new_path)
+            end
+            table.insert(nodes, {
+                id = new_path, name = name, path = new_path, type = node_type,
+                extra = { is_loaded = false, hierarchy = hierarchy },
+            })
+        end
+        table.sort(nodes, directory_first_sorter)
+        return nodes
+    end
+    return trie_to_nodes(trie, root_path)
 end
 
-local function build_hierarchy_nodes(modules_meta, files_by_module)
-  -- ▼▼▼ 変更点 2: 初期ノードの 'children' を 'extra.hierarchy' に変更 ▼▼▼
-  local root_nodes = {
+local function build_logical_hierarchy(modules_meta, all_modules_data)
+  local root_categories = {
     Game = { id = "category_Game", name = "Game", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } },
     Plugins = { id = "category_Plugins", name = "Plugins", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } },
     Engine = { id = "category_Engine", name = "Engine", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } },
   }
-
-  -- ★★★ 追加箇所 1/2: ディレクトリ情報を高速検索できるセットに変換 ★★★
-  local dir_set = {}
-  for _, dir in ipairs(all_directories or {}) do
-    dir_set[dir] = true
-  end
-  -- ★★★ 追加ここまで ★★★
-  --
   local plugin_nodes = {}
+
   for name, meta in pairs(modules_meta) do
-    if meta.module_root then
-      local module_files = files_by_module[name] or {}
-      -- ★★★ 追加箇所 2/2: モジュール内の全ディレクトリパスを抽出 ★★★
-      local module_dirs = {}
-      for dir_path, _ in pairs(dir_set) do
-        if dir_path:find(meta.module_root, 1, true) then
-          table.insert(module_dirs, dir_path)
-        end
-      end
-      -- ★★★ 追加ここまで ★★★
-      local file_tree = build_fs_tree_from_flat_list(module_files, meta.module_root)
-      -- ▼▼▼ 変更点 3: モジュールノードの 'children' も 'extra.hierarchy' に ▼▼▼
+    if meta.module_root and all_modules_data[name] then
+      local module_data = all_modules_data[name]
+      local file_tree = build_fs_hierarchy(meta.module_root, module_data.files, module_data.directories)
       local node = {
-        id = meta.module_root,
-        name = name,
-        path = meta.module_root,
-        type = "directory",
-        extra = {
-          uep_type = "module",
-          hierarchy = file_tree,
-          is_loaded = false
-        },
+        id = meta.module_root, name = name, path = meta.module_root, type = "directory",
+        extra = { uep_type = "module", hierarchy = file_tree, is_loaded = false },
       }
-      -- ▲▲▲ 変更ここまで ▲▲▲
-      
       if meta.location == "in_plugins" then
         local plugin_name = meta.module_root:match("[/\\]Plugins[/\\]([^/\\]+)")
         if plugin_name then
           local plugin_path = meta.module_root:match("(.+[/\\]Plugins[/\\][^/\\]+)")
           if not plugin_nodes[plugin_name] then
-            -- ▼▼▼ 変更点 4: プラグインノードの初期化も同様に変更 ▼▼▼
             plugin_nodes[plugin_name] = {
-              id = plugin_path,
-              name = plugin_name,
-              path = plugin_path,
-              type = "directory",
-              extra = {
-                uep_type = "plugin",
-                hierarchy = {},
-                is_loaded = false
-              },
+              id = plugin_path, name = plugin_name, path = plugin_path, type = "directory",
+              extra = { uep_type = "plugin", hierarchy = {}, is_loaded = false },
             }
-            -- ▲▲▲ 変更ここまで ▲▲▲
           end
-          -- ▼▼▼ 変更点 5: 子ノードの追加先を 'children' から 'extra.hierarchy' に変更 ▼▼▼
           table.insert(plugin_nodes[plugin_name].extra.hierarchy, node)
         else
-          table.insert(root_nodes.Plugins.extra.hierarchy, node)
+          table.insert(root_categories.Plugins.extra.hierarchy, node)
         end
       elseif meta.location == "in_source" then
         local category_key = meta.category or "Game"
-        if root_nodes[category_key] then
-          table.insert(root_nodes[category_key].extra.hierarchy, node)
+        if root_categories[category_key] then
+          table.insert(root_categories[category_key].extra.hierarchy, node)
         end
-        -- ▲▲▲ 変更ここまで ▲▲▲
       end
     end
   end
-  for _, plugin_node in pairs(plugin_nodes) do table.insert(root_nodes.Plugins.extra.hierarchy, plugin_node) end
-  
+
+  for _, plugin_node in pairs(plugin_nodes) do
+    table.sort(plugin_node.extra.hierarchy, directory_first_sorter)
+    table.insert(root_categories.Plugins.extra.hierarchy, plugin_node)
+  end
   local final_nodes = {}
   for _, category_name in ipairs({ "Game", "Engine", "Plugins" }) do
-    local category_node = root_nodes[category_name]
+    local category_node = root_categories[category_name]
     if #category_node.extra.hierarchy > 0 then
-      -- ★★★ カテゴリ内のソートも修正 ★★★
       table.sort(category_node.extra.hierarchy, directory_first_sorter)
       table.insert(final_nodes, category_node)
     end
@@ -154,121 +126,62 @@ local function build_hierarchy_nodes(modules_meta, files_by_module)
 end
 
 -------------------------------------------------
--- プロバイダーの実装 (このセクションはほぼ変更なし)
+-- プロバイダー公開関数
 -------------------------------------------------
-local M = {}
 
--- (get_pending_tree_request 関数は変更なし)
 function M.get_pending_tree_request(opts)
   local consumer_id = (opts and opts.consumer) or "unknown"
-  uep_log.debug("Provider 'get_pending_tree_request' called by: %s", consumer_id)
   local handle = unl_context.use("UEP"):key("pending_request:" .. consumer_id)
   local payload = handle:get("payload")
-  if payload then
-    uep_log.info("Found and returning pending request for %s. The request will now be cleared.", consumer_id)
-    handle:del("payload")
-    return payload
-  else
-    uep_log.debug("No pending request found for %s.", consumer_id)
-    return nil
-  end
+  if payload then handle:del("payload"); return payload end
+  return nil
 end
 
 function M.build_tree_model(opts)
   opts = opts or {}
-  local uep_project_cache = require("UEP.cache.project")
-  local uep_files_cache = require("UEP.cache.files")
-  
   local project_root = opts.project_root
   local engine_root = opts.engine_root
   if not project_root then return nil end
-
   local game_data = uep_project_cache.load(project_root)
-  if not game_data then
-    return nil
-  end
-
+  if not game_data then return nil end
   local engine_data = engine_root and uep_project_cache.load(engine_root)
-  
-  local all_modules_meta = {}
-  if engine_data and engine_data.modules then
-    for name, meta in pairs(engine_data.modules) do
-      all_modules_meta[name] = meta
-    end
-    uep_log.debug("Provider: Manually merged %d modules from engine_data.", vim.tbl_count(engine_data.modules))
-  end
-  
-  if game_data and game_data.modules then
-    for name, meta in pairs(game_data.modules) do
-      all_modules_meta[name] = meta
-    end
-    uep_log.debug("Provider: Manually merged/overwrote %d modules from game_data.", vim.tbl_count(game_data.modules))
-  end
-
-  if not next(all_modules_meta) then
-      return nil
-  end
-
+  local all_modules_meta = vim.tbl_deep_extend("force", {}, engine_data and engine_data.modules or {}, game_data.modules or {})
+  if not next(all_modules_meta) then return nil end
   local target_module_names = {}
-
   if opts.target_module then
     target_module_names[opts.target_module] = true
     local start_module = all_modules_meta[opts.target_module]
-    if start_module then
-        local deps_key = opts.all_deps and "deep_dependencies" or "shallow_dependencies"
-        if start_module[deps_key] then
-            for _, dep_name in ipairs(start_module[deps_key]) do
-                target_module_names[dep_name] = true
-            end
-        end
+    if start_module and start_module[opts.all_deps and "deep_dependencies" or "shallow_dependencies"] then
+      for _, dep_name in ipairs(start_module[opts.all_deps and "deep_dependencies" or "shallow_dependencies"]) do target_module_names[dep_name] = true end
     end
   else
     for name, meta in pairs(all_modules_meta) do
       if meta.category == "Game" then
         target_module_names[name] = true
-        local deps_key = opts.all_deps and "deep_dependencies" or "shallow_dependencies"
-        if meta[deps_key] then
-          for _, dep_name in ipairs(meta[deps_key]) do
-            target_module_names[dep_name] = true
-          end
+        if meta[opts.all_deps and "deep_dependencies" or "shallow_dependencies"] then
+          for _, dep_name in ipairs(meta[opts.all_deps and "deep_dependencies" or "shallow_dependencies"]) do target_module_names[dep_name] = true end
         end
       end
     end
   end
-
   local filtered_modules_meta = {}
   for name, _ in pairs(target_module_names) do
-    if all_modules_meta[name] then
-      filtered_modules_meta[name] = all_modules_meta[name]
-    end
+    if all_modules_meta[name] then filtered_modules_meta[name] = all_modules_meta[name] end
   end
-
-  local game_files = uep_files_cache.load(project_root) or { files_by_module = {} }
-  local engine_files = engine_data and uep_files_cache.load(engine_data.root) or { files_by_module = {} }
-  local all_files = vim.tbl_deep_extend("force", engine_files.files_by_module or {}, game_files.files_by_module or {})
-  
-  local hierarchy = build_hierarchy_nodes(filtered_modules_meta, all_files)
-  
+  local game_cache = uep_files_cache.load(project_root) or {}
+  local engine_cache = engine_root and uep_files_cache.load(engine_root) or {}
+  local all_modules_data = vim.tbl_deep_extend("force", {}, engine_cache.modules_data or {}, game_cache.modules_data or {})
+  local hierarchy = build_logical_hierarchy(filtered_modules_meta, all_modules_data)
   if not next(hierarchy) then
     return {{ id = "_message_", name = "No modules to display with current filters.", type = "message" }}
   end
-  
   local project_name = vim.fn.fnamemodify(game_data.uproject_path, ":t:r")
-  -- ▼▼▼ 変更点 7: 最終的なツリーモデルも 'children' から 'extra.hierarchy' へ ▼▼▼
-  local final_tree_model = {{
+  return {{
     id = project_root, name = project_name, path = project_root, type = "directory",
-    extra = {
-      uep_type = "project_root",
-      hierarchy = hierarchy,
-      is_loaded = false
-    },
+    extra = { uep_type = "project_root", hierarchy = hierarchy, is_loaded = false },
   }}
-  -- ▲▲▲ 変更ここまで ▲▲▲
-  
-  return final_tree_model
 end
 
--- (request 関数は変更なし)
 function M.request(opts)
   if opts and opts.capability == "uep.get_pending_tree_request" then
     return M.get_pending_tree_request(opts)
