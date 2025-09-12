@@ -461,6 +461,10 @@ function M.update_file_cache_for_single_module(module_name, on_complete)
     if on_complete then on_complete(false) end
     return
   end
+  
+  local conf = uep_config.get()
+  local progress, _ = unl_progress.create_for_refresh(conf, { title = "UEP: Refreshing module files...", client_name = "UEP" })
+  progress:open()
 
   -- 2. 単一モジュールのパスだけを対象にしたfdコマンドを構築
   local fd_cmd = create_fd_command({ target_module.module_root })
@@ -490,6 +494,8 @@ function M.update_file_cache_for_single_module(module_name, on_complete)
       if code ~= 0 then
         uep_log.get().warn("fd command for single module exited with non-zero code: %d", code)
         if on_complete then on_complete(false) end
+
+        progress:finish(false)
         return
       end
 
@@ -502,6 +508,8 @@ function M.update_file_cache_for_single_module(module_name, on_complete)
       else
         uep_log.get().error("Could not determine the owner project for module '%s'.", module_name)
         if on_complete then on_complete(false) end
+
+        progress:finish(false)
         return
       end
 
@@ -529,6 +537,8 @@ function M.update_file_cache_for_single_module(module_name, on_complete)
 
       uep_log.get().info("Lightweight file cache update for module '%s' complete.", module_name)
       if on_complete then on_complete(true) end
+
+        progress:finish(true)
     end
   })
 end
