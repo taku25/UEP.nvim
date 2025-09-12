@@ -41,7 +41,7 @@ M.setup = function()
     end
 
     -- 軽量リフレッシュを実行
-    require("UEP.cmd.refresh").update_file_cache_for_single_module(module_name, function(ok)
+    require("UEP.cmd.core.refresh_files").update_single_module_cache(module_name, function(ok)
       if ok then
         uep_log.info("Lightweight cache update for module '%s' succeeded.", module_name)
         -- UEPのキャッシュが更新されたことをエコシステム全体に通知する

@@ -7,6 +7,19 @@ local uep_log = require("UEP.logger").get()
 -- ツリーモデル構築ヘルパー関数
 -- (neo-tree-unl.nvimから移植)
 -------------------------------------------------
+
+
+local function directory_first_sorter(a, b)
+  if a.type == "directory" and b.type ~= "directory" then
+    return true -- a (ディレクトリ) が先
+  elseif a.type ~= "directory" and b.type == "directory" then
+    return false -- b (ディレクトリ) が先
+  else
+    -- どちらも同じタイプなら、名前でソート
+    return a.name < b.name
+  end
+end
+
 local function build_fs_tree_from_flat_list(file_list, root_path)
   local root = {}
   for _, file_path in ipairs(file_list) do
@@ -42,7 +55,9 @@ local function build_fs_tree_from_flat_list(file_list, root_path)
       })
       -- ▲▲▲ 変更ここまで ▲▲▲
     end
-    table.sort(nodes, function(a, b) return a.name < b.name end)
+    -- table.sort(nodes, function(a, b) return a.name < b.name end)
+    table.sort(nodes, directory_first_sorter)
+
     return nodes
   end
 
@@ -56,11 +71,26 @@ local function build_hierarchy_nodes(modules_meta, files_by_module)
     Plugins = { id = "category_Plugins", name = "Plugins", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } },
     Engine = { id = "category_Engine", name = "Engine", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } },
   }
-  -- ▲▲▲ 変更ここまで ▲▲▲
+
+  -- ★★★ 追加箇所 1/2: ディレクトリ情報を高速検索できるセットに変換 ★★★
+  local dir_set = {}
+  for _, dir in ipairs(all_directories or {}) do
+    dir_set[dir] = true
+  end
+  -- ★★★ 追加ここまで ★★★
+  --
   local plugin_nodes = {}
   for name, meta in pairs(modules_meta) do
     if meta.module_root then
       local module_files = files_by_module[name] or {}
+      -- ★★★ 追加箇所 2/2: モジュール内の全ディレクトリパスを抽出 ★★★
+      local module_dirs = {}
+      for dir_path, _ in pairs(dir_set) do
+        if dir_path:find(meta.module_root, 1, true) then
+          table.insert(module_dirs, dir_path)
+        end
+      end
+      -- ★★★ 追加ここまで ★★★
       local file_tree = build_fs_tree_from_flat_list(module_files, meta.module_root)
       -- ▼▼▼ 変更点 3: モジュールノードの 'children' も 'extra.hierarchy' に ▼▼▼
       local node = {
@@ -114,12 +144,11 @@ local function build_hierarchy_nodes(modules_meta, files_by_module)
   local final_nodes = {}
   for _, category_name in ipairs({ "Game", "Engine", "Plugins" }) do
     local category_node = root_nodes[category_name]
-    -- ▼▼▼ 変更点 6: 子ノードの存在チェックも 'extra.hierarchy' で行う ▼▼▼
-    if category_node and category_node.extra.hierarchy and #category_node.extra.hierarchy > 0 then
-      category_node.path = category_node.id
+    if #category_node.extra.hierarchy > 0 then
+      -- ★★★ カテゴリ内のソートも修正 ★★★
+      table.sort(category_node.extra.hierarchy, directory_first_sorter)
       table.insert(final_nodes, category_node)
     end
-    -- ▲▲▲ 変更ここまで ▲▲▲
   end
   return final_nodes
 end
