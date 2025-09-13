@@ -52,67 +52,58 @@ end
 
 
 function M.get_files_from_cache(opts)
-  -- 1. Game側のプロジェクトデータをロード
+  -- 1. Game側のプロジェクトデータとファイルキャッシュをロード
   local game_project_data = ProjectCache.load(opts.project_root)
-  if not (game_project_data and game_project_data.generation) then return nil end
-
-  -- 2. Game側のファイルキャッシュをディスクからロード
   local game_file_cache = FilesDiskCache.load(opts.project_root)
+
+  -- 2. Gameキャッシュの鮮度をチェック
+  if not (game_project_data and game_file_cache and game_file_cache.generation == game_project_data.generation) then
+    uep_log.get().warn("Game file cache is outdated or missing. Please run :UEP refresh")
+    return nil
+  end
+
+  -- 3. 全てのモジュールのファイルリストを格納する単一のテーブルを準備
+  local all_files_by_module = {}
+
+  -- ★★★ 修正点: 正しいJSON構造からデータを読み込む ★★★
+  -- 4. Gameキャッシュのファイルを追加
+  if game_file_cache and game_file_cache.modules_data then
+    for module_name, module_data in pairs(game_file_cache.modules_data) do
+      if module_data and module_data.files then
+        all_files_by_module[module_name] = module_data.files
+      end
+    end
+  end
   
-  -- 3. Engine側のデータをロード
-  local engine_project_data
-  local engine_file_cache
+  -- 5. Engine側のデータをロードし、有効ならファイルを追加
   if opts.engine_root then
-    engine_project_data = ProjectCache.load(opts.engine_root)
-    if engine_project_data then
-      engine_file_cache = FilesDiskCache.load(engine_project_data.root)
-    end
-  end
-  
-  -- 4. Gameキャッシュの鮮度をチェック (新しいフラット構造に対応)
-  if not (game_file_cache and game_file_cache.generation == game_project_data.generation) then
-    uep_log.get().warn("Game file cache is outdated. Please run :UEP refresh")
-    return nil
-  end
-
-   -- ★★★ ここからが最後の修正 ★★★
-  -- 5. GameとEngineのファイルリストを「手動のforループ」で一つに結合
-  local all_available_files = {}
-
-  -- Gameキャッシュのファイルを追加
-   -- 4. Gameキャッシュの鮮度をチェック (フラットな構造に対応)
-  if not (game_file_cache and game_file_cache.generation == game_project_data.generation) then
-    uep_log.get().warn("Game file cache is outdated. Please run :UEP refresh")
-    return nil
-  end
-
-  -- 5. GameとEngineのファイルリストを一つに結合
-  local all_available_files = {}
-  if game_file_cache.files_by_module then
-    for module_name, files in pairs(game_file_cache.files_by_module) do
-      all_available_files[module_name] = files
-    end
-  end
-  
-  -- Engineキャッシュも有効なら結合 (フラットな構造に対応)
-  if engine_project_data and engine_file_cache and engine_file_cache.generation == engine_project_data.generation then
-    if engine_file_cache.files_by_module then
-      for module_name, files in pairs(engine_file_cache.files_by_module) do
-        if not all_available_files[module_name] then
-          all_available_files[module_name] = files
+    local engine_project_data = ProjectCache.load(opts.engine_root)
+    local engine_file_cache = FilesDiskCache.load(opts.engine_root)
+    
+    if engine_project_data and engine_file_cache and engine_file_cache.generation == engine_project_data.generation then
+      if engine_file_cache.modules_data then
+        for module_name, module_data in pairs(engine_file_cache.modules_data) do
+          if module_data and module_data.files and not all_files_by_module[module_name] then
+            all_files_by_module[module_name] = module_data.files
+          end
         end
       end
     end
   end
   
-  -- 6. 結合されたリストの中から、要求されたモジュールのファイルを探す
+  -- 6. 要求されたモジュールリストに基づいて、最終的なファイルリストを作成
   local final_files = {}
-  for _, module_name in ipairs(opts.required_modules) do
-    if all_available_files[module_name] then
-      vim.list_extend(final_files, all_available_files[module_name])
+  if opts.required_modules then
+    for _, module_name in ipairs(opts.required_modules) do
+      if all_files_by_module[module_name] then
+        for _, file_path in ipairs(all_files_by_module[module_name]) do
+          table.insert(final_files, file_path)
+        end
+      end
     end
   end
 
   return final_files
 end
+
 return M
