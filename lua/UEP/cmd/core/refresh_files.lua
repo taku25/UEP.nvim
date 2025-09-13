@@ -17,7 +17,6 @@ local function create_fd_command_for_files(search_paths)
   local excludes = { "Intermediate", "Binaries", "Saved", ".git", ".vs" }
   local fd_cmd = { "fd", "--regex", full_path_regex, "--full-path", "--type", "f", "--path-separator", "/", "--absolute-path" }
   for _, dir in ipairs(excludes) do table.insert(fd_cmd, "--exclude"); table.insert(fd_cmd, dir) end
-  table.insert(fd_cmd, ".")
   if search_paths and type(search_paths) == "table" then
     vim.list_extend(fd_cmd, search_paths)
   end
