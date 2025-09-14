@@ -58,11 +58,23 @@ M.setup = function()
       end
     end)
   end
+  local function handle_directory_change(payload)
+    if not (payload and payload.status == "success") then return end
+    require("UEP.cmd.core.refresh_files").update_single_module_cache(payload.module.name, function(ok)
+      if ok then
+        unl_events.publish(unl_event_types.ON_AFTER_UEP_LIGHTWEIGHT_REFRESH, {
+          event_type = payload.type,
+          updated_module = payload.module.name,
+        })
+      end
+    end)
+  end
 
   unl_events.subscribe(unl_event_types.ON_AFTER_NEW_CLASS_FILE, function(playload) handle_file_change("new", playload) end)
   unl_events.subscribe(unl_event_types.ON_AFTER_DELETE_CLASS_FILE, function(playload) handle_file_change("delete", playload) end)
   unl_events.subscribe(unl_event_types.ON_AFTER_RENAME_CLASS_FILE, function(playload) handle_file_change("rename", playload) end)
   unl_events.subscribe(unl_event_types.ON_AFTER_MOVE_CLASS_FILE, function(playload) handle_file_change("move", playload) end)
+  unl_events.subscribe(unl_event_types.ON_AFTER_MODIFY_DIRECTORY, handle_directory_change)
 end
 
 
