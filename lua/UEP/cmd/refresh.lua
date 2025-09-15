@@ -25,7 +25,18 @@ function M.execute(opts, on_complete)
     return log.error("Could not find a .uproject file.")
   end
   local uproject_path = project_info.uproject
+  local game_root = vim.fn.fnamemodify(uproject_path, ":h")
   
+  local scope = opts.type
+  if not scope then
+    local project_display_name = vim.fn.fnamemodify(game_root, ":t")
+    local registry_info = projects_cache.get_project_info(project_display_name)
+    scope = registry_info and "Game" or "Full"
+  end
+  if force_regenerate then scope = "Full" end
+
+  log.info("Starting refresh with scope: '%s', force: %s", scope, tostring(force_regenerate))
+
   local conf = uep_config.get()
   local progress, _ = unl_progress.create_for_refresh(conf, { title = "UEP: Refreshing project...", client_name = "UEP" })
   progress:open()
@@ -36,45 +47,32 @@ function M.execute(opts, on_complete)
     if on_complete then on_complete(ok) end
   end
   
-  -- STEP 1: プロジェクトの完全なコンポーネントリストを取得
-  refresh_project_core.get_full_component_list(uproject_path, progress, function(ok, all_components)
+  refresh_project_core.update_project_structure(scope, force_regenerate, uproject_path, progress, function(ok, result)
     if not ok then return finish_all(false) end
-
-    -- STEP 2: 各コンポーネントが最新かどうかを判定
-    local components_to_refresh = {}
-    local up_to_date_components_data = {}
     
-    for _, component in ipairs(all_components) do
-      local proj_cache_path = component.name .. ".project.json"
-      local project_cache_data = project_cache.load(proj_cache_path)
-      local file_cache_data = files_cache_manager.load_component_cache(component)
+    local changed_components = result.changed_components
+    local all_relevant_data = result.all_data
+    local full_component_list = result.full_component_list
 
-      local needs_refresh = force_regenerate 
-                           or not project_cache_data 
-                           or not file_cache_data
+    -- ▼▼▼ 司令官の最後の、そして最も重要な仕事 ▼▼▼
+    -- 分析結果を元に、マスターインデックスを更新する
+    local engine_root = unl_finder.engine.find_engine_root(uproject_path, {})
+    local registration_info = {
+      root_path = game_root,
+      uproject_path = uproject_path,
+      engine_root = engine_root,
+    }
+    projects_cache.register_project_with_components(registration_info, full_component_list)
+    -- ▲▲▲ ここまで ▲▲▲
 
-      if needs_refresh then
-        table.insert(components_to_refresh, component)
-      else
-        up_to_date_components_data[component.name] = project_cache_data
-      end
-    end
-
-    if #components_to_refresh == 0 then
-      log.info("Project is already up-to-date.")
-      return finish_all(true)
-    end
-
-    -- STEP 3: "要修復"コンポーネントだけの分析を命令
-    refresh_project_core.analyze_selected_components(components_to_refresh, up_to_date_components_data, progress, function(analysis_ok, refreshed_data)
-      if not analysis_ok then return finish_all(false) end
-      
-      -- STEP 4: "要修復"コンポーネントだけのファイルスキャンを命令
-      local final_data_for_files = vim.tbl_deep_extend("force", {}, up_to_date_components_data, refreshed_data)
-      refresh_files_core.create_component_caches_for(components_to_refresh, final_data_for_files, progress, function(files_ok)
+    if #changed_components > 0 then
+      refresh_files_core.create_component_caches_for(changed_components, all_relevant_data, game_root, engine_root, progress, function(files_ok)
         finish_all(files_ok)
       end)
-    end)
+    else
+      log.info("All selected components are up-to-date. Nothing to refresh.")
+      finish_all(true)
+    end
   end)
 end
 

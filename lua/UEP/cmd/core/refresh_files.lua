@@ -1,4 +1,4 @@
--- lua/UEP/cmd/core/refresh_files.lua (第三世代・究極のシンプルスキャン・最終完成版)
+-- lua/UEP/cmd/core/refresh_files.lua (第三世代・究極の精密攻撃部隊・最終完成版)
 
 local class_parser = require("UEP.parser.class")
 local uep_config = require("UEP.config")
@@ -16,9 +16,7 @@ local function create_fd_command(base_paths, type_flag)
   local extensions = conf.include_extensions or { "cpp", "h", "hpp", "inl", "ini", "cs", "usf", "ush" }
   local include_dirs = conf.include_directory or { "Source", "Config", "Plugins", "Shaders", "Programs" }
   local exclude_dirs = conf.excludes_directory or { "Intermediate", "Binaries", "Saved" }
-
   local dir_pattern = "(" .. table.concat(include_dirs, "|") .. ")"
-  
   local final_regex
   if type_flag == "f" then
     local ext_pattern = "(" .. table.concat(extensions, "|") .. ")"
@@ -26,13 +24,8 @@ local function create_fd_command(base_paths, type_flag)
   else -- "d"
     final_regex = ".*[\\\\/]" .. dir_pattern .. "[\\\\/]?.*"
   end
-
   local fd_cmd = { "fd", "--regex", final_regex, "--full-path", "--type", type_flag, "--path-separator", "/" }
-
-  for _, dir in ipairs(exclude_dirs) do
-    table.insert(fd_cmd, "--exclude"); table.insert(fd_cmd, dir)
-  end
-  
+  for _, dir in ipairs(exclude_dirs) do table.insert(fd_cmd, "--exclude"); table.insert(fd_cmd, dir) end
   vim.list_extend(fd_cmd, base_paths)
   return fd_cmd
 end
@@ -50,18 +43,20 @@ end
 -------------------------------------------------
 -- 新しいAPI
 -------------------------------------------------
-function M.create_component_caches_for(components_to_refresh, all_components_data, progress, on_done)
+function M.create_component_caches_for(components_to_refresh, all_components_data, game_root, engine_root, progress, on_done)
   progress:stage_define("file_scan", 0.1)
   progress:stage_define("header_analysis", 0.4)
   progress:stage_define("cache_save", 0.5)
   progress:stage_update("file_scan", 0, ("Scanning files for %d components..."):format(#components_to_refresh))
 
-  -- ▼▼▼ これが最後の、そして最も重要な修正点です ▼▼▼
-  local game_comp = all_components_data[vim.tbl_filter(function(k) return all_components_data[k].type == "Game" end, vim.tbl_keys(all_components_data))[1]]
-  local engine_comp = all_components_data[vim.tbl_filter(function(k) return all_components_data[k].type == "Engine" end, vim.tbl_keys(all_components_data))[1]]
+  if #components_to_refresh == 0 then
+      uep_log.get().info("No components need file scanning.")
+      if on_done then on_done(true) end
+      return
+  end
 
-  -- 常に、究極にシンプルな2つのトップレベルパスだけを指定する
-  local top_level_search_paths = { game_comp.root_path, engine_comp.root_path }
+  -- ▼▼▼ これが最後の、そして最も重要な修正点です ▼▼▼
+  local top_level_search_paths = { game_root, engine_root }
   -- ▲▲▲ ここまで ▲▲▲
   
   local fd_cmd_files = create_fd_command(top_level_search_paths, "f")

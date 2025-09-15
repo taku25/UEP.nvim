@@ -10,7 +10,7 @@ local unl_path = require("UNL.path")
 local M = {}
 
 local MAGIC_CODE = "UEP Master Project Registry"
-local REGISTRY_VERSION = 2 -- 構造変更のためバージョンアップ
+local REGISTRY_VERSION = 2
 local CACHE_FILENAME = "projects.json"
 
 local function get_name_from_root(root_path)
@@ -44,13 +44,11 @@ end
 function M.save(registry_data)
   registry_data.magic_code = MAGIC_CODE
   registry_data.version = REGISTRY_VERSION
-
   local path = get_cache_path()
   local ok, err = unl_cache_core.save_json(path, registry_data)
   if not ok then
     require("UEP.logger").get().error("Failed to save master project registry: %s", tostring(err))
   end
-  
   if ok then
     unl_events.publish(unl_event_types.ON_AFTER_PROJECTS_CACHE_SAVE, { status = "success" })
   end
@@ -72,15 +70,13 @@ function M.register_project_with_components(registration_info, all_components)
   registry.projects[project_display_name] = {
     unique_name = project_name,
     uproject_path = registration_info.uproject_path,
-    project_cache_filename = project_name .. ".project.json",
     engine_association = engine_name,
     last_indexed_at = os.time(),
-    components = component_names, -- ★★★
+    components = component_names,
   }
 
   registry.engines[engine_name] = {
     engine_root = registration_info.engine_root,
-    project_cache_filename = engine_name .. ".project.json",
   }
   
   return M.save(registry)
