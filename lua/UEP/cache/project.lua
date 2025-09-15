@@ -1,86 +1,82 @@
--- lua/UEP/cache/project.lua (コンテキストキャッシュ対応版)
+-- lua/UEP/cache/project.lua (local functionバグ修正版)
 
 local uep_config = require("UEP.config")
 local unl_cache_core = require("UNL.cache.core")
-local unl_path = require("UNL.path")
 local fs = require("vim.fs")
-local uep_context = require("UEP.context") --- ★ 変更点: contextモジュールをrequire
+local uep_context = require("UEP.context")
 local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
 
 local M = {}
 
-local function root_to_filename(root_path)
-  local normalized_path = unl_path.normalize(root_path)
-  return normalized_path:gsub("[\\/:]", "_") .. ".json"
-end
+local MAGIC_CODE = "UEP Project Cache"
+local CACHE_VERSION = 1
 
-local function get_cache_path(root_path)
+local function get_cache_path(cache_filename)
+  if not cache_filename then return nil end
   local conf = uep_config.get()
   local base_dir = unl_cache_core.get_cache_dir(conf)
   local projects_dir = fs.joinpath(base_dir, "projects")
-  local filename = root_to_filename(root_path)
-  return fs.joinpath(projects_dir, filename)
+  return fs.joinpath(projects_dir, cache_filename)
 end
 
---- コンテキストキャッシュで使うための一意なキー名を取得
-local function get_context_key_name(root_path)
-  return get_cache_path(root_path) .. "::project" -- 他と区別するためサフィックスを追加
+local function get_context_key_name(cache_filename)
+  return "project_cache::" .. cache_filename
 end
 
-function M.exists(root_path)
-  if not root_path then return false end
-  return vim.fn.filereadable(get_cache_path(root_path)) == 1
-end
+---
+-- ▼▼▼ ここを `function M.save` に修正しました ▼▼▼
+function M.save(cache_filename, data)
+  local path = get_cache_path(cache_filename)
+  if not path then return false, "Could not generate cache path." end
 
---- キャッシュを保存する
-function M.save(root_path, type, data)
-  local path = get_cache_path(root_path)
-  data.Type = type
-  data.root = root_path
+  data.magic_code = MAGIC_CODE
+  data.version = CACHE_VERSION
 
-  -- 1. ファイルに保存する
   local ok, err = unl_cache_core.save_json(path, data)
   if not ok then
-    return false, require("UEP.logger").get().error("Failed to save projects.json: %s", tostring(err))
+    local err_msg = ("Failed to save project cache to %s: %s"):format(path, tostring(err))
+    require("UEP.logger").get().error(err_msg)
+    return false, err_msg
   end
 
-  --- ★ 変更点: 保存成功後、コンテキストキャッシュも更新する
-  local context_key = get_context_key_name(root_path)
+  local context_key = get_context_key_name(cache_filename)
   uep_context.set(context_key, data)
 
   unl_events.publish(unl_event_types.ON_AFTER_PROJECT_CACHE_SAVE, {
     status = "success",
-    project_root = root_path,
-    type = type,
+    cache_filename = cache_filename,
   })
 
-  return ok, nil
+  return true, nil
 end
 
---- キャッシュを読み込む
-function M.load(root_path)
-  --- ★ 変更点: まずコンテキストキャッシュを確認
-  local context_key = get_context_key_name(root_path)
+---
+-- ▼▼▼ こちらも念のため `function M.load` であることを確認 ▼▼▼
+function M.load(cache_filename)
+  local context_key = get_context_key_name(cache_filename)
   local cached_data = uep_context.get(context_key)
   if cached_data then
-    -- コンテキストにデータがあれば、それを返す
     return cached_data
   end
 
-  -- コンテキストになければ、ファイルから読み込む
-  local path = get_cache_path(root_path)
-  if vim.fn.filereadable(path) == 0 then
+  local path = get_cache_path(cache_filename)
+  if not path or vim.fn.filereadable(path) == 0 then
     return nil
   end
 
   local file_data = unl_cache_core.load_json(path)
 
-  --- ★ 変更点: ファイルから読み込んだデータをコンテキストに保存する
-  if file_data then
-    uep_context.set(context_key, file_data)
+  if not file_data or file_data.magic_code ~= MAGIC_CODE or file_data.version ~= CACHE_VERSION then
+     require("UEP.logger").get().warn(
+      "Project cache '%s' is outdated or invalid. It will be ignored.",
+      cache_filename
+    )
+    return nil
   end
-
+  
+  uep_context.set(context_key, file_data)
+  
   return file_data
 end
 

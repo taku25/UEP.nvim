@@ -1,109 +1,100 @@
--- lua/UEP/cmd/files_core.lua
+-- lua/UEP/cmd/files_core.lua (第三世代・究極の組立工場・最終完成版)
 
-local ProjectCache = require("UEP.cache.project")
-local FilesDiskCache = require("UEP.cache.files")
-local uep_log      = require("UEP.logger")
+local unl_finder = require("UNL.finder")
+local project_cache = require("UEP.cache.project")
+local files_cache_manager = require("UEP.cache.files")
+local projects_cache = require("UEP.cache.projects") -- ★マスターインデックス
+local uep_log = require("UEP.logger")
+local fs = require("vim.fs")
 
 local M = {}
 
--- ★★★ 新しい妥当性チェック関数 ★★★
--- キャッシュが最新で、矛盾がないかをチェックするだけ。
--- 成功すればtrue、失敗すればfalseを返す。
-function M.is_cache_valid(project_root)
-  -- 1. Game側のプロジェクトデータをロード
-  local game_project_data = ProjectCache.load(project_root)
-  if not (game_project_data and game_project_data.generation) then
-    uep_log.get().warn("is_cache_valid: Game project data or its generation is missing.")
-    return false
+function M.get_merged_files_for_project(start_path, opts, on_complete)
+  opts = opts or {}
+  local log = uep_log.get()
+
+  -- STEP 1: マスターインデックスから、プロジェクトの全コンポーネントリストを取得
+  local project_root = unl_finder.project.find_project_root(start_path)
+  if not project_root then
+    return on_complete(false, "Could not find project root.")
   end
-
-  -- 2. Game側のファイルキャッシュをディスクからロード
-  local game_file_cache = FilesDiskCache.load(project_root)
-  
-  -- 3. Engine側のデータをロード
-  local engine_project_data
-  local engine_file_cache
-  if game_project_data.link_engine_cache_root then
-    engine_project_data = ProjectCache.load(game_project_data.link_engine_cache_root)
-    if engine_project_data then
-      engine_file_cache = FilesDiskCache.load(engine_project_data.root)
-    end
+  local project_display_name = vim.fn.fnamemodify(project_root, ":t")
+  local project_registry_info = projects_cache.get_project_info(project_display_name)
+  if not project_registry_info or not project_registry_info.components then
+    return on_complete(false, "Project not found in registry. Please run :UEP refresh.")
   end
-  
-  -- 4. Gameキャッシュの鮮度をチェック
-  if not (game_file_cache and game_file_cache.Game and game_file_cache.Game.generation == game_project_data.generation) then
-    uep_log.get().warn("is_cache_valid: Game file cache is not valid or outdated.")
-    return false
-  end
+  local all_component_names = project_registry_info.components
 
-  -- 5. Engineキャッシュも存在すれば、鮮度をチェック
-  if engine_project_data then
-    if not (engine_file_cache and engine_file_cache.Engine and engine_file_cache.Engine.generation == engine_project_data.generation) then
-      uep_log.get().warn("is_cache_valid: Engine file cache is not present or is outdated.")
-      return false
-    end
-  end
+  -- STEP 2: 全コンポーネントの「設計図」を読み込み、巨大なモジュールマップを構築
+  log.info("Building dependency map from %d components...", #all_component_names)
+  local all_modules_map = {}
+  local module_to_component_name = {}
+  local all_components_map = {}
 
-  -- 全てのチェックをパス
-  return true
-end
-
-
-
-
-function M.get_files_from_cache(opts)
-  -- 1. Game側のプロジェクトデータとファイルキャッシュをロード
-  local game_project_data = ProjectCache.load(opts.project_root)
-  local game_file_cache = FilesDiskCache.load(opts.project_root)
-
-  -- 2. Gameキャッシュの鮮度をチェック
-  if not (game_project_data and game_file_cache and game_file_cache.generation == game_project_data.generation) then
-    uep_log.get().warn("Game file cache is outdated or missing. Please run :UEP refresh")
-    return nil
-  end
-
-  -- 3. 全てのモジュールのファイルリストを格納する単一のテーブルを準備
-  local all_files_by_module = {}
-
-  -- ★★★ 修正点: 正しいJSON構造からデータを読み込む ★★★
-  -- 4. Gameキャッシュのファイルを追加
-  if game_file_cache and game_file_cache.modules_data then
-    for module_name, module_data in pairs(game_file_cache.modules_data) do
-      if module_data and module_data.files then
-        all_files_by_module[module_name] = module_data.files
+  for _, comp_name in ipairs(all_component_names) do
+    local p_cache = project_cache.load(comp_name .. ".project.json")
+    if p_cache then
+      all_components_map[comp_name] = p_cache
+      for mod_name, mod_data in pairs(p_cache.modules or {}) do
+        all_modules_map[mod_name] = mod_data
+        module_to_component_name[mod_name] = comp_name
       end
     end
   end
-  
-  -- 5. Engine側のデータをロードし、有効ならファイルを追加
-  if opts.engine_root then
-    local engine_project_data = ProjectCache.load(opts.engine_root)
-    local engine_file_cache = FilesDiskCache.load(opts.engine_root)
-    
-    if engine_project_data and engine_file_cache and engine_file_cache.generation == engine_project_data.generation then
-      if engine_file_cache.modules_data then
-        for module_name, module_data in pairs(engine_file_cache.modules_data) do
-          if module_data and module_data.files and not all_files_by_module[module_name] then
-            all_files_by_module[module_name] = module_data.files
-          end
-        end
-      end
-    end
-  end
-  
-  -- 6. 要求されたモジュールリストに基づいて、最終的なファイルリストを作成
-  local final_files = {}
-  if opts.required_modules then
-    for _, module_name in ipairs(opts.required_modules) do
-      if all_files_by_module[module_name] then
-        for _, file_path in ipairs(all_files_by_module[module_name]) do
-          table.insert(final_files, file_path)
+
+  -- STEP 3: ユーザーの指示に基づき、「本当に必要なモジュール」のセットを計算
+  local required_modules_set = {}
+  local game_component = all_components_map[project_registry_info.unique_name]
+  if game_component and game_component.modules then
+    for mod_name, _ in pairs(game_component.modules) do
+      required_modules_set[mod_name] = true
+      local mod_data = all_modules_map[mod_name]
+      if mod_data then
+        local deps_key = (opts.deps_flag == "--all-deps") and "deep_dependencies" or "shallow_dependencies"
+        for _, dep_name in ipairs(mod_data[deps_key] or {}) do
+          required_modules_set[dep_name] = true
         end
       end
     end
   end
 
-  return final_files
+  -- STEP 4: 「本当に必要なコンポーネント」のセットを計算 (バグ修正済み)
+  local required_components = {}
+  if game_component then
+      required_components[game_component.name] = game_component
+  end
+  for mod_name, _ in pairs(required_modules_set) do
+    local comp_name = module_to_component_name[mod_name]
+    if comp_name and not required_components[comp_name] then
+      required_components[comp_name] = all_components_map[comp_name]
+    end
+  end
+
+  -- STEP 5: 「本当に必要なコンポーネント」の.files.jsonだけを読み込み、マージ
+  log.info("Found %d required components. Merging file caches...", vim.tbl_count(required_components))
+  local merged_data = {
+    files = { source={}, config={}, shader={}, content={}, programs={}, other={} },
+    dirs = { source={}, config={}, shader={}, content={}, programs={}, other={} },
+    header_details = {}
+  }
+
+  for _, component in pairs(required_components) do
+    local component_info_for_load = { type = component.type, root_path = component.root_path, owner_name = component.owner_name, short_name = component.display_name }
+    local component_cache = files_cache_manager.load_component_cache(component_info_for_load)
+    if component_cache then
+      for category, file_list in pairs(component_cache.files or {}) do
+        if merged_data.files[category] then vim.list_extend(merged_data.files[category], file_list) end
+      end
+      for category, dir_list in pairs(component_cache.directories or {}) do
+        if merged_data.dirs[category] then vim.list_extend(merged_data.dirs[category], dir_list) end
+      end
+      if component_cache.header_details then
+        vim.tbl_deep_extend("force", merged_data.header_details, component_cache.header_details)
+      end
+    end
+  end
+  
+  on_complete(true, merged_data)
 end
 
 return M

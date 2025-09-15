@@ -1,21 +1,21 @@
--- lua/UEP/cmd/files.lua
+-- lua/UEP/cmd/files.lua (第三世代・最終完成版)
 
-local project_cache = require("UEP.cache.project")
-local files_core    = require("UEP.cmd.files_core")
-local unl_picker    = require("UNL.backend.picker")
-local uep_log      = require("UEP.logger")
-local uep_config      = require("UEP.config")
-local refresh_cmd  = require("UEP.cmd.refresh")
+local files_core = require("UEP.cmd.files_core")
+local unl_picker = require("UNL.backend.picker")
+local uep_log = require("UEP.logger")
+local uep_config = require("UEP.config")
+-- (project_cache や refresh_cmd はもはや不要)
 
 local M = {}
 
--- Picker表示用のヘルパー関数
+-- ピッカー表示用のヘルパー関数 (変更なし)
 local function show_picker(items, project_root)
   if not items or #items == 0 then
     uep_log.get().info("No matching files found.", "info")
     return
   end
-  local picker_items = {}; local root_prefix = project_root .. "/"
+  local picker_items = {};
+  local root_prefix = project_root .. "/"
   for _, file_path in ipairs(items) do
     table.insert(picker_items, {
       label = file_path:gsub(root_prefix, ""),
@@ -25,7 +25,7 @@ local function show_picker(items, project_root)
   table.sort(picker_items, function(a, b) return a.label < b.label end)
   unl_picker.pick({
     kind = "file_location", 
-    title = "  Source & Config Files",
+    title = " Source & Config Files",
     items = picker_items,
     preview_enabled = true,
     conf = uep_config.get(),
@@ -38,85 +38,32 @@ local function show_picker(items, project_root)
   })
 end
 
--- メインの実行関数
+-- メインの実行関数 (非同期コールバック対応)
 function M.execute(opts)
-  local game_data = project_cache.load(vim.loop.cwd())
-  if not game_data then
-    uep_log.get().error("Project data not found. Run :UEP refresh first.")
-    return
-  end
+  local log = uep_log.get()
+  log.info("Assembling file list for the project...")
 
-  -- 1. 引数を解釈する
-  local scope = "Game"
-  local use_deep_deps = false
-  if opts.deps_flag and (opts.deps_flag == "--all-deps" or opts.deps_flag == "--deep") then
-    use_deep_deps = true
-  end
-  if opts.category and (opts.category == "Game" or opts.category == "Engine") then
-    scope = opts.category
-  end
-
-  -- 2. !付きの場合の処理
-  if opts.has_bang then
-    uep_log.get().info(("Regenerating '%s' file cache..."):format(scope))
-    -- refresh.executeを直接呼び出し、完了後にコールバックを実行
-    refresh_cmd.execute({ type = scope }, function(ok)
-      if ok then
-        uep_log.get().info("Cache regenerated successfully. Displaying files.")
-        -- 処理完了後、自分自身を再度呼び出す (ただし!は付けない)
-        local new_opts = vim.deepcopy(opts)
-        new_opts.has_bang = false
-        M.execute(new_opts)
-      else
-        uep_log.get().error("Cache regeneration failed.")
-      end
-    end)
-    return -- refresh処理の完了を待つため、ここで一旦終了
-  end
-
-  -- 3. 通常の処理 (キャッシュ読み込みと表示)
-  local engine_data = game_data.link_engine_cache_root and project_cache.load(game_data.link_engine_cache_root) or nil
-  
-  local all_modules = {}
-  if game_data and game_data.modules then
-    for name, meta in pairs(game_data.modules) do all_modules[name] = meta end
-  end
-  if engine_data and engine_data.modules then
-    for name, meta in pairs(engine_data.modules) do
-      if not all_modules[name] then all_modules[name] = meta end
+  -- 1. 組立工場に、非同期でファイルの組み立てを依頼
+  files_core.get_merged_files_for_project(vim.loop.cwd(), opts, function(ok, merged_data)
+    if not ok or not merged_data then
+      log.error("Failed to assemble file list: %s", tostring(merged_data))
+      return
     end
-  end
-
-  local base_modules = {}
-  for name, meta in pairs(all_modules) do
-    if meta.category == scope then base_modules[name] = true end
-  end
-  
-  local final_module_names = {}
-  for name in pairs(base_modules) do
-    table.insert(final_module_names, name)
-    local deps_key = use_deep_deps and "deep_dependencies" or "shallow_dependencies"
-    if all_modules[name] and all_modules[name][deps_key] then
-      for _, dep_name in ipairs(all_modules[name][deps_key]) do
-        table.insert(final_module_names, dep_name)
-      end
-    end
-  end
-
-  local module_set = {}
-  for _, name in ipairs(final_module_names) do module_set[name] = true end
-  final_module_names = vim.tbl_keys(module_set)
-
-  local final_files = files_core.get_files_from_cache({
-    required_modules = final_module_names,
-    project_root = game_data.root,
-    engine_root = game_data.link_engine_cache_root,
-    scope = scope, -- files_core にも scope を渡す
-  })
-
-  if not final_files then return end
-  
-  show_picker(final_files, game_data.root)
+    
+    -- 2. 組み立て完了後、どのカテゴリのファイルを表示するか決定
+    --    (将来的に、:UEP files --config のようなフィルタリングをここで実装できる)
+    local final_files = {}
+    vim.list_extend(final_files, merged_data.files.source)
+    vim.list_extend(final_files, merged_data.files.config)
+    vim.list_extend(final_files, merged_data.files.shader)
+    vim.list_extend(final_files, merged_data.files.programs)
+    vim.list_extend(final_files, merged_data.files.other)
+    
+    -- 3. 完成品をピッカーに渡して表示
+    --    プロジェクトルートを特定する必要があるが、cwdから再度探すのが一番シンプル
+    local project_root = require("UNL.finder").project.find_project_root(vim.loop.cwd())
+    show_picker(final_files, project_root)
+  end)
 end
 
 return M

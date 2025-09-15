@@ -1,82 +1,106 @@
--- lua/UEP/cache/projects.lua (最終確定版)
+-- lua/UEP/cache/projects.lua (第三世代・究極のマスターインデックス・最終完成版)
 
--- 必要なUNLのコアモジュールをインポート
 local unl_cache_core = require("UNL.cache.core")
 local uep_config = require("UEP.config")
 local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
--- Neovimの標準モジュール
 local fs = require("vim.fs")
-local json = vim.json
+local unl_path = require("UNL.path")
 
 local M = {}
 
+local MAGIC_CODE = "UEP Master Project Registry"
+local REGISTRY_VERSION = 2 -- 構造変更のためバージョンアップ
 local CACHE_FILENAME = "projects.json"
 
----
--- キャッシュファイルのフルパスを正しく構築する
---
+local function get_name_from_root(root_path)
+  if not root_path then return nil end
+  return unl_path.normalize(root_path):gsub("[\\/:]", "_")
+end
+
 local function get_cache_path()
-  -- 1. 現在の有効な設定を取得する
   local conf = uep_config.get()
-  
-  -- 2. UNLのコア関数を呼び出す。
-  --    UEP/init.lua の設定により、これは ".../cache/UEP" というパスを返す
   local base_dir = unl_cache_core.get_cache_dir(conf)
-  
-  -- 3. ベースディレクトリとファイル名を結合する
   return fs.joinpath(base_dir, CACHE_FILENAME)
 end
 
-
--- 以下の load, save, add_or_update, remove 関数は、
--- get_cache_path() のロジックに依存しているため、変更は一切不要です。
-
 function M.load()
   local path = get_cache_path()
-  if vim.fn.filereadable(path) == 0 then return nil end
-  return require("UNL.cache.core").load_json(path)
+  if vim.fn.filereadable(path) == 0 then
+    return { magic_code = MAGIC_CODE, version = REGISTRY_VERSION, projects = {}, engines = {} }
+  end
+  
+  local data = unl_cache_core.load_json(path)
+  if not data or data.magic_code ~= MAGIC_CODE or data.version ~= REGISTRY_VERSION then
+    require("UEP.logger").get().warn("Project registry is outdated or invalid. Creating a new one.")
+    return { magic_code = MAGIC_CODE, version = REGISTRY_VERSION, projects = {}, engines = {} }
+  end
+
+  data.projects = data.projects or {}
+  data.engines = data.engines or {}
+  return data
 end
 
-local function save(projects_data)
+function M.save(registry_data)
+  registry_data.magic_code = MAGIC_CODE
+  registry_data.version = REGISTRY_VERSION
+
   local path = get_cache_path()
-  -- 汎用セーブ関数を呼び出すだけ！
-  local ok, err = unl_cache_core.save_json(path, projects_data)
+  local ok, err = unl_cache_core.save_json(path, registry_data)
   if not ok then
-    -- エラーハンドリング (必要に応じて)
-    require("UEP.logger").get().error("Failed to save projects.json: %s", tostring(err))
+    require("UEP.logger").get().error("Failed to save master project registry: %s", tostring(err))
   end
-  unl_events.publish(unl_event_types.ON_AFTER_PROJECTS_CACHE_SAVE, {
-    status = "success",
-  })
   
+  if ok then
+    unl_events.publish(unl_event_types.ON_AFTER_PROJECTS_CACHE_SAVE, { status = "success" })
+  end
   return ok
 end
 
-function M.add_or_update(project_info)
-  -- 1. キャッシュをロードし、もしnilなら空のテーブル{}を代わりに使う
-  local projects = M.load() or {}
+--- 新しい高レベルAPI: プロジェクトとその全コンポーネントを登録する
+function M.register_project_with_components(registration_info, all_components)
+  local registry = M.load()
+  local project_display_name = vim.fn.fnamemodify(registration_info.root_path, ":t")
+  local project_name = get_name_from_root(registration_info.root_path)
+  local engine_name = get_name_from_root(registration_info.engine_root)
   
-  -- 2. プロジェクト名を取得
-  local project_name = vim.fn.fnamemodify(project_info.uproject_path, ":t:r")
+  local component_names = {}
+  for _, comp in ipairs(all_components) do
+    table.insert(component_names, comp.name)
+  end
 
-  -- 3. データを更新または追加
-  projects[project_info.root] = {
-    name = project_name,
-    uproject_path = project_info.uproject_path,
-    engine_root_path = project_info.engine_root_path,
-    last_indexed_at = os.time()
+  registry.projects[project_display_name] = {
+    unique_name = project_name,
+    uproject_path = registration_info.uproject_path,
+    project_cache_filename = project_name .. ".project.json",
+    engine_association = engine_name,
+    last_indexed_at = os.time(),
+    components = component_names, -- ★★★
+  }
+
+  registry.engines[engine_name] = {
+    engine_root = registration_info.engine_root,
+    project_cache_filename = engine_name .. ".project.json",
   }
   
-  -- 4. 保存
-  save(projects)
+  return M.save(registry)
 end
 
-function M.remove(project_root)
-  local projects = M.load()
-  if projects and projects[project_root] then -- ★ projectsがnilでないこともチェック
-    projects[project_root] = nil
-    return save(projects) -- ★ save関数の結果(true/false)をそのまま返す
+function M.get_project_info(project_display_name)
+  local registry = M.load()
+  return registry.projects and registry.projects[project_display_name]
+end
+
+function M.get_engine_info(engine_name)
+  local registry = M.load()
+  return registry.engines and registry.engines[engine_name]
+end
+
+function M.remove_project(project_display_name)
+  local registry = M.load()
+  if registry.projects and registry.projects[project_display_name] then
+    registry.projects[project_display_name] = nil
+    return M.save(registry)
   end
   return true
 end

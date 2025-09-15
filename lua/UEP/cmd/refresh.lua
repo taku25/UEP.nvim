@@ -1,61 +1,31 @@
--- lua/UEP/cmd/refresh.lua (司令官・最適化済み)
+-- lua/UEP/cmd/refresh.lua (司令官・第三世代・最終完成版)
 
--- (require部分は変更なし)
 local unl_finder = require("UNL.finder")
 local uep_config = require("UEP.config")
 local unl_progress = require("UNL.backend.progress")
-local project_cache = require("UEP.cache.project")
-local projects_cache = require("UEP.cache.projects")
 local uep_log = require("UEP.logger")
+local projects_cache = require("UEP.cache.projects")
+local project_cache = require("UEP.cache.project")
+local files_cache_manager = require("UEP.cache.files")
+local refresh_project_core = require("UEP.cmd.core.refresh_project")
+local refresh_files_core = require("UEP.cmd.core.refresh_files")
 local unl_events = require("UNL.event.events")
 local unl_types = require("UNL.event.types")
-local class_parser = require("UEP.parser.class")
-local files_disk_cache = require("UEP.cache.files")
-local refresh_project = require("UEP.cmd.core.refresh_project")
-local refresh_files = require("UEP.cmd.core.refresh_files")
 
 local M = {}
 
--- (process_single_project_type 関数は変更なし)
-local function process_single_project_type(root_path, type, force_regenerate, engine_cache, progress, on_complete)
-  local log = uep_log.get()
-  refresh_project.analyze(root_path, type, engine_cache, progress, function(analyze_ok, new_data)
-    if not analyze_ok or not new_data then
-      on_complete(false, nil)
-      return
-    end
-    local old_data = project_cache.load(root_path)
-    local needs_project_update = force_regenerate or not old_data or old_data.generation ~= new_data.generation
-    local data_for_files_cache = needs_project_update and new_data or old_data
-    if needs_project_update then
-      project_cache.save(root_path, type, new_data)
-      if type == "Game" and new_data.uproject_path then
-        projects_cache.add_or_update({ root = root_path, uproject_path = new_data.uproject_path, engine_root_path = new_data.link_engine_cache_root })
-      end
-    end
-    refresh_files.create_cache(type, data_for_files_cache, engine_cache, progress, function(file_cache_ok)
-      on_complete(file_cache_ok, data_for_files_cache)
-    end)
-  end)
-end
-
-
----
--- 公開API: コマンドのエントリーポイント
--- ★★★ Engineキャッシュが最新なら分析をスキップする最適化を導入 ★★★
 function M.execute(opts, on_complete)
   opts = opts or {}
   local force_regenerate = opts.has_bang or false
-  local type_arg = opts.type or "Game"
   local log = uep_log.get()
 
-  local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
-  if not project_root then if on_complete then on_complete(false) end; return log.error("Not in an Unreal Engine project directory.") end
+  local project_info = unl_finder.project.find_project(vim.loop.cwd())
+  if not (project_info and project_info.uproject) then
+    if on_complete then on_complete(false) end
+    return log.error("Could not find a .uproject file.")
+  end
+  local uproject_path = project_info.uproject
   
-  local proj_info = unl_finder.project.find_project(project_root)
-  local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject, {}) or nil
-  if not engine_root then if on_complete then on_complete(false) end; return log.error("Could not find engine root.") end
-
   local conf = uep_config.get()
   local progress, _ = unl_progress.create_for_refresh(conf, { title = "UEP: Refreshing project...", client_name = "UEP" })
   progress:open()
@@ -65,41 +35,46 @@ function M.execute(opts, on_complete)
     unl_events.publish(unl_types.ON_AFTER_REFRESH_COMPLETED, { status = ok and "success" or "failed" })
     if on_complete then on_complete(ok) end
   end
-
-  -- ▼▼▼ ここからが修正されたロジックです ▼▼▼
-
-  -- Gameスコープ、かつ、強制リフレッシュでない場合、Engineの分析をスキップできるか試みる
-  if type_arg:lower() == "game" and not force_regenerate then
-    local existing_engine_data = project_cache.load(engine_root)
-    if existing_engine_data then
-      log.info("Engine cache is up-to-date. Skipping engine analysis and proceeding directly to Game refresh.")
-      -- 既存のEngineキャッシュを使って、Gameの処理だけを実行する
-      process_single_project_type(project_root, "Game", force_regenerate, existing_engine_data, progress, function(game_ok, _)
-        finish_all(game_ok)
-      end)
-      return -- 最適化パスに入ったので、ここで処理を終了
-    end
-  end
-
-  -- 最適化ができなかった場合 (または :UEP refresh Engine の場合)、従来通りのフルスキャンを実行
-  process_single_project_type(engine_root, "Engine", force_regenerate, nil, progress, function(engine_ok, updated_engine_data)
-    if not engine_ok then return finish_all(false) end
-    -- :UEP refresh Engine の場合はここで終了
-    if type_arg:lower() == "engine" then return finish_all(true) end
-
-    -- Gameの処理へ進む
-    process_single_project_type(project_root, "Game", force_regenerate, updated_engine_data, progress, function(game_ok, _)
-      finish_all(game_ok)
-    end)
-  end)
   
-  -- ▲▲▲ ここまでが修正されたロジックです ▲▲▲
-end
+  -- STEP 1: プロジェクトの完全なコンポーネントリストを取得
+  refresh_project_core.get_full_component_list(uproject_path, progress, function(ok, all_components)
+    if not ok then return finish_all(false) end
 
--- (update_file_cache_for_single_module 関数は変更なし)
-function M.update_file_cache_for_single_module(module_name, on_complete, passthrough_payload)
-  refresh_files.update_single_module_cache(module_name, function(ok)
-    if on_complete then on_complete(ok, passthrough_payload) end
+    -- STEP 2: 各コンポーネントが最新かどうかを判定
+    local components_to_refresh = {}
+    local up_to_date_components_data = {}
+    
+    for _, component in ipairs(all_components) do
+      local proj_cache_path = component.name .. ".project.json"
+      local project_cache_data = project_cache.load(proj_cache_path)
+      local file_cache_data = files_cache_manager.load_component_cache(component)
+
+      local needs_refresh = force_regenerate 
+                           or not project_cache_data 
+                           or not file_cache_data
+
+      if needs_refresh then
+        table.insert(components_to_refresh, component)
+      else
+        up_to_date_components_data[component.name] = project_cache_data
+      end
+    end
+
+    if #components_to_refresh == 0 then
+      log.info("Project is already up-to-date.")
+      return finish_all(true)
+    end
+
+    -- STEP 3: "要修復"コンポーネントだけの分析を命令
+    refresh_project_core.analyze_selected_components(components_to_refresh, up_to_date_components_data, progress, function(analysis_ok, refreshed_data)
+      if not analysis_ok then return finish_all(false) end
+      
+      -- STEP 4: "要修復"コンポーネントだけのファイルスキャンを命令
+      local final_data_for_files = vim.tbl_deep_extend("force", {}, up_to_date_components_data, refreshed_data)
+      refresh_files_core.create_component_caches_for(components_to_refresh, final_data_for_files, progress, function(files_ok)
+        finish_all(files_ok)
+      end)
+    end)
   end)
 end
 
