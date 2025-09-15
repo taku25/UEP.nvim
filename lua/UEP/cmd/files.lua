@@ -49,7 +49,7 @@ function M.execute(opts)
   -- 1. 引数を解釈する
   local scope = "Game"
   local use_deep_deps = false
-  if opts.category and (opts.deps_flag == "--all-deps" or opts.deps_flag == "--deep") then
+  if opts.deps_flag and (opts.deps_flag == "--all-deps" or opts.deps_flag == "--deep") then
     use_deep_deps = true
   end
   if opts.category and (opts.category == "Game" or opts.category == "Engine") then
