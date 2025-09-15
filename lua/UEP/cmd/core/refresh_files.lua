@@ -159,8 +159,8 @@ function M.update_single_module_cache(module_name, on_complete, passthrough_payl
   -- ★★★ 2. 軽量更新用のプログレスバーを準備 ★★★
   local conf = uep_config.get()
   local progress, _ = unl_progress.create_for_refresh(conf, { 
-    title = "UCM: Updating module...", 
-    client_name = "UCM" 
+    title = "UEP: Updating module...", 
+    client_name = "UEP" 
   })
   progress:open()
   progress:stage_define("scan_files", 0.4) -- 重み付け
