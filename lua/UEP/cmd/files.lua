@@ -1,21 +1,21 @@
--- lua/UEP/cmd/files.lua
+-- lua/UEP/cmd/files.lua (修正版)
 
-local project_cache = require("UEP.cache.project")
-local files_core    = require("UEP.cmd.files_core")
-local unl_picker    = require("UNL.backend.picker")
-local uep_log      = require("UEP.logger")
-local uep_config      = require("UEP.config")
-local refresh_cmd  = require("UEP.cmd.refresh")
+local files_core = require("UEP.cmd.core.files")
+local unl_picker = require("UNL.backend.picker")
+local uep_log = require("UEP.logger")
+local uep_config = require("UEP.config")
+local unl_events = require("UNL.event.events")
+local unl_types = require("UNL.event.types")
 
 local M = {}
 
--- Picker表示用のヘルパー関数
 local function show_picker(items, project_root)
   if not items or #items == 0 then
     uep_log.get().info("No matching files found.", "info")
     return
   end
-  local picker_items = {}; local root_prefix = project_root .. "/"
+  local picker_items = {};
+  local root_prefix = project_root .. "/"
   for _, file_path in ipairs(items) do
     table.insert(picker_items, {
       label = file_path:gsub(root_prefix, ""),
@@ -24,8 +24,8 @@ local function show_picker(items, project_root)
   end
   table.sort(picker_items, function(a, b) return a.label < b.label end)
   unl_picker.pick({
-    kind = "file_location", 
-    title = "  Source & Config Files",
+    kind = "file_location",
+    title = " Source & Config Files",
     items = picker_items,
     preview_enabled = true,
     conf = uep_config.get(),
@@ -38,85 +38,64 @@ local function show_picker(items, project_root)
   })
 end
 
--- メインの実行関数
-function M.execute(opts)
-  local game_data = project_cache.load(vim.loop.cwd())
-  if not game_data then
-    uep_log.get().error("Project data not found. Run :UEP refresh first.")
-    return
-  end
+-- ▼▼▼ メインロジックを全面的に書き直し ▼▼▼
+local function run_file_logic(core_opts)
+  local log = uep_log.get()
+  log.info("Assembling file list with scope: '%s', deps: '%s'", core_opts.scope, core_opts.deps_flag)
+  -- print(core_opts.deps_flag)
 
-  -- 1. 引数を解釈する
-  local scope = "Game"
-  local use_deep_deps = false
-  if opts.deps_flag and (opts.deps_flag == "--all-deps" or opts.deps_flag == "--deep") then
-    use_deep_deps = true
-  end
-  if opts.category and (opts.category == "Game" or opts.category == "Engine") then
-    scope = opts.category
-  end
-
-  -- 2. !付きの場合の処理
-  if opts.has_bang then
-    uep_log.get().info(("Regenerating '%s' file cache..."):format(scope))
-    -- refresh.executeを直接呼び出し、完了後にコールバックを実行
-    refresh_cmd.execute({ type = scope }, function(ok)
-      if ok then
-        uep_log.get().info("Cache regenerated successfully. Displaying files.")
-        -- 処理完了後、自分自身を再度呼び出す (ただし!は付けない)
-        local new_opts = vim.deepcopy(opts)
-        new_opts.has_bang = false
-        M.execute(new_opts)
-      else
-        uep_log.get().error("Cache regeneration failed.")
-      end
-    end)
-    return -- refresh処理の完了を待つため、ここで一旦終了
-  end
-
-  -- 3. 通常の処理 (キャッシュ読み込みと表示)
-  local engine_data = game_data.link_engine_cache_root and project_cache.load(game_data.link_engine_cache_root) or nil
-  
-  local all_modules = {}
-  if game_data and game_data.modules then
-    for name, meta in pairs(game_data.modules) do all_modules[name] = meta end
-  end
-  if engine_data and engine_data.modules then
-    for name, meta in pairs(engine_data.modules) do
-      if not all_modules[name] then all_modules[name] = meta end
+  files_core.get_merged_files_for_project(vim.loop.cwd(), core_opts, function(ok, merged_data)
+    if not ok or not merged_data then
+      log.error("Failed to assemble file list: %s", tostring(merged_data))
+      return
     end
-  end
 
-  local base_modules = {}
-  for name, meta in pairs(all_modules) do
-    if meta.category == scope then base_modules[name] = true end
-  end
-  
-  local final_module_names = {}
-  for name in pairs(base_modules) do
-    table.insert(final_module_names, name)
-    local deps_key = use_deep_deps and "deep_dependencies" or "shallow_dependencies"
-    if all_modules[name] and all_modules[name][deps_key] then
-      for _, dep_name in ipairs(all_modules[name][deps_key]) do
-        table.insert(final_module_names, dep_name)
-      end
-    end
-  end
+    local final_files = {}
+    vim.list_extend(final_files, merged_data.files.source)
+    vim.list_extend(final_files, merged_data.files.config)
+    vim.list_extend(final_files, merged_data.files.shader)
+    vim.list_extend(final_files, merged_data.files.programs)
+    vim.list_extend(final_files, merged_data.files.other)
 
-  local module_set = {}
-  for _, name in ipairs(final_module_names) do module_set[name] = true end
-  final_module_names = vim.tbl_keys(module_set)
-
-  local final_files = files_core.get_files_from_cache({
-    required_modules = final_module_names,
-    project_root = game_data.root,
-    engine_root = game_data.link_engine_cache_root,
-    scope = scope, -- files_core にも scope を渡す
-  })
-
-  if not final_files then return end
-  
-  show_picker(final_files, game_data.root)
+    local project_root = require("UNL.finder").project.find_project_root(vim.loop.cwd())
+    show_picker(final_files, project_root)
+  end)
 end
+
+function M.execute(opts)
+  opts = opts or {}
+  local log = uep_log.get()
+
+  -- STEP 1: ユーザーの入力を解釈し、デフォルト値を設定する
+  local core_opts = {
+    scope = opts.category or "Game", -- デフォルトスコープ
+    deps_flag = opts.deps_flag or "--no-deps", -- デフォルトの依存関係
+  }
+
+  -- STEP 2: `!` (bang) があるかどうかで処理を分岐
+  if opts.has_bang then
+    -- `!` がある場合: refreshコマンドを実行し、完了を待つ
+    local refresh_scope = core_opts.scope
+    local refresh_cmd = "UEP refresh! " .. refresh_scope
+    log.info("Bang detected. Running '%s' first...", refresh_cmd)
+    
+    -- refresh完了イベントを一度だけ購読する
+    local sub_id
+    sub_id = unl_events.subscribe(unl_types.ON_AFTER_REFRESH_COMPLETED, function()
+      unl_events.unsubscribe(sub_id) -- イベントを受け取ったらすぐに購読解除
+      log.info("Refresh completed. Now running file logic.")
+      vim.schedule(function() -- `vim.schedule`で安全に次の処理を呼び出す
+        run_file_logic(core_opts)
+      end)
+    end)
+    
+    -- コマンドを非同期で実行
+    vim.api.nvim_command(refresh_cmd)
+  else
+    -- `!` がない場合: そのままファイルリストのロジックを実行
+    run_file_logic(core_opts)
+  end
+end
+-- ▲▲▲ ここまで ▲▲▲
 
 return M

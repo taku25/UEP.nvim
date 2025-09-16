@@ -1,231 +1,190 @@
--- lua/UEP/cmd/core/refresh_files.lua (モジュール中心設計・最終完成版)
+-- lua/UEP/cmd/core/refresh_files.lua (修正版)
+
 local class_parser = require("UEP.parser.class")
 local uep_config = require("UEP.config")
-local files_disk_cache = require("UEP.cache.files")
+local files_cache_manager = require("UEP.cache.files")
 local uep_log = require("UEP.logger")
-local project_cache = require("UEP.cache.project")
-local unl_progress = require("UNL.backend.progress") -- ★★★ progressをrequire ★★★
+local fs = require("vim.fs")
+
 local M = {}
 
--------------------------------------------------
--- ヘルパー関数 (変更なし)
--------------------------------------------------
-local function create_fd_command_for_files(search_paths)
+-- (ヘルパー関数 create_fd_command, categorize_path に変更はありません)
+M.create_fd_command = function (base_paths, type_flag)
   local conf = uep_config.get()
-  local extensions = conf.files_extensions or { "cpp", "h", "hpp", "inl", "ini", "cs" }
-  local full_path_regex = ".*[\\\\/](Source|Config|Plugins)[\\\\/].*\\.(" .. table.concat(extensions, "|") .. ")$"
-  local excludes = { "Intermediate", "Binaries", "Saved", ".git", ".vs" }
-  local fd_cmd = { "fd", "--regex", full_path_regex, "--full-path", "--type", "f", "--path-separator", "/", "--absolute-path" }
-  for _, dir in ipairs(excludes) do table.insert(fd_cmd, "--exclude"); table.insert(fd_cmd, dir) end
-  if search_paths and type(search_paths) == "table" then
-    vim.list_extend(fd_cmd, search_paths)
+  local extensions = conf.include_extensions or { "cpp", "h", "hpp", "inl", "ini", "cs", "usf", "ush" }
+  local include_dirs = conf.include_directory or { "Source", "Config", "Plugins", "Shaders", "Programs" }
+  local exclude_dirs = conf.excludes_directory or { "Intermediate", "Binaries", "Saved" }
+  local dir_pattern = "(" .. table.concat(include_dirs, "|") .. ")"
+  local final_regex
+  if type_flag == "f" then
+    local ext_pattern = "(" .. table.concat(extensions, "|") .. ")"
+    final_regex = ".*[\\\\/]" .. dir_pattern .. "[\\\\/].*\\." .. ext_pattern .. "$"
+  else -- "d"
+    final_regex = ".*[\\\\/]" .. dir_pattern .. "[\\\\/]?.*"
   end
+  local fd_cmd = { "fd", "--regex", final_regex, "--full-path", "--type", type_flag, "--path-separator", "/" }
+  for _, dir in ipairs(exclude_dirs) do table.insert(fd_cmd, "--exclude"); table.insert(fd_cmd, dir) end
+  vim.list_extend(fd_cmd, base_paths)
   return fd_cmd
 end
 
-local function create_fd_command_for_dirs(search_paths)
-  local full_path_regex = ".*[\\\\/](Source|Config|Plugins)[\\\\/].*"
-  local excludes = { "Intermediate", "Binaries", "Saved", ".git", ".vs" }
-  local fd_cmd = { "fd", "--regex", full_path_regex, "--full-path", "--type", "d", "--path-separator", "/", "--absolute-path" }
-  for _, dir in ipairs(excludes) do table.insert(fd_cmd, "--exclude"); table.insert(fd_cmd, dir) end
-  if search_paths and type(search_paths) == "table" then
-    vim.list_extend(fd_cmd, search_paths)
-  end
-  return fd_cmd
+local function categorize_path(path)
+  if path:find("/Shaders/", 1, true) or path:match("/Shaders$") then return "shader" end
+  if path:find("/Config/", 1, true) or path:match("/Config$") then return "config" end
+  if path:find("/Source/", 1, true) or path:match("/Source$") then return "source" end
+  if path:find("/Programs/", 1, true) or path:match("/Programs$") then return "programs" end
+  if path:find("/Content/", 1, true) or path:match("/Content$") then return "content" end
+  if path:find("/Plugins/", 1, true) then return "source" end
+  return "other"
 end
 
--------------------------------------------------
--- 公開API
--------------------------------------------------
 
--- ファイル、ディレクトリ、ヘッダー情報を含む完全なキャッシュを作成する。
--- 責務を完全に移譲された、最終完成版。
--- @param scope "Game" | "Engine"
--- @param project_data table
--- @param engine_data table | nil
--- @param progress table
--- @param on_all_done fun(ok: boolean)
-function M.create_cache(scope, project_data, engine_data, progress, on_all_done)
-  progress:stage_define("create_file_cache", 1)
-  progress:stage_update("create_file_cache", 0, "Scanning files & dirs for " .. scope .. "...")
+function M.create_component_caches_for(components_to_refresh, all_components_data, game_root, engine_root, progress, on_done)
+  progress:stage_define("file_scan", 1)
+  progress:stage_update("file_scan", 0, ("Scanning files for %d components..."):format(#components_to_refresh))
 
-  local search_path = project_data.root
-  local fd_cmd_files = create_fd_command_for_files({ search_path })
-  local fd_cmd_dirs = create_fd_command_for_dirs({ search_path })
-  local found_files = {}
-  local found_dirs = {}
+  if #components_to_refresh == 0 then
+      uep_log.get().info("No components need file scanning.")
+      if on_done then on_done(true) end
+      return
+  end
 
-  -- STEP 1: ファイルを非同期で検索
+  local top_level_search_paths = { game_root, engine_root }
+  local fd_cmd_files = M.create_fd_command(top_level_search_paths, "f")
+  local fd_cmd_dirs = M.create_fd_command(top_level_search_paths, "d")
+
+  local all_found_files = {}
+  local all_found_dirs = {}
+
   vim.fn.jobstart(fd_cmd_files, {
     stdout_buffered = true,
-    on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(found_files, line) end end end end,
+    on_stdout = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(all_found_files, line)
+          end 
+        end
+      end
+    end,
     on_exit = function(_, files_code)
-      if files_code ~= 0 then if on_all_done then on_all_done(false) end; return end
-      
-      -- STEP 2: ディレクトリを非同期で検索 (vim.scheduleで安全に実行)
+      if files_code ~= 0 then
+        if on_done then
+          on_done(false)
+        end
+        return
+      end
       vim.schedule(function()
         vim.fn.jobstart(fd_cmd_dirs, {
           stdout_buffered = true,
-          on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(found_dirs, line) end end end end,
-          on_exit = function(_, dirs_code)
-            if dirs_code ~= 0 then if on_all_done then on_all_done(false) end; return end
-
-            -- STEP 3: スキャン完了後、キャッシュ構造を構築
-            local all_modules_meta = vim.tbl_deep_extend("force", {}, engine_data and engine_data.modules or {}, project_data.modules)
-            local sorted_modules = {}
-            for name, meta in pairs(all_modules_meta) do
-              if meta.module_root then
-                table.insert(sorted_modules, { name = name, root = meta.module_root .. "/" })
-              end
-            end
-            table.sort(sorted_modules, function(a, b) return #a.root > #b.root end)
-
-            local modules_data = {}
-            -- project_data (Gameスコープ) に含まれるモジュールだけを初期化の対象とする
-            for name, _ in pairs(project_data.modules) do
-              modules_data[name] = { files = {}, directories = {}, header_details = {} }
-            end
-
-            local function find_owner(path)
-              for _, meta in ipairs(sorted_modules) do
-                if path:find(meta.root, 1, true) then return meta.name end
-              end
-              return nil
-            end
-            for _, file_path in ipairs(found_files) do
-              local owner = find_owner(file_path)
-              if owner and modules_data[owner] then table.insert(modules_data[owner].files, file_path) end
-            end
-            for _, dir_path in ipairs(found_dirs) do
-              local owner = find_owner(dir_path)
-              if owner and modules_data[owner] then table.insert(modules_data[owner].directories, dir_path) end
-            end
-            
-            -- STEP 4: ヘッダー解析官に、ヘッダー解析を命令
-            local headers_to_parse = {}
-            for _, file_path in ipairs(found_files) do
-                if file_path:match("%.h$") then table.insert(headers_to_parse, file_path) end
-            end
-            
-            class_parser.parse_headers_async(project_data.root, headers_to_parse, progress, function(ok, header_details_by_file)
-                if ok and header_details_by_file then
-                    -- 解析結果を、各モジュールの header_details に振り分ける
-                    for file_path, details in pairs(header_details_by_file) do
-                        local owner_module = find_owner(file_path)
-                        if owner_module and modules_data[owner_module] then
-                            modules_data[owner_module].header_details[file_path] = details
-                        end
-                    end
+          on_stdout = function(_, data)
+           if data then
+              for _, line in ipairs(data) do
+                if line ~= "" then
+                  table.insert(all_found_dirs, line)
                 end
-
-                -- STEP 5: 全ての情報を元に、最終的なキャッシュを保存
-                local cache_to_save = {
-                    category = scope,
-                    generation = project_data.generation,
-                    owner_project_root = project_data.root,
-                    modules_data = modules_data,
-                }
-                files_disk_cache.save(project_data.root, cache_to_save)
-                progress:stage_update("create_file_cache", 1, "File cache for " .. scope .. " created.")
-                if on_all_done then on_all_done(true) end
-            end)
-          end
-        })
-      end)
-    end
-  })
-end
-
-
----
--- 単一モジュールのキャッシュを、新しい「モジュール中心」構造で更新する
----
--- 単一モジュールのキャッシュを、ファイル、ディレクトリ、ヘッダー情報を含めて完全に更新する。
--- プログレスバー表示にも対応した、最終完成版。
--- @param module_name string 更新したいモジュール名
--- @param on_complete function(ok, passthrough_payload) 完了時に呼ばれるコールバック
-function M.update_single_module_cache(module_name, on_complete, passthrough_payload)
-  -- 1. 必要なデータをロード (変更なし)
-  local game_data = project_cache.load(vim.loop.cwd())
-  if not game_data then if on_complete then on_complete(false, passthrough_payload) end; return end
-  local engine_data = game_data.link_engine_cache_root and project_cache.load(game_data.link_engine_cache_root) or nil
-  local all_modules = vim.tbl_deep_extend("force", {}, engine_data and engine_data.modules or {}, game_data.modules or {})
-  local target_module = all_modules[module_name]
-  if not (target_module and target_module.module_root) then
-    if on_complete then on_complete(false, passthrough_payload) end
-    return
-  end
-  
-  -- ★★★ 2. 軽量更新用のプログレスバーを準備 ★★★
-  local conf = uep_config.get()
-  local progress, _ = unl_progress.create_for_refresh(conf, { 
-    title = "UEP: Updating module...", 
-    client_name = "UEP" 
-  })
-  progress:open()
-  progress:stage_define("scan_files", 0.4) -- 重み付け
-  progress:stage_define("scan_dirs", 0.2)
-  progress:stage_define("parse_headers", 0.4)
-
-  -- 3. fdコマンドを構築
-  local fd_cmd_files = create_fd_command_for_files({ target_module.module_root })
-  local fd_cmd_dirs = create_fd_command_for_dirs({ target_module.module_root })
-  local found_files = {}
-  local found_dirs = {}
-
-  -- STEP A: ファイルを検索
-  progress:stage_update("scan_files", 0, "Scanning files...")
-  vim.fn.jobstart(fd_cmd_files, {
-    stdout_buffered = true,
-    on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(found_files, line) end end end end,
-    on_exit = function(_, files_code)
-      if files_code ~= 0 then progress:finish(false); if on_complete then on_complete(false, passthrough_payload) end; return end
-      progress:stage_update("scan_files", 1, "Found " .. #found_files .. " files.")
-      
-      -- STEP B: ディレクトリを検索
-      vim.schedule(function()
-        progress:stage_update("scan_dirs", 0, "Scanning directories...")
-        vim.fn.jobstart(fd_cmd_dirs, {
-          stdout_buffered = true,
-          on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(found_dirs, line) end end end end,
+              end
+            end
+          end,
           on_exit = function(_, dirs_code)
-            if dirs_code ~= 0 then progress:finish(false); if on_complete then on_complete(false, passthrough_payload) end; return end
-            progress:stage_update("scan_dirs", 1, "Found " .. #found_dirs .. " directories.")
-
-            -- STEP C: ヘッダーを解析
-            local target_project_data = (game_data.modules and game_data.modules[module_name]) and game_data or engine_data
-            if not target_project_data then progress:finish(false); if on_complete then on_complete(false, passthrough_payload) end; return end
+            if dirs_code ~= 0 then if on_done then on_done(false) end; return end
             
-            local headers_to_parse = {}
-            for _, file_path in ipairs(found_files) do
-              if file_path:match("%.h$") then table.insert(headers_to_parse, file_path) end
+            progress:stage_update("file_scan", 1, "File scan complete. Classifying...")
+
+            local refresh_roots = {}
+            for _, c in ipairs(components_to_refresh) do refresh_roots[c.root_path] = true end
+            
+            local relevant_files = {}
+            for _, file in ipairs(all_found_files) do
+              for root_path in pairs(refresh_roots) do
+                if file:find(root_path, 1, true) then
+                  table.insert(relevant_files, file)
+                  break
+                end
+              end
+            end
+            local relevant_dirs = {}
+            for _, dir in ipairs(all_found_dirs) do
+              for root_path in pairs(refresh_roots) do
+                if dir:find(root_path, 1, true) then
+                  table.insert(relevant_dirs, dir)
+                  break
+                end
+              end
+            end
+
+            local files_by_component = {}
+            for _, comp_data in pairs(all_components_data) do
+              files_by_component[comp_data.name] = { files = { source={}, config={}, shader={}, content={}, programs={}, other={} }, dirs = { source={}, config={}, shader={}, content={}, programs={}, other={} } }
             end
             
-            -- ★ progressオブジェクトをヘッダーパーサーに渡す
-            class_parser.parse_headers_async(target_project_data.root, headers_to_parse, progress, function(ok, header_details)
-              header_details = ok and header_details or {}
+            local sorted_components = vim.tbl_values(all_components_data)
+            table.sort(sorted_components, function(a,b) return #a.root_path > #b.root_path end)
 
-              -- STEP D: 全ての情報を元に、キャッシュをアトミックに更新
-              local full_disk_cache = files_disk_cache.load(target_project_data.root) or { modules_data = {} }
+            for _, file in ipairs(relevant_files) do
+              for _, comp_data in ipairs(sorted_components) do
+                if file:find(comp_data.root_path, 1, true) then
+                  local category = categorize_path(file)
+                  table.insert(files_by_component[comp_data.name].files[category], file)
+                  break
+                end
+              end
+            end
+            for _, dir in ipairs(relevant_dirs) do
+              for _, comp_data in ipairs(sorted_components) do
+                if dir:find(comp_data.root_path, 1, true) then
+                  local category = categorize_path(dir)
+                  table.insert(files_by_component[comp_data.name].dirs[category], dir)
+                  break
+                end
+              end
+            end
+            
+            progress:stage_define("header_analysis", #relevant_files)
+            local headers_to_parse = {}
+            for _, file in ipairs(relevant_files) do if file:match("%.h$") then table.insert(headers_to_parse, file) end end
+            
+            -- ▼▼▼ 修正点: 既存の全ヘッダーキャッシュを集約してパーサーに渡す ▼▼▼
+            local all_existing_header_details = {}
+            for _, component in ipairs(components_to_refresh) do
+                local existing_cache = files_cache_manager.load_component_cache(component)
+                if existing_cache and existing_cache.header_details then
+                    vim.tbl_deep_extend("force", all_existing_header_details, existing_cache.header_details)
+                end
+            end
+
+            class_parser.parse_headers_async(all_existing_header_details, headers_to_parse, progress, function(ok, header_details_by_file)
+            -- ▲▲▲ ここまで ▲▲▲
               
-              full_disk_cache.modules_data = full_disk_cache.modules_data or {}
-              
-              full_disk_cache.modules_data[module_name] = {
-                files = found_files,
-                directories = found_dirs,
-                header_details = header_details,
-              }
-              full_disk_cache.generation = target_project_data.generation
-              files_disk_cache.save(target_project_data.root, full_disk_cache)
-              
-              progress:finish(true)
-              uep_log.get().info("Lightweight full module cache update for '%s' complete.", module_name)
-              if on_complete then on_complete(true, passthrough_payload) end
+              progress:stage_define("cache_save", #components_to_refresh)
+              local saved_count = 0
+              for _, component_to_save in ipairs(components_to_refresh) do
+                saved_count = saved_count + 1
+                progress:stage_update("cache_save", saved_count, ("Saving: %s [%d/%d]"):format(component_to_save.display_name, saved_count, #components_to_refresh))
+
+                local component_files_data = files_by_component[component_to_save.name]
+                if component_files_data then
+                  local component_header_details = {}
+                  if ok and header_details_by_file then
+                    for _, file in ipairs(component_files_data.files.source) do
+                      if header_details_by_file[file] then component_header_details[file] = header_details_by_file[file] end
+                    end
+                  end
+                  local data_to_save = {
+                    files = component_files_data.files,
+                    directories = component_files_data.dirs,
+                    header_details = component_header_details,
+                  }
+                  files_cache_manager.save_component_cache(component_to_save, data_to_save)
+                end
+              end
+              progress:stage_update("cache_save", saved_count, "All file caches saved.")
+              if on_done then on_done(true) end
             end)
-          end
+          end,
         })
       end)
-    end
+    end,
   })
 end
 

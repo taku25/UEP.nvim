@@ -1,9 +1,10 @@
--- lua/UEP/provider/tree.lua (モジュール中心設計・最終完成版)
+-- lua/UEP/provider/tree.lua (コンポーネント中心構造・最終版・完全コード)
 
 local unl_context = require("UNL.context")
 local uep_log = require("UEP.logger").get()
-local uep_project_cache = require("UEP.cache.project")
-local uep_files_cache = require("UEP.cache.files")
+local projects_cache = require("UEP.cache.projects")
+local project_cache = require("UEP.cache.project")
+local files_cache_manager = require("UEP.cache.files")
 local fs = require("vim.fs")
 
 local M = {}
@@ -21,7 +22,6 @@ end
 local function build_fs_hierarchy(root_path, files, dirs)
     local dir_set = {}
     for _, dir_path in ipairs(dirs or {}) do
-        -- ★★★ 修正箇所: 格納する前に、末尾のスラッシュを確実に除去 ★★★
         dir_set[dir_path:gsub("[/\\]$", "")] = true
     end
     local all_paths = {}
@@ -31,15 +31,12 @@ local function build_fs_hierarchy(root_path, files, dirs)
     local trie = {}
     for _, raw_full_path in ipairs(all_paths) do
         local full_path = raw_full_path:gsub("[/\\]$", "")
-
-        if full_path:find(root_path, 1, true) and full_path ~= root_path then
+        local root_prefix = root_path:gsub("[/\\]$", "") .. "/"
+        
+        -- string.gsubから、より確実なstring.find + string.subによる切り出しに変更
+        if full_path:sub(1, #root_prefix) == root_prefix then
             local current_level = trie
-
-            -- ★★★ これが、曖昧さを完全に排除した、最後の聖剣です ★★★
-            -- 1. まず、パスの先頭からroot_path部分を安全に除去する
-            local relative_path = full_path:gsub(vim.pesc(root_path), "", 1)
-            -- 2. 次に、先頭に残った可能性のあるパス区切り文字を除去する
-            relative_path = relative_path:gsub("^[/\\]", "")
+            local relative_path = full_path:sub(#root_prefix + 1)
             
             local parts = vim.split(relative_path, "[/\\]")
             for _, part in ipairs(parts) do
@@ -71,49 +68,102 @@ local function build_fs_hierarchy(root_path, files, dirs)
     return trie_to_nodes(trie, root_path)
 end
 
-local function build_logical_hierarchy(modules_meta, all_modules_data)
-  local root_categories = {
-    Game = { id = "category_Game", name = "Game", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } },
-    Plugins = { id = "category_Plugins", name = "Plugins", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } },
-    Engine = { id = "category_Engine", name = "Engine", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } },
-  }
-  local plugin_nodes = {}
 
-  for name, meta in pairs(modules_meta) do
-    if meta.module_root and all_modules_data[name] then
-      local module_data = all_modules_data[name]
-      local file_tree = build_fs_hierarchy(meta.module_root, module_data.files, module_data.directories)
-      local node = {
-        id = meta.module_root, name = name, path = meta.module_root, type = "directory",
-        extra = { uep_type = "module", hierarchy = file_tree, is_loaded = false },
-      }
-      if meta.location == "in_plugins" then
-        local plugin_name = meta.module_root:match("[/\\]Plugins[/\\]([^/\\]+)")
-        if plugin_name then
-          local plugin_path = meta.module_root:match("(.+[/\\]Plugins[/\\][^/\\]+)")
-          if not plugin_nodes[plugin_name] then
-            plugin_nodes[plugin_name] = {
-              id = plugin_path, name = plugin_name, path = plugin_path, type = "directory",
-              extra = { uep_type = "plugin", hierarchy = {}, is_loaded = false },
-            }
+local function build_component_centric_hierarchy(components_with_files)
+  local final_nodes = {}
+
+  for _, component in ipairs(components_with_files)
+  do
+    local component_node = {
+      id = component.root_path, name = component.display_name, path = component.root_path, type = "directory",
+      extra = { uep_type = component.type, hierarchy = {}, is_loaded = false },
+    }
+    
+    local category_base_path = component.root_path
+    if component.type == "Engine" then
+      category_base_path = fs.joinpath(component.root_path, "Engine")
+    end
+    
+    local categories = {
+      Source = { files = component.files.source, dirs = component.dirs.source, root = fs.joinpath(category_base_path, "Source") },
+      Config = { files = component.files.config, dirs = component.dirs.config, root = fs.joinpath(category_base_path, "Config") },
+      Shaders = { files = component.files.shader, dirs = component.dirs.shader, root = fs.joinpath(category_base_path, "Shaders") },
+      Programs = { files = component.files.programs, dirs = component.dirs.programs, root = fs.joinpath(category_base_path, "Programs") },
+    }
+    
+    for name, data in pairs(categories) do
+      if (data.files and #data.files > 0) or (data.dirs and #data.dirs > 0) then
+        
+        local category_node = {
+          id = data.root, name = name, path = data.root, type = "directory",
+          extra = { uep_type = "category_in_component", is_loaded = false, hierarchy = build_fs_hierarchy(data.root, data.files, data.dirs) },
+        }
+        table.insert(component_node.extra.hierarchy, category_node)
+      end
+    end
+    
+    table.sort(component_node.extra.hierarchy, directory_first_sorter)
+    table.insert(final_nodes, component_node)
+  end
+  
+  table.sort(final_nodes, function(a, b) if a.extra.uep_type == "Game" then return true end if b.extra.uep_type == "Game" then return false end if a.extra.uep_type == "Engine" then return true end if b.extra.uep_type == "Engine" then return false end return a.name < b.name end)
+  return final_nodes
+end
+
+-- ▼▼▼ この関数に「表示対象モジュール」の情報を引き渡すように修正 ▼▼▼
+local function build_final_hierarchy(components_with_files, filtered_modules_meta)
+  local root_categories = { Game = { id = "category_Game", name = "Game", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, Engine = { id = "category_Engine", name = "Engine", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, Plugins = { id = "category_Plugins", name = "Plugins", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, }
+
+  for _, component in ipairs(components_with_files) do
+    local component_node = { id = component.root_path, name = component.display_name, path = component.root_path, type = "directory", extra = { uep_type = component.type, hierarchy = {}, is_loaded = false }, }
+    local category_base_path = component.root_path
+    if component.type == "Engine" then category_base_path = fs.joinpath(component.root_path, "Engine") end
+    
+    local categories = {
+      Source = { files = component.files.source, dirs = component.dirs.source, root = fs.joinpath(category_base_path, "Source") },
+      Config = { files = component.files.config, dirs = component.dirs.config, root = fs.joinpath(category_base_path, "Config") },
+      Shaders = { files = component.files.shader, dirs = component.dirs.shader, root = fs.joinpath(category_base_path, "Shaders") },
+    }
+    
+    for name, data in pairs(categories) do
+      -- ★★★ ここからが修正箇所 ★★★
+      local module_roots_in_comp = {}
+      for mod_name, mod_meta in pairs(filtered_modules_meta or {}) do -- `filtered_modules_meta`のnilガード
+          if mod_meta.module_root and mod_meta.module_root:find(component.root_path, 1, true) then
+              table.insert(module_roots_in_comp, mod_meta.module_root)
           end
-          table.insert(plugin_nodes[plugin_name].extra.hierarchy, node)
-        else
-          table.insert(root_categories.Plugins.extra.hierarchy, node)
+      end
+
+      -- `data.files`や`data.dirs`がnilでもエラーにならないように `or {}` を追加
+      local filtered_files = {}
+      for _, file in ipairs(data.files or {}) do
+        for _, mod_root in ipairs(module_roots_in_comp) do
+          if file:find(mod_root, 1, true) then table.insert(filtered_files, file); break end
         end
-      elseif meta.location == "in_source" then
-        local category_key = meta.category or "Game"
-        if root_categories[category_key] then
-          table.insert(root_categories[category_key].extra.hierarchy, node)
+      end
+      local filtered_dirs = {}
+      for _, dir in ipairs(data.dirs or {}) do
+        for _, mod_root in ipairs(module_roots_in_comp) do
+          if dir:find(mod_root, 1, true) then table.insert(filtered_dirs, dir); break end
         end
+      end
+      -- ★★★ ここまでが修正箇所 ★★★
+
+      if #filtered_files > 0 or #filtered_dirs > 0 then
+        local category_node = { id = data.root, name = name, path = data.root, type = "directory", extra = { uep_type = "category_in_component", is_loaded = false, hierarchy = build_fs_hierarchy(data.root, filtered_files, filtered_dirs) }, }
+        table.insert(component_node.extra.hierarchy, category_node)
+      end
+    end
+    
+    if #component_node.extra.hierarchy > 0 then
+      table.sort(component_node.extra.hierarchy, directory_first_sorter)
+      if component.type == "Game" then table.insert(root_categories.Game.extra.hierarchy, component_node)
+      elseif component.type == "Engine" then table.insert(root_categories.Engine.extra.hierarchy, component_node)
+      elseif component.type == "Plugin" then table.insert(root_categories.Plugins.extra.hierarchy, component_node)
       end
     end
   end
-
-  for _, plugin_node in pairs(plugin_nodes) do
-    table.sort(plugin_node.extra.hierarchy, directory_first_sorter)
-    table.insert(root_categories.Plugins.extra.hierarchy, plugin_node)
-  end
+  
   local final_nodes = {}
   for _, category_name in ipairs({ "Game", "Engine", "Plugins" }) do
     local category_node = root_categories[category_name]
@@ -124,11 +174,11 @@ local function build_logical_hierarchy(modules_meta, all_modules_data)
   end
   return final_nodes
 end
+-- ▲▲▲ ここまで ▲▲▲
 
 -------------------------------------------------
 -- プロバイダー公開関数
 -------------------------------------------------
-
 function M.get_pending_tree_request(opts)
   local consumer_id = (opts and opts.consumer) or "unknown"
   local handle = unl_context.use("UEP"):key("pending_request:" .. consumer_id)
@@ -138,46 +188,108 @@ function M.get_pending_tree_request(opts)
 end
 
 function M.build_tree_model(opts)
-  opts = opts or {}
+ -- ▼▼▼ ここに修正を追加 ▼▼▼
+  -- 1. コマンドから渡されたリクエストを取得
+  local request_payload = M.get_pending_tree_request({ consumer = "neo-tree-uproject" }) or {}
+  -- 2. neo-treeから渡されたoptsとマージ（コマンドからの指定を優先）
+  opts = vim.tbl_deep_extend("force", opts or {}, request_payload)
+  -- ▲▲▲ ここまで ▲▲▲
   local project_root = opts.project_root
-  local engine_root = opts.engine_root
   if not project_root then return nil end
-  local game_data = uep_project_cache.load(project_root)
-  if not game_data then return nil end
-  local engine_data = engine_root and uep_project_cache.load(engine_root)
-  local all_modules_meta = vim.tbl_deep_extend("force", {}, engine_data and engine_data.modules or {}, game_data.modules or {})
-  if not next(all_modules_meta) then return nil end
-  local target_module_names = {}
-  if opts.target_module then
-    target_module_names[opts.target_module] = true
-    local start_module = all_modules_meta[opts.target_module]
-    if start_module and start_module[opts.all_deps and "deep_dependencies" or "shallow_dependencies"] then
-      for _, dep_name in ipairs(start_module[opts.all_deps and "deep_dependencies" or "shallow_dependencies"]) do target_module_names[dep_name] = true end
-    end
-  else
-    for name, meta in pairs(all_modules_meta) do
-      if meta.category == "Game" then
-        target_module_names[name] = true
-        if meta[opts.all_deps and "deep_dependencies" or "shallow_dependencies"] then
-          for _, dep_name in ipairs(meta[opts.all_deps and "deep_dependencies" or "shallow_dependencies"]) do target_module_names[dep_name] = true end
+
+  -- STEP 1 & 2: 必要なモジュールとコンポーネントを特定
+  local project_display_name = vim.fn.fnamemodify(project_root, ":t")
+  local project_registry_info = projects_cache.get_project_info(project_display_name)
+  if not project_registry_info or not project_registry_info.components then
+    return {{ id = "_message_", name = "Project not found in registry. Run :UEP refresh.", type = "message" }}
+  end
+  local all_modules_map, module_to_component_name, all_components_map = {}, {}, {}
+  for _, comp_name in ipairs(project_registry_info.components) do
+    local p_cache = project_cache.load(comp_name .. ".project.json")
+    if p_cache then
+      all_components_map[comp_name] = p_cache
+      if p_cache.modules then
+        for mod_name, mod_data in pairs(p_cache.modules) do
+          all_modules_map[mod_name] = mod_data
+          module_to_component_name[mod_name] = comp_name
         end
       end
     end
   end
+  if not next(all_modules_map) then return nil end
+  
+  local target_module_names = {}
+  if opts.target_module then
+    target_module_names[opts.target_module] = true
+    local start_module = all_modules_map[opts.target_module]
+    if start_module then
+      local deps_key = opts.all_deps and "deep_dependencies" or "shallow_dependencies"
+      for _, dep_name in ipairs(start_module[deps_key] or {}) do
+        target_module_names[dep_name] = true
+      end
+    end
+  else
+    for name, meta in pairs(all_modules_map) do
+      if meta.category == "Game" then
+        target_module_names[name] = true
+        local deps_key = opts.all_deps and "deep_dependencies" or "shallow_dependencies"
+        for _, dep_name in ipairs(meta[deps_key] or {}) do
+          target_module_names[dep_name] = true
+        end
+      end
+    end
+  end
+  
   local filtered_modules_meta = {}
   for name, _ in pairs(target_module_names) do
-    if all_modules_meta[name] then filtered_modules_meta[name] = all_modules_meta[name] end
+    if all_modules_map[name] then
+      filtered_modules_meta[name] = all_modules_map[name]
+    end
   end
-  local game_cache = uep_files_cache.load(project_root) or {}
-  local engine_cache = engine_root and uep_files_cache.load(engine_root) or {}
-  local all_modules_data = vim.tbl_deep_extend("force", {}, engine_cache.modules_data or {}, game_cache.modules_data or {})
-  local hierarchy = build_logical_hierarchy(filtered_modules_meta, all_modules_data)
+
+  -- STEP 3: 表示対象となるコンポーネントを特定
+  local required_components_map = {}
+  for mod_name, _ in pairs(filtered_modules_meta) do
+    local comp_name = module_to_component_name[mod_name]
+    if comp_name and not required_components_map[comp_name] then
+      required_components_map[comp_name] = all_components_map[comp_name]
+    end
+  end
+
+  -- STEP 4: 各コンポーネントに属するファイルを集計
+  local components_with_files = {}
+  for comp_name, component_meta in pairs(required_components_map) do
+    local files_cache = files_cache_manager.load_component_cache(component_meta)
+    if files_cache then
+      component_meta.display_name = component_meta.display_name or comp_name
+      component_meta.files = files_cache.files or {}
+      component_meta.dirs = files_cache.directories or {}
+      
+      for _, cat in ipairs({ "source", "config", "shader", "programs", "content", "other" }) do
+        component_meta.files[cat] = component_meta.files[cat] or {}
+        component_meta.dirs[cat] = component_meta.dirs[cat] or {}
+      end
+      
+      table.insert(components_with_files, component_meta)
+    end
+  end
+
+  -- STEP 5: 準備したデータを使って、新しいコンポーネント中心のツリー構造を構築
+  local hierarchy = build_final_hierarchy(components_with_files)
+ -- ▼▼▼ 修正点: 第2引数に filtered_modules_meta を渡す ▼▼▼
+  local hierarchy = build_final_hierarchy(components_with_files, filtered_modules_meta)
+  -- ▲▲▲ ここまで ▲▲▲
+ 
   if not next(hierarchy) then
-    return {{ id = "_message_", name = "No modules to display with current filters.", type = "message" }}
+    return {{ id = "_message_", name = "No components to display with current filters.", type = "message" }}
   end
-  local project_name = vim.fn.fnamemodify(game_data.uproject_path, ":t:r")
+  
+  -- STEP 6: 最終的なルートノードを返す
   return {{
-    id = project_root, name = project_name, path = project_root, type = "directory",
+    id = "logical_root",
+    name = project_registry_info.display_name or "Logical View", -- プロジェクト名をルートに
+    path = project_root,
+    type = "directory",
     extra = { uep_type = "project_root", hierarchy = hierarchy, is_loaded = false },
   }}
 end
