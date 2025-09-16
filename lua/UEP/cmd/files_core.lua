@@ -1,9 +1,9 @@
--- lua/UEP/cmd/files_core.lua (第三世代・究極の組立工場・最終完成版)
+-- lua/UEP/cmd/files_core.lua (モジュール単位収集・修正版)
 
 local unl_finder = require("UNL.finder")
 local project_cache = require("UEP.cache.project")
 local files_cache_manager = require("UEP.cache.files")
-local projects_cache = require("UEP.cache.projects") -- ★マスターインデックス
+local projects_cache = require("UEP.cache.projects")
 local uep_log = require("UEP.logger")
 local fs = require("vim.fs")
 
@@ -13,6 +13,7 @@ function M.get_merged_files_for_project(start_path, opts, on_complete)
   opts = opts or {}
   local log = uep_log.get()
 
+  -- STEP 1, 2, 3 は変更なし (ここまでは正しい)
   -- STEP 1: マスターインデックスから、プロジェクトの全コンポーネントリストを取得
   local project_root = unl_finder.project.find_project_root(start_path)
   if not project_root then
@@ -44,9 +45,16 @@ function M.get_merged_files_for_project(start_path, opts, on_complete)
 
   -- STEP 3: ユーザーの指示に基づき、「本当に必要なモジュール」のセットを計算
   local required_modules_set = {}
-  local game_component = all_components_map[project_registry_info.unique_name]
-  if game_component and game_component.modules then
-    for mod_name, _ in pairs(game_component.modules) do
+  local root_component = nil
+  for _, component in pairs(all_components_map) do
+    if component.type == opts.scope then
+      root_component = component
+      break
+    end
+  end
+  
+  if root_component and root_component.modules then
+    for mod_name, _ in pairs(root_component.modules) do
       required_modules_set[mod_name] = true
       local mod_data = all_modules_map[mod_name]
       if mod_data then
@@ -58,41 +66,76 @@ function M.get_merged_files_for_project(start_path, opts, on_complete)
     end
   end
 
-  -- STEP 4: 「本当に必要なコンポーネント」のセットを計算 (バグ修正済み)
-  local required_components = {}
-  if game_component then
-      required_components[game_component.name] = game_component
-  end
+  -- ▼▼▼ STEP 4, 5 のロジックを完全に書き直し ▼▼▼
+
+  -- STEP 4: 必要なモジュールを含むコンポーネントを特定 (スキャン対象を絞るため)
+  local components_to_scan = {}
   for mod_name, _ in pairs(required_modules_set) do
     local comp_name = module_to_component_name[mod_name]
-    if comp_name and not required_components[comp_name] then
-      required_components[comp_name] = all_components_map[comp_name]
+    if comp_name and not components_to_scan[comp_name] then
+      components_to_scan[comp_name] = all_components_map[comp_name]
     end
   end
 
-  -- STEP 5: 「本当に必要なコンポーネント」の.files.jsonだけを読み込み、マージ
-  log.info("Found %d required components. Merging file caches...", vim.tbl_count(required_components))
+  -- STEP 5: モジュール単位でのファイル収集
+  log.info("Collecting files from %d required modules...", vim.tbl_count(required_modules_set))
+
+  -- 高速なルックアップのために、必要なモジュールのルートパス一覧を作成
+  local required_module_roots = {}
+  for mod_name, _ in pairs(required_modules_set) do
+      if all_modules_map[mod_name] and all_modules_map[mod_name].module_root then
+          table.insert(required_module_roots, all_modules_map[mod_name].module_root)
+      end
+  end
+  -- パスが長い順にソート（サブモジュールなどの誤判定を防ぐため）
+  table.sort(required_module_roots, function(a, b) return #a > #b end)
+
   local merged_data = {
     files = { source={}, config={}, shader={}, content={}, programs={}, other={} },
     dirs = { source={}, config={}, shader={}, content={}, programs={}, other={} },
     header_details = {}
   }
 
-  for _, component in pairs(required_components) do
-    local component_info_for_load = { type = component.type, root_path = component.root_path, owner_name = component.owner_name, short_name = component.display_name }
-    local component_cache = files_cache_manager.load_component_cache(component_info_for_load)
+  for _, component in pairs(components_to_scan) do
+    local component_cache = files_cache_manager.load_component_cache(component)
     if component_cache then
+      -- このコンポーネントの全ファイルをチェック
       for category, file_list in pairs(component_cache.files or {}) do
-        if merged_data.files[category] then vim.list_extend(merged_data.files[category], file_list) end
+        for _, file_path in ipairs(file_list) do
+          -- ファイルパスが必要なモジュールのいずれかの配下にあるかチェック
+          for _, module_root in ipairs(required_module_roots) do
+            if file_path:find(module_root, 1, true) then
+              table.insert(merged_data.files[category], file_path)
+              break -- 一致したら次のファイルへ
+            end
+          end
+        end
       end
+      -- (ディレクトリとheader_detailsも同様に処理)
       for category, dir_list in pairs(component_cache.directories or {}) do
-        if merged_data.dirs[category] then vim.list_extend(merged_data.dirs[category], dir_list) end
+        for _, dir_path in ipairs(dir_list) do
+          for _, module_root in ipairs(required_module_roots) do
+            if dir_path:find(module_root, 1, true) then
+              table.insert(merged_data.dirs[category], dir_path)
+              break
+            end
+          end
+        end
       end
       if component_cache.header_details then
-        vim.tbl_deep_extend("force", merged_data.header_details, component_cache.header_details)
+        for file_path, details in pairs(component_cache.header_details) do
+           for _, module_root in ipairs(required_module_roots) do
+            if file_path:find(module_root, 1, true) then
+              merged_data.header_details[file_path] = details
+              break
+            end
+          end
+        end
       end
     end
   end
+  
+  -- ▲▲▲ ここまでが書き直したロジック ▲▲▲
   
   on_complete(true, merged_data)
 end
