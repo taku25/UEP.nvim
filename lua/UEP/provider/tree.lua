@@ -110,7 +110,7 @@ local function build_component_centric_hierarchy(components_with_files)
   return final_nodes
 end
 
--- ▼▼▼ この関数に「表示対象モジュール」の情報を引き渡すように修正 ▼▼▼
+-- ▼▼▼ この関数内のフィルタリングロジックを修正 ▼▼▼
 local function build_final_hierarchy(components_with_files, filtered_modules_meta)
   local root_categories = { Game = { id = "category_Game", name = "Game", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, Engine = { id = "category_Engine", name = "Engine", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, Plugins = { id = "category_Plugins", name = "Plugins", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, }
 
@@ -126,31 +126,38 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
     }
     
     for name, data in pairs(categories) do
-      -- ★★★ ここからが修正箇所 ★★★
-      local module_roots_in_comp = {}
-      for mod_name, mod_meta in pairs(filtered_modules_meta or {}) do -- `filtered_modules_meta`のnilガード
-          if mod_meta.module_root and mod_meta.module_root:find(component.root_path, 1, true) then
-              table.insert(module_roots_in_comp, mod_meta.module_root)
-          end
-      end
+      local files_to_render = {}
+      local dirs_to_render = {}
 
-      -- `data.files`や`data.dirs`がnilでもエラーにならないように `or {}` を追加
-      local filtered_files = {}
-      for _, file in ipairs(data.files or {}) do
-        for _, mod_root in ipairs(module_roots_in_comp) do
-          if file:find(mod_root, 1, true) then table.insert(filtered_files, file); break end
+      -- ★★★ ここからが修正箇所 ★★★
+      if name == "Source" then
+        -- Sourceカテゴリの場合のみ、厳密なモジュールフィルタリングを行う
+        local module_roots_in_comp = {}
+        for mod_name, mod_meta in pairs(filtered_modules_meta or {}) do
+            if mod_meta.module_root and mod_meta.module_root:find(component.root_path, 1, true) then
+                table.insert(module_roots_in_comp, mod_meta.module_root)
+            end
         end
-      end
-      local filtered_dirs = {}
-      for _, dir in ipairs(data.dirs or {}) do
-        for _, mod_root in ipairs(module_roots_in_comp) do
-          if dir:find(mod_root, 1, true) then table.insert(filtered_dirs, dir); break end
+
+        for _, file in ipairs(data.files or {}) do
+          for _, mod_root in ipairs(module_roots_in_comp) do
+            if file:find(mod_root, 1, true) then table.insert(files_to_render, file); break end
+          end
         end
+        for _, dir in ipairs(data.dirs or {}) do
+          for _, mod_root in ipairs(module_roots_in_comp) do
+            if dir:find(mod_root, 1, true) then table.insert(dirs_to_render, dir); break end
+          end
+        end
+      else
+        -- Source以外のカテゴリ(Config, Shadersなど)は、常に全てのファイルを表示する
+        files_to_render = data.files or {}
+        dirs_to_render = data.dirs or {}
       end
       -- ★★★ ここまでが修正箇所 ★★★
 
-      if #filtered_files > 0 or #filtered_dirs > 0 then
-        local category_node = { id = data.root, name = name, path = data.root, type = "directory", extra = { uep_type = "category_in_component", is_loaded = false, hierarchy = build_fs_hierarchy(data.root, filtered_files, filtered_dirs) }, }
+      if #files_to_render > 0 or #dirs_to_render > 0 then
+        local category_node = { id = data.root, name = name, path = data.root, type = "directory", extra = { uep_type = "category_in_component", is_loaded = false, hierarchy = build_fs_hierarchy(data.root, files_to_render, dirs_to_render) }, }
         table.insert(component_node.extra.hierarchy, category_node)
       end
     end
@@ -174,6 +181,7 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
   end
   return final_nodes
 end
+-- ▲▲▲ ここまで ▲▲▲
 -- ▲▲▲ ここまで ▲▲▲
 
 -------------------------------------------------
