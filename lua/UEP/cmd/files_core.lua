@@ -9,6 +9,37 @@ local fs = require("vim.fs")
 
 local M = {}
 
+function M.get_project_maps(start_path, on_complete)
+  local project_root = unl_finder.project.find_project_root(start_path)
+  if not project_root then
+    return on_complete(false, "Could not find project root.")
+  end
+  local project_display_name = vim.fn.fnamemodify(project_root, ":t")
+  local project_registry_info = projects_cache.get_project_info(project_display_name)
+  if not project_registry_info or not project_registry_info.components then
+    return on_complete(false, "Project not found in registry. Please run :UEP refresh.")
+  end
+
+  local all_modules_map, module_to_component_name, all_components_map = {}, {}, {}
+  for _, comp_name in ipairs(project_registry_info.components) do
+    local p_cache = project_cache.load(comp_name .. ".project.json")
+    if p_cache then
+      all_components_map[comp_name] = p_cache
+      for mod_name, mod_data in pairs(p_cache.modules or {}) do
+        all_modules_map[mod_name] = mod_data
+        module_to_component_name[mod_name] = comp_name
+      end
+    end
+  end
+  
+  on_complete(true, {
+    project_root = project_root,
+    all_modules_map = all_modules_map,
+    module_to_component_name = module_to_component_name,
+    all_components_map = all_components_map,
+    project_registry_info = project_registry_info,
+  })
+end
 -- 内部ヘルパー: プロジェクトの基本情報を読み込む（複数箇所で再利用）
 local function get_project_maps(start_path, on_complete)
   local project_root = unl_finder.project.find_project_root(start_path)
