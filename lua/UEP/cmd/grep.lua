@@ -1,6 +1,6 @@
 -- lua/UEP/cmd/grep.lua
 -- :UEP grep コマンドの実装（初期クエリなしバージョン）
-local grep_core = require("UEP.cmd.grep_core")
+local grep_core = require("UEP.cmd.core.grep")
 local uep_log = require("UEP.logger")
 local unl_finder = require("UNL.finder")
 local uep_config = require("UEP.config")

@@ -1,6 +1,6 @@
 -- lua/UEP/cmd/files.lua (修正版)
 
-local files_core = require("UEP.cmd.files_core")
+local files_core = require("UEP.cmd.core.files")
 local unl_picker = require("UNL.backend.picker")
 local uep_log = require("UEP.logger")
 local uep_config = require("UEP.config")

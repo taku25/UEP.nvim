@@ -1,7 +1,7 @@
 -- lua/UEP/cmd/module_grep.lua (リファクタリング版)
 
-local grep_core = require("UEP.cmd.grep_core")
-local files_core = require("UEP.cmd.files_core") -- ★ files_core を使う
+local grep_core = require("UEP.cmd.core.grep")
+local files_core = require("UEP.cmd.core.files") -- ★ files_core を使う
 local uep_log = require("UEP.logger")
 local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
