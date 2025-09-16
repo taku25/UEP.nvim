@@ -9,7 +9,7 @@ local fs = require("vim.fs")
 local M = {}
 
 -- (ヘルパー関数 create_fd_command, categorize_path に変更はありません)
-local function create_fd_command(base_paths, type_flag)
+M.create_fd_command = function (base_paths, type_flag)
   local conf = uep_config.get()
   local extensions = conf.include_extensions or { "cpp", "h", "hpp", "inl", "ini", "cs", "usf", "ush" }
   local include_dirs = conf.include_directory or { "Source", "Config", "Plugins", "Shaders", "Programs" }
@@ -50,8 +50,8 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
   end
 
   local top_level_search_paths = { game_root, engine_root }
-  local fd_cmd_files = create_fd_command(top_level_search_paths, "f")
-  local fd_cmd_dirs = create_fd_command(top_level_search_paths, "d")
+  local fd_cmd_files = M.create_fd_command(top_level_search_paths, "f")
+  local fd_cmd_dirs = M.create_fd_command(top_level_search_paths, "d")
 
   local all_found_files = {}
   local all_found_dirs = {}
