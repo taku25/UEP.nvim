@@ -45,11 +45,11 @@ function M.execute(opts, on_complete)
 
   local progress_weights = {
     parse_components = 0.4,
-    resolve_deps = 0.05,
-    save_components = 0.095,
-    file_scan = 0.02,
+    -- resolve_deps = 0.05,
+    -- save_components = 0.095,
+    file_scan = 0.2,
     header_analysis = 0.4,
-    cache_save = 0.08,
+    -- cache_save = 0.05,
   }
 
 

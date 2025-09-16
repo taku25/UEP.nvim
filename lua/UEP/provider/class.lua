@@ -1,65 +1,61 @@
--- lua/UEP/provider/class.lua (インテリジェント・アグリゲーター最終完成版)
+-- lua/UEP/provider/class.lua (マージ処理修正版)
 
-local files_disk_cache = require("UEP.cache.files")
+local projects_cache = require("UEP.cache.projects")
 local project_cache = require("UEP.cache.project")
+local files_cache_manager = require("UEP.cache.files")
 local unl_finder = require("UNL.finder")
 local uep_log = require("UEP.logger").get()
 
 local M = {}
 
----
--- プロジェクトの依存関係を元に、必要なモジュールからのみheader_detailsを集約して返す。
 function M.request(opts)
   opts = opts or {}
-  uep_log.debug("--- UEP Provider 'get_project_classes' CALLED (Intelligent Mode) ---")
-
+  uep_log.debug("--- UEP Provider 'get_project_classes' CALLED (Manual Merge Mode) ---")
+  -- (これより上はデバッグログ版と同じなので省略)
   local project_root = opts.project_root or unl_finder.project.find_project_root(vim.loop.cwd())
   if not project_root then return nil end
-
-  -- STEP 1: コンテキストを理解するために、GameとEngineのプロジェクトデータを両方ロード
-  local game_project_data = project_cache.load(project_root)
-  if not (game_project_data and game_project_data.modules) then
-    uep_log.warn("Provider WARNING: Game project data or modules not found for %s.", project_root)
-    return nil
+  local project_display_name = vim.fn.fnamemodify(project_root, ":t")
+  local project_registry_info = projects_cache.get_project_info(project_display_name)
+  if not project_registry_info or not project_registry_info.components then return nil end
+  local all_modules_map, module_to_component_name, all_components_map = {}, {}, {}
+  for _, comp_name in ipairs(project_registry_info.components) do
+    local p_cache = project_cache.load(comp_name .. ".project.json")
+    if p_cache and p_cache.modules then
+      all_components_map[comp_name] = p_cache
+      for mod_name, mod_data in pairs(p_cache.modules) do
+        all_modules_map[mod_name] = mod_data
+        module_to_component_name[mod_name] = comp_name
+      end
+    end
   end
-  local engine_root = game_project_data.link_engine_cache_root
-  local engine_project_data = engine_root and project_cache.load(engine_root)
-
-  -- STEP 2: ターゲットとなるモジュールの完全なリストを作成する
   local target_module_names = {}
-  local all_modules_meta = vim.tbl_deep_extend("force", {}, engine_project_data and engine_project_data.modules or {}, game_project_data.modules)
-
-  -- 2a. まず、Gameプロジェクト自身のモジュールを全てターゲットに追加
-  for module_name, _ in pairs(game_project_data.modules) do
-    target_module_names[module_name] = true
-  end
-
-  -- 2b. 次に、それらのモジュールの深い依存関係(deep_dependencies)を全てターゲットに追加
-  for module_name, _ in pairs(game_project_data.modules) do
-    local module_meta = all_modules_meta[module_name]
-    if module_meta and module_meta.deep_dependencies then
-      for _, dep_name in ipairs(module_meta.deep_dependencies) do
+  for name, meta in pairs(all_modules_map) do
+    if meta.category == "Game" then
+      target_module_names[name] = true
+      for _, dep_name in ipairs(meta.deep_dependencies or {}) do
         target_module_names[dep_name] = true
       end
     end
   end
+  local required_components_map = {}
+  for mod_name, _ in pairs(target_module_names) do
+    local comp_name = module_to_component_name[mod_name]
+    if comp_name and not required_components_map[comp_name] then
+      required_components_map[comp_name] = all_components_map[comp_name]
+    end
+  end
 
-  -- STEP 3: GameとEngineの両方のファイルキャッシュをロード
-  local game_files_cache = files_disk_cache.load(project_root)
-  local engine_files_cache = engine_root and files_disk_cache.load(engine_root)
-  
-  -- STEP 4: 全てのモジュールデータを一つのテーブルにマージして、検索しやすくする
-  local all_modules_data = vim.tbl_deep_extend("force", {}, engine_files_cache and engine_files_cache.modules_data or {}, game_files_cache and game_files_cache.modules_data or {})
-
-  -- STEP 5: ターゲットリストを元に、精密な情報収集を行う
   local merged_header_details = {}
-  for module_name, _ in pairs(target_module_names) do
-    local module_data = all_modules_data[module_name]
-    if module_data and module_data.header_details then
-      -- 信頼できる手動マージ
-      for file_path, details in pairs(module_data.header_details) do
+  for _, component_meta in pairs(required_components_map) do
+    local files_cache = files_cache_manager.load_component_cache(component_meta)
+    if files_cache and files_cache.header_details then
+      uep_log.debug("Merging %d header_details from component '%s'", vim.tbl_count(files_cache.header_details), component_meta.display_name)
+      
+      -- ▼▼▼ 修正箇所: vim.tbl_deep_extend を手動ループに置き換え ▼▼▼
+      for file_path, details in pairs(files_cache.header_details) do
         merged_header_details[file_path] = details
       end
+      -- ▲▲▲ ここまで ▲▲▲
     end
   end
 

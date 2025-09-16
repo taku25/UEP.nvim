@@ -123,7 +123,12 @@ function M.get_pending_tree_request(opts)
 end
 
 function M.build_tree_model(opts)
-  opts = opts or {}
+ -- ▼▼▼ ここに修正を追加 ▼▼▼
+  -- 1. コマンドから渡されたリクエストを取得
+  local request_payload = M.get_pending_tree_request({ consumer = "neo-tree-uproject" }) or {}
+  -- 2. neo-treeから渡されたoptsとマージ（コマンドからの指定を優先）
+  opts = vim.tbl_deep_extend("force", opts or {}, request_payload)
+  -- ▲▲▲ ここまで ▲▲▲
   local project_root = opts.project_root
   if not project_root then return nil end
 
