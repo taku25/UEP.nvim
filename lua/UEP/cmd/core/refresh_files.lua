@@ -1,4 +1,4 @@
--- lua/UEP/cmd/core/refresh_files.lua (第三世代・究極の精密攻撃部隊・最終完成版)
+-- lua/UEP/cmd/core/refresh_files.lua (修正版)
 
 local class_parser = require("UEP.parser.class")
 local uep_config = require("UEP.config")
@@ -8,9 +8,7 @@ local fs = require("vim.fs")
 
 local M = {}
 
--------------------------------------------------
--- ヘルパー関数
--------------------------------------------------
+-- (ヘルパー関数 create_fd_command, categorize_path に変更はありません)
 local function create_fd_command(base_paths, type_flag)
   local conf = uep_config.get()
   local extensions = conf.include_extensions or { "cpp", "h", "hpp", "inl", "ini", "cs", "usf", "ush" }
@@ -40,13 +38,9 @@ local function categorize_path(path)
   return "other"
 end
 
--------------------------------------------------
--- 新しいAPI
--------------------------------------------------
+
 function M.create_component_caches_for(components_to_refresh, all_components_data, game_root, engine_root, progress, on_done)
-  progress:stage_define("file_scan", 0.1)
-  progress:stage_define("header_analysis", 0.4)
-  progress:stage_define("cache_save", 0.5)
+  progress:stage_define("file_scan", 1)
   progress:stage_update("file_scan", 0, ("Scanning files for %d components..."):format(#components_to_refresh))
 
   if #components_to_refresh == 0 then
@@ -55,10 +49,7 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
       return
   end
 
-  -- ▼▼▼ これが最後の、そして最も重要な修正点です ▼▼▼
   local top_level_search_paths = { game_root, engine_root }
-  -- ▲▲▲ ここまで ▲▲▲
-  
   local fd_cmd_files = create_fd_command(top_level_search_paths, "f")
   local fd_cmd_dirs = create_fd_command(top_level_search_paths, "d")
 
@@ -67,13 +58,34 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
 
   vim.fn.jobstart(fd_cmd_files, {
     stdout_buffered = true,
-    on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(all_found_files, line) end end end end,
+    on_stdout = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(all_found_files, line)
+          end 
+        end
+      end
+    end,
     on_exit = function(_, files_code)
-      if files_code ~= 0 then if on_done then on_done(false) end; return end
+      if files_code ~= 0 then
+        if on_done then
+          on_done(false)
+        end
+        return
+      end
       vim.schedule(function()
         vim.fn.jobstart(fd_cmd_dirs, {
           stdout_buffered = true,
-          on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(all_found_dirs, line) end end end end,
+          on_stdout = function(_, data)
+           if data then
+              for _, line in ipairs(data) do
+                if line ~= "" then
+                  table.insert(all_found_dirs, line)
+                end
+              end
+            end
+          end,
           on_exit = function(_, dirs_code)
             if dirs_code ~= 0 then if on_done then on_done(false) end; return end
             
@@ -132,13 +144,23 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
             local headers_to_parse = {}
             for _, file in ipairs(relevant_files) do if file:match("%.h$") then table.insert(headers_to_parse, file) end end
             
-            class_parser.parse_headers_async({}, headers_to_parse, progress, function(ok, header_details_by_file)
+            -- ▼▼▼ 修正点: 既存の全ヘッダーキャッシュを集約してパーサーに渡す ▼▼▼
+            local all_existing_header_details = {}
+            for _, component in ipairs(components_to_refresh) do
+                local existing_cache = files_cache_manager.load_component_cache(component)
+                if existing_cache and existing_cache.header_details then
+                    vim.tbl_deep_extend("force", all_existing_header_details, existing_cache.header_details)
+                end
+            end
+
+            class_parser.parse_headers_async(all_existing_header_details, headers_to_parse, progress, function(ok, header_details_by_file)
+            -- ▲▲▲ ここまで ▲▲▲
               
               progress:stage_define("cache_save", #components_to_refresh)
               local saved_count = 0
               for _, component_to_save in ipairs(components_to_refresh) do
                 saved_count = saved_count + 1
-                progress:stage_update("cache_save", saved_count, ("Saving: %s"):format(component_to_save.display_name))
+                progress:stage_update("cache_save", saved_count, ("Saving: %s [%d/%d]"):format(component_to_save.display_name, saved_count, #components_to_refresh))
 
                 local component_files_data = files_by_component[component_to_save.name]
                 if component_files_data then

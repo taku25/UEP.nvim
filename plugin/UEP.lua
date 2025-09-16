@@ -24,6 +24,7 @@ local command_spec = {
       desc = ":UEP refresh [Game|Engine]",
       args = {
         { name = "type", required = false },
+        { name = "force", required = false }, -- 例: --force
       },
     },
     reloadconfig = {
