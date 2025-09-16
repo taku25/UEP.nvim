@@ -109,6 +109,71 @@ local function build_component_centric_hierarchy(components_with_files)
   table.sort(final_nodes, function(a, b) if a.extra.uep_type == "Game" then return true end if b.extra.uep_type == "Game" then return false end if a.extra.uep_type == "Engine" then return true end if b.extra.uep_type == "Engine" then return false end return a.name < b.name end)
   return final_nodes
 end
+
+-- ▼▼▼ この関数に「表示対象モジュール」の情報を引き渡すように修正 ▼▼▼
+local function build_final_hierarchy(components_with_files, filtered_modules_meta)
+  local root_categories = { Game = { id = "category_Game", name = "Game", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, Engine = { id = "category_Engine", name = "Engine", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, Plugins = { id = "category_Plugins", name = "Plugins", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, }
+
+  for _, component in ipairs(components_with_files) do
+    local component_node = { id = component.root_path, name = component.display_name, path = component.root_path, type = "directory", extra = { uep_type = component.type, hierarchy = {}, is_loaded = false }, }
+    local category_base_path = component.root_path
+    if component.type == "Engine" then category_base_path = fs.joinpath(component.root_path, "Engine") end
+    
+    local categories = {
+      Source = { files = component.files.source, dirs = component.dirs.source, root = fs.joinpath(category_base_path, "Source") },
+      Config = { files = component.files.config, dirs = component.dirs.config, root = fs.joinpath(category_base_path, "Config") },
+      Shaders = { files = component.files.shader, dirs = component.dirs.shader, root = fs.joinpath(category_base_path, "Shaders") },
+    }
+    
+    for name, data in pairs(categories) do
+      -- ★★★ ここからが修正箇所 ★★★
+      local module_roots_in_comp = {}
+      for mod_name, mod_meta in pairs(filtered_modules_meta or {}) do -- `filtered_modules_meta`のnilガード
+          if mod_meta.module_root and mod_meta.module_root:find(component.root_path, 1, true) then
+              table.insert(module_roots_in_comp, mod_meta.module_root)
+          end
+      end
+
+      -- `data.files`や`data.dirs`がnilでもエラーにならないように `or {}` を追加
+      local filtered_files = {}
+      for _, file in ipairs(data.files or {}) do
+        for _, mod_root in ipairs(module_roots_in_comp) do
+          if file:find(mod_root, 1, true) then table.insert(filtered_files, file); break end
+        end
+      end
+      local filtered_dirs = {}
+      for _, dir in ipairs(data.dirs or {}) do
+        for _, mod_root in ipairs(module_roots_in_comp) do
+          if dir:find(mod_root, 1, true) then table.insert(filtered_dirs, dir); break end
+        end
+      end
+      -- ★★★ ここまでが修正箇所 ★★★
+
+      if #filtered_files > 0 or #filtered_dirs > 0 then
+        local category_node = { id = data.root, name = name, path = data.root, type = "directory", extra = { uep_type = "category_in_component", is_loaded = false, hierarchy = build_fs_hierarchy(data.root, filtered_files, filtered_dirs) }, }
+        table.insert(component_node.extra.hierarchy, category_node)
+      end
+    end
+    
+    if #component_node.extra.hierarchy > 0 then
+      table.sort(component_node.extra.hierarchy, directory_first_sorter)
+      if component.type == "Game" then table.insert(root_categories.Game.extra.hierarchy, component_node)
+      elseif component.type == "Engine" then table.insert(root_categories.Engine.extra.hierarchy, component_node)
+      elseif component.type == "Plugin" then table.insert(root_categories.Plugins.extra.hierarchy, component_node)
+      end
+    end
+  end
+  
+  local final_nodes = {}
+  for _, category_name in ipairs({ "Game", "Engine", "Plugins" }) do
+    local category_node = root_categories[category_name]
+    if #category_node.extra.hierarchy > 0 then
+      table.sort(category_node.extra.hierarchy, directory_first_sorter)
+      table.insert(final_nodes, category_node)
+    end
+  end
+  return final_nodes
+end
 -- ▲▲▲ ここまで ▲▲▲
 
 -------------------------------------------------
@@ -210,8 +275,11 @@ function M.build_tree_model(opts)
   end
 
   -- STEP 5: 準備したデータを使って、新しいコンポーネント中心のツリー構造を構築
-  local hierarchy = build_component_centric_hierarchy(components_with_files)
-   -- local hierarchy = build_final_hierarchy(components_with_files)
+  local hierarchy = build_final_hierarchy(components_with_files)
+ -- ▼▼▼ 修正点: 第2引数に filtered_modules_meta を渡す ▼▼▼
+  local hierarchy = build_final_hierarchy(components_with_files, filtered_modules_meta)
+  -- ▲▲▲ ここまで ▲▲▲
+ 
   if not next(hierarchy) then
     return {{ id = "_message_", name = "No components to display with current filters.", type = "message" }}
   end
