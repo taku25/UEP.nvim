@@ -4,7 +4,8 @@ local class_parser = require("UEP.parser.class")
 local uep_config = require("UEP.config")
 local files_cache_manager = require("UEP.cache.files")
 local uep_log = require("UEP.logger")
-local fs = require("vim.fs")
+local core_utils = require("UEP.cmd.core.utils")
+local unl_progress = require("UNL.backend.progress")
 
 local M = {}
 
@@ -28,15 +29,6 @@ M.create_fd_command = function (base_paths, type_flag)
   return fd_cmd
 end
 
-local function categorize_path(path)
-  if path:find("/Shaders/", 1, true) or path:match("/Shaders$") then return "shader" end
-  if path:find("/Config/", 1, true) or path:match("/Config$") then return "config" end
-  if path:find("/Source/", 1, true) or path:match("/Source$") then return "source" end
-  if path:find("/Programs/", 1, true) or path:match("/Programs$") then return "programs" end
-  if path:find("/Content/", 1, true) or path:match("/Content$") then return "content" end
-  if path:find("/Plugins/", 1, true) then return "source" end
-  return "other"
-end
 
 
 function M.create_component_caches_for(components_to_refresh, all_components_data, game_root, engine_root, progress, on_done)
@@ -124,7 +116,7 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
             for _, file in ipairs(relevant_files) do
               for _, comp_data in ipairs(sorted_components) do
                 if file:find(comp_data.root_path, 1, true) then
-                  local category = categorize_path(file)
+                  local category = core_utils.categorize_path(file)
                   table.insert(files_by_component[comp_data.name].files[category], file)
                   break
                 end
@@ -133,7 +125,7 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
             for _, dir in ipairs(relevant_dirs) do
               for _, comp_data in ipairs(sorted_components) do
                 if dir:find(comp_data.root_path, 1, true) then
-                  local category = categorize_path(dir)
+                  local category = core_utils.categorize_path(dir)
                   table.insert(files_by_component[comp_data.name].dirs[category], dir)
                   break
                 end
@@ -188,4 +180,91 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
   })
 end
 
+
+
+function M.update_single_module_cache(module_name, on_complete)
+  local log = uep_log.get()
+  
+  core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
+    if not ok then if on_complete then on_complete(false) end; return end
+    
+    local module_meta = maps.all_modules_map[module_name]
+    if not module_meta or not module_meta.module_root then
+      log.error("Cannot update module '%s': not found in cache.", module_name)
+      if on_complete then on_complete(false) end; return
+    end
+    
+    local component_name = maps.module_to_component_name[module_name]
+    local component_meta = maps.all_components_map[component_name]
+    if not component_meta then
+      log.error("Cannot update module '%s': its component '%s' not found.", module_name, component_name)
+      if on_complete then on_complete(false) end; return
+    end
+    
+    log.info("Starting lightweight refresh for module '%s' (Component: '%s')", module_name, component_meta.display_name)
+    
+    local conf = uep_config.get()
+    local progress, _ = unl_progress.create_for_refresh(conf, {
+      title = ("UEP: Updating %s..."):format(module_name),
+      client_name = "UEP.LightweightRefresh"
+    })
+    progress:open()
+
+    -- ★ 1. 共通ヘルパーを使ってfdコマンドを生成
+    local fd_cmd_files = M.create_fd_command({ module_meta.module_root }, "f")
+    local fd_cmd_dirs = M.create_fd_command({ module_meta.module_root }, "d")
+    local new_files = {}
+    local new_dirs = {}
+
+    -- ★ 2. ファイルとディレクトリを順番にスキャンする
+    vim.fn.jobstart(fd_cmd_files, {
+      stdout_buffered = true,
+      on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(new_files, line) end end end end,
+      on_exit = function(_, files_code)
+        if files_code ~= 0 then progress:finish(false); if on_complete then on_complete(false) end; return end
+        
+        vim.schedule(function()
+          vim.fn.jobstart(fd_cmd_dirs, {
+            stdout_buffered = true,
+            on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(new_dirs, line) end end end end,
+            on_exit = function(_, dirs_code)
+              if dirs_code ~= 0 then progress:finish(false); if on_complete then on_complete(false) end; return end
+              
+              -- ★ 3. これ以降の更新ロジックはほぼ同じ
+              local component_cache = files_cache_manager.load_component_cache(component_meta) or { files = {}, directories = {}, header_details = {} }
+              
+              for cat, file_list in pairs(component_cache.files) do
+                component_cache.files[cat] = vim.tbl_filter(function(path) return not path:find(module_meta.module_root, 1, true) end, file_list)
+              end
+              for cat, dir_list in pairs(component_cache.directories) do
+                component_cache.directories[cat] = vim.tbl_filter(function(path) return not path:find(module_meta.module_root, 1, true) end, dir_list)
+              end
+              for file_path, _ in pairs(component_cache.header_details) do
+                if file_path:find(module_meta.module_root, 1, true) then component_cache.header_details[file_path] = nil end
+              end
+
+              local headers_to_parse = {}
+              for _, path in ipairs(new_files) do local cat = core_utils.categorize_path(path); component_cache.files[cat] = component_cache.files[cat] or {}; table.insert(component_cache.files[cat], path); if path:match('%.h$') then table.insert(headers_to_parse, path) end end
+              for _, path in ipairs(new_dirs) do local cat = core_utils.categorize_path(path); component_cache.directories[cat] = component_cache.directories[cat] or {}; table.insert(component_cache.directories[cat], path) end
+              
+              class_parser.parse_headers_async(component_cache.header_details, headers_to_parse, progress, function(ok, new_header_details)
+                if ok then
+                  vim.tbl_deep_extend("force", component_cache.header_details, new_header_details)
+                  files_cache_manager.save_component_cache(component_meta, component_cache)
+                  log.info("Lightweight refresh for module '%s' complete.", module_name)
+                  progress:finish(true)
+                  if on_complete then on_complete(true) end
+                else
+                  log.error("Failed to parse headers during lightweight refresh.")
+                  progress:finish(false)
+                  if on_complete then on_complete(false) end
+                end
+              end)
+            end,
+          })
+        end)
+      end,
+    })
+  end)
+end
 return M

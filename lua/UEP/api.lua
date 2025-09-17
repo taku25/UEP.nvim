@@ -57,7 +57,7 @@ function M.update_module_cache(opts, on_complete)
     return
   end
   -- refresh.luaにある実装を直接呼び出す
-  require("UEP.cmd.refresh").update_file_cache_for_single_module(opts.module_name, on_complete)
+  require("UEP.cmd.core.refresh_files").update_single_module_cache(opts.module_name, on_complete)
 end
 
 function M.grep(opts)

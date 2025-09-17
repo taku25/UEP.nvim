@@ -27,7 +27,7 @@ M.setup = function()
     end
 
     -- ▼▼▼ 修正点: requireするパスを新しいものに変更 ▼▼▼
-    require("UEP.cmd.core.files").update_single_module_cache(module_name, function(ok)
+    require("UEP.cmd.core.refresh_files").update_single_module_cache(module_name, function(ok)
       if ok then
         uep_log.info("Lightweight cache update for module '%s' succeeded.", module_name)
         unl_events.publish(unl_event_types.ON_AFTER_UEP_LIGHTWEIGHT_REFRESH, {
