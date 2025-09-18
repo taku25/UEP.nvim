@@ -19,7 +19,7 @@ local M = {
     level = "info",
     echo = { level = "warn" },
     notify = { level = "error", prefix = "[UEP]" },
-    file = { enable = true, max_kb = 512, rotate = 3, filename = "uep.log" },
+    file = { level = "trace", enable = true, max_kb = 512, rotate = 3, filename = "uep.log" },
     perf = { enabled = false, patterns = { "^refresh" }, level = "trace" },
   },
 
@@ -30,6 +30,10 @@ local M = {
       prefer = { "telescope", "fzf-lua", "native", "dummy" },
     },
     grep_picker = {
+      mode = "auto",
+      prefer = { "telescope", "fzf-lua" }
+    },
+    dynamic_picker = {
       mode = "auto",
       prefer = { "telescope", "fzf-lua" }
     },
