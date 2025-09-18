@@ -17,6 +17,7 @@ With [UBT](https://github.com/taku25/UBT.nvim), you can use features like Build 
 With [UCM](https://github.com/taku25/UCM.nvim), you can add and delete classes from within Neovim.
 With [ULG](https://github.com/taku25/ULG.nvim), you can access UE logs, trigger Live Coding, and use `stat fps` from within Neovim.
 With [neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim), you can display an IDE-like project explorer.
+With [tree-sitter-unreal-cpp](https://github.com/taku25/tree-sitter-unreal-cpp), tree-sitter-unreal-cpp
 
 [English](README.md) | [日本語 (Japanese)](README_ja.md)
 
