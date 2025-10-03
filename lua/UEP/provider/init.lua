@@ -38,6 +38,17 @@ M.setup = function()
     if uep_logger then
       uep_logger.info("Registered UEP providers to UNL.nvim.")
     end
+
+
+    -- ▼▼▼ ここから追記 ▼▼▼
+    -- モジュールリストプロバイダーの登録
+    local modules_provider = require("UEP.provider.modules")
+    unl_api.provider.register({
+      capability = "uep.get_project_modules",
+      name = "UEP.nvim",
+      impl = modules_provider,
+    })
+    -- ▲▲▲ ここまで追記 ▲▲▲
   end
 end
 
