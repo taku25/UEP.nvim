@@ -43,7 +43,7 @@ M.setup = function()
   local function handle_directory_change(payload)
     if not (payload and payload.status == "success" and payload.module) then return end
     -- ▼▼▼ 修正点: requireするパスを新しいものに変更 ▼▼▼
-    require("UEP.cmd.core.files").update_single_module_cache(payload.module.name, function(ok)
+    require("UEP.cmd.core.refresh_files").update_single_module_cache(payload.module.name, function(ok)
       if ok then
         unl_events.publish(unl_event_types.ON_AFTER_UEP_LIGHTWEIGHT_REFRESH, {
           event_type = payload.type,
