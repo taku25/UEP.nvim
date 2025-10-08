@@ -12,14 +12,17 @@ local M = {}
 -- (ヘルパー関数 create_fd_command, categorize_path に変更はありません)
 M.create_fd_command = function (base_paths, type_flag)
   local conf = uep_config.get()
-  local extensions = conf.include_extensions or { "cpp", "h", "hpp", "inl", "ini", "cs", "usf", "ush" }
-  local include_dirs = conf.include_directory or { "Source", "Config", "Plugins", "Shaders", "Programs" }
-  local exclude_dirs = conf.excludes_directory or { "Intermediate", "Binaries", "Saved" }
+  local extensions = conf.include_extensions
+  local include_dirs = conf.include_directory
+  local exclude_dirs = conf.excludes_directory
   local dir_pattern = "(" .. table.concat(include_dirs, "|") .. ")"
   local final_regex
   if type_flag == "f" then
+    local dir_pattern = "(" .. table.concat(include_dirs, "|") .. ")"
     local ext_pattern = "(" .. table.concat(extensions, "|") .. ")"
-    final_regex = ".*[\\\\/]" .. dir_pattern .. "[\\\\/].*\\." .. ext_pattern .. "$"
+    local pattern1 = ".*[\\\\/]" .. dir_pattern .. "[\\\\/].*\\." .. ext_pattern .. "$"
+    local pattern2 = ".*\\.uproject$"
+    final_regex = "(" .. pattern1 .. ")|(" .. pattern2 .. ")"
   else -- "d"
     final_regex = ".*[\\\\/]" .. dir_pattern .. "[\\\\/]?.*"
   end
@@ -109,7 +112,10 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
 
             local files_by_component = {}
             for _, comp_data in pairs(all_components_data) do
-              files_by_component[comp_data.name] = { files = { source={}, config={}, shader={}, content={}, programs={}, other={} }, dirs = { source={}, config={}, shader={}, content={}, programs={}, other={} } }
+              files_by_component[comp_data.name] = {
+                files = { uproject={}, source={}, config={}, shader={}, content={}, programs={}, other={} },
+                dirs = { uproject={}, source={}, config={}, shader={}, content={}, programs={}, other={} },
+              }
             end
             
             local sorted_components = vim.tbl_values(all_components_data)

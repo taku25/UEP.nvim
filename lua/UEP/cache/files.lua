@@ -10,7 +10,7 @@ local uep_context = require("UEP.context") -- ★ オンメモリキャッシュ
 local M = {}
 
 local MAGIC_CODE = "UEP File Component Cache"
-local CACHE_VERSION = "1.0"
+local CACHE_VERSION = "1.01"
 
 M.get_name_from_root = function(root_path)
   if not root_path then return nil end
