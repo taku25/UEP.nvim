@@ -84,7 +84,9 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
             progress:stage_update("file_scan", 1, "File scan complete. Classifying...")
 
             local refresh_roots = {}
-            for _, c in ipairs(components_to_refresh) do refresh_roots[c.root_path] = true end
+            for _, c in ipairs(components_to_refresh) do
+              refresh_roots[c.root_path] = true
+            end
             
             local relevant_files = {}
             for _, file in ipairs(all_found_files) do
@@ -140,8 +142,8 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
             local all_existing_header_details = {}
             for _, component in ipairs(components_to_refresh) do
                 local existing_cache = files_cache_manager.load_component_cache(component)
-                if existing_cache and existing_cache.header_details then
-                    vim.tbl_deep_extend("force", all_existing_header_details, existing_cache.header_details)
+                for file_path, details in pairs(existing_cache.header_details) do
+                    all_existing_header_details[file_path] = details
                 end
             end
 
@@ -244,12 +246,26 @@ function M.update_single_module_cache(module_name, on_complete)
               end
 
               local headers_to_parse = {}
-              for _, path in ipairs(new_files) do local cat = core_utils.categorize_path(path); component_cache.files[cat] = component_cache.files[cat] or {}; table.insert(component_cache.files[cat], path); if path:match('%.h$') then table.insert(headers_to_parse, path) end end
-              for _, path in ipairs(new_dirs) do local cat = core_utils.categorize_path(path); component_cache.directories[cat] = component_cache.directories[cat] or {}; table.insert(component_cache.directories[cat], path) end
-              
+              for _, path in ipairs(new_files) do
+                local cat = core_utils.categorize_path(path)
+                component_cache.files[cat] = component_cache.files[cat] or {}
+                table.insert(component_cache.files[cat], path)
+                if path:match('%.h$') then
+                  table.insert(headers_to_parse, path)
+                end
+              end
+              for _, path in ipairs(new_dirs) do
+                local cat = core_utils.categorize_path(path)
+                component_cache.directories[cat] = component_cache.directories[cat] or {}
+                table.insert(component_cache.directories[cat], path)
+              end
+
+
               class_parser.parse_headers_async(component_cache.header_details, headers_to_parse, progress, function(ok, new_header_details)
                 if ok then
-                  vim.tbl_deep_extend("force", component_cache.header_details, new_header_details)
+                  for file_path, details in pairs(new_header_details) do
+                      component_cache.header_details[file_path] = details
+                  end
                   files_cache_manager.save_component_cache(component_meta, component_cache)
                   log.info("Lightweight refresh for module '%s' complete.", module_name)
                   progress:finish(true)
