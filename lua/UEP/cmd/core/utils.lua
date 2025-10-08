@@ -8,6 +8,7 @@ local M = {}
 -- refresh_files.luaから持ってきたヘルパー関数
 M.categorize_path = function(path)
   if path:match("%.uproject$") then return "uproject" end
+  if path:match("%.uplugin$") then return "uplugin" end
   if path:find("/Shaders/", 1, true) or path:match("/Shaders$") then return "shader" end
   if path:find("/Config/", 1, true) or path:match("/Config$") then return "config" end
   if path:find("/Source/", 1, true) or path:match("/Source$") then return "source" end

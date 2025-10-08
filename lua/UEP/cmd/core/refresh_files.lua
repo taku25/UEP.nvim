@@ -21,7 +21,7 @@ M.create_fd_command = function (base_paths, type_flag)
     local dir_pattern = "(" .. table.concat(include_dirs, "|") .. ")"
     local ext_pattern = "(" .. table.concat(extensions, "|") .. ")"
     local pattern1 = ".*[\\\\/]" .. dir_pattern .. "[\\\\/].*\\." .. ext_pattern .. "$"
-    local pattern2 = ".*\\.uproject$"
+    local pattern2 = ".*\\.(uproject|uplugin)$"
     final_regex = "(" .. pattern1 .. ")|(" .. pattern2 .. ")"
   else -- "d"
     final_regex = ".*[\\\\/]" .. dir_pattern .. "[\\\\/]?.*"
@@ -113,8 +113,8 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
             local files_by_component = {}
             for _, comp_data in pairs(all_components_data) do
               files_by_component[comp_data.name] = {
-                files = { uproject={}, source={}, config={}, shader={}, content={}, programs={}, other={} },
-                dirs = { uproject={}, source={}, config={}, shader={}, content={}, programs={}, other={} },
+                files = { uproject={}, uplugin={}, source={}, config={}, shader={}, content={}, programs={}, other={} },
+                dirs = { uproject={}, uplugin={}, source={}, config={}, shader={}, content={}, programs={}, other={} },
               }
             end
             
