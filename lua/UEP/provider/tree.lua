@@ -69,46 +69,6 @@ local function build_fs_hierarchy(root_path, files, dirs)
 end
 
 
-local function build_component_centric_hierarchy(components_with_files)
-  local final_nodes = {}
-
-  for _, component in ipairs(components_with_files)
-  do
-    local component_node = {
-      id = component.root_path, name = component.display_name, path = component.root_path, type = "directory",
-      extra = { uep_type = component.type, hierarchy = {}, is_loaded = false },
-    }
-    
-    local category_base_path = component.root_path
-    if component.type == "Engine" then
-      category_base_path = fs.joinpath(component.root_path, "Engine")
-    end
-    
-    local categories = {
-      Source = { files = component.files.source, dirs = component.dirs.source, root = fs.joinpath(category_base_path, "Source") },
-      Config = { files = component.files.config, dirs = component.dirs.config, root = fs.joinpath(category_base_path, "Config") },
-      Shaders = { files = component.files.shader, dirs = component.dirs.shader, root = fs.joinpath(category_base_path, "Shaders") },
-      Programs = { files = component.files.programs, dirs = component.dirs.programs, root = fs.joinpath(category_base_path, "Programs") },
-    }
-    
-    for name, data in pairs(categories) do
-      if (data.files and #data.files > 0) or (data.dirs and #data.dirs > 0) then
-        
-        local category_node = {
-          id = data.root, name = name, path = data.root, type = "directory",
-          extra = { uep_type = "category_in_component", is_loaded = false, hierarchy = build_fs_hierarchy(data.root, data.files, data.dirs) },
-        }
-        table.insert(component_node.extra.hierarchy, category_node)
-      end
-    end
-    
-    table.sort(component_node.extra.hierarchy, directory_first_sorter)
-    table.insert(final_nodes, component_node)
-  end
-  
-  table.sort(final_nodes, function(a, b) if a.extra.uep_type == "Game" then return true end if b.extra.uep_type == "Game" then return false end if a.extra.uep_type == "Engine" then return true end if b.extra.uep_type == "Engine" then return false end return a.name < b.name end)
-  return final_nodes
-end
 
 -- ▼▼▼ この関数内のフィルタリングロジックを修正 ▼▼▼
 local function build_final_hierarchy(components_with_files, filtered_modules_meta)
@@ -129,7 +89,6 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
       local files_to_render = {}
       local dirs_to_render = {}
 
-      -- ★★★ ここからが修正箇所 ★★★
       if name == "Source" then
         -- Sourceカテゴリの場合のみ、厳密なモジュールフィルタリングを行う
         local module_roots_in_comp = {}
@@ -154,7 +113,6 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
         files_to_render = data.files or {}
         dirs_to_render = data.dirs or {}
       end
-      -- ★★★ ここまでが修正箇所 ★★★
 
       if #files_to_render > 0 or #dirs_to_render > 0 then
         local category_node = { id = data.root, name = name, path = data.root, type = "directory", extra = { uep_type = "category_in_component", is_loaded = false, hierarchy = build_fs_hierarchy(data.root, files_to_render, dirs_to_render) }, }
@@ -162,6 +120,25 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
       end
     end
     
+    -- STEP 2: 次に、uproject/uplugin などの「コンポーネント直下のファイル」を処理する
+    local root_file_categories = { uproject = "uproject", uplugin = "uplugin" }
+    for cat_name, uep_type in pairs(root_file_categories) do
+      -- filesキャッシュに uproject や uplugin キーが存在するかチェック
+      if component.files[cat_name] and #component.files[cat_name] > 0 then
+        for _, file_path in ipairs(component.files[cat_name]) do
+          local file_name = vim.fn.fnamemodify(file_path, ":t")
+          -- ファイルノードを直接 component_node の hierarchy に追加する
+          table.insert(component_node.extra.hierarchy, {
+            id = file_path,
+            name = file_name,
+            path = file_path,
+            type = "file",
+            extra = { uep_type = uep_type },
+          })
+        end
+      end
+    end
+
     if #component_node.extra.hierarchy > 0 then
       table.sort(component_node.extra.hierarchy, directory_first_sorter)
       if component.type == "Game" then table.insert(root_categories.Game.extra.hierarchy, component_node)
@@ -181,8 +158,6 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
   end
   return final_nodes
 end
--- ▲▲▲ ここまで ▲▲▲
--- ▲▲▲ ここまで ▲▲▲
 
 -------------------------------------------------
 -- プロバイダー公開関数

@@ -39,7 +39,7 @@ local function parse_single_component(component, on_done)
           source_mtimes[build_cs_path] = vim.fn.getftime(build_cs_path) -- mtimeを収集
           local module_name = vim.fn.fnamemodify(build_cs_path, ":h:t")
           local module_root = vim.fn.fnamemodify(build_cs_path, ":h")
-          local location = (component.type == "Plugin") and "in_plugins" or "in_source"
+          local location = build_cs_path:find("/Plugins/", 1, true) and "in_plugins" or "in_source"
           local dependencies = unl_analyzer.parse(build_cs_path)
           modules_meta[module_name] = { name = module_name, path = build_cs_path, module_root = module_root, category = component.type, location = location, dependencies = dependencies }
         end
