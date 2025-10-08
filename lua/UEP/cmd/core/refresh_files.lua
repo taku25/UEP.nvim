@@ -138,12 +138,15 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
             local headers_to_parse = {}
             for _, file in ipairs(relevant_files) do if file:match("%.h$") then table.insert(headers_to_parse, file) end end
             
-            -- ▼▼▼ 修正点: 既存の全ヘッダーキャッシュを集約してパーサーに渡す ▼▼▼
+            -- ▼▼▼ 修正箇所 ▼▼▼
             local all_existing_header_details = {}
             for _, component in ipairs(components_to_refresh) do
                 local existing_cache = files_cache_manager.load_component_cache(component)
-                for file_path, details in pairs(existing_cache.header_details) do
-                    all_existing_header_details[file_path] = details
+                -- existing_cacheがnilでないこと、かつheader_detailsテーブルが存在することを確認
+                if existing_cache and existing_cache.header_details then
+                    for file_path, details in pairs(existing_cache.header_details) do
+                        all_existing_header_details[file_path] = details
+                    end
                 end
             end
 

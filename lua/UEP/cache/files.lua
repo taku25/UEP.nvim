@@ -12,7 +12,7 @@ local M = {}
 local MAGIC_CODE = "UEP File Component Cache"
 local CACHE_VERSION = "1.0"
 
-local function get_name_from_root(root_path)
+M.get_name_from_root = function(root_path)
   if not root_path then return nil end
   return unl_path.normalize(root_path):gsub("[\\/:]", "_")
 end
@@ -22,7 +22,7 @@ local function get_component_cache_path(component)
   local conf = uep_config.get()
   local base_dir = unl_cache_core.get_cache_dir(conf)
   local files_dir = fs.joinpath(base_dir, "files")
-  local component_unique_name = get_name_from_root(component.root_path)
+  local component_unique_name = M.get_name_from_root(component.root_path)
   local filename
   if component.type == "Plugin" and component.owner_name then
     filename = ("%s_%s.files.json"):format(component.owner_name, component_unique_name)
