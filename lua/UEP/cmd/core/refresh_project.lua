@@ -65,7 +65,12 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
   
   local uproject_mtime = vim.fn.getftime(uproject_path)
 
-  local plugin_search_paths = { fs.joinpath(game_root, "Plugins"), fs.joinpath(engine_root, "Engine", "Plugins") }
+  local plugin_search_paths = {
+    fs.joinpath(game_root, "Plugins"),
+    fs.joinpath(engine_root, "Engine", "Plugins"),
+    fs.joinpath(engine_root, "Engine", "Platforms"),
+    fs.joinpath(engine_root, "Engine", "Source", "Developer")
+  }
   local fd_cmd = { "fd", "--absolute-path", "--type", "f", "--path-separator", "/", "--glob", "*.uplugin", unpack(plugin_search_paths) }
   local all_uplugin_files = {}
   vim.fn.jobstart(fd_cmd, {

@@ -8,7 +8,7 @@ local M = {
   cache = { dirname = "UEP" },
   
   include_extensions = { "uproject", "cpp", "h", "hpp", "inl", "ini", "cs", "usf", "ush" },
-  include_directory = { "Source", "Plugins", "Config", "Shaders", "Programs" },
+  include_directory = { "Source", "Plugins", "Config", "Shaders", "Programs", "Platforms" },
   excludes_directory  = {  "Intermediate", "Binaries", "Saved", ".git", ".vs", "Templates" },
 
   files_extensions = {
