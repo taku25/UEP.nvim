@@ -83,6 +83,7 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
       Source = { files = component.files.source, dirs = component.dirs.source, root = fs.joinpath(category_base_path, "Source") },
       Config = { files = component.files.config, dirs = component.dirs.config, root = fs.joinpath(category_base_path, "Config") },
       Shaders = { files = component.files.shader, dirs = component.dirs.shader, root = fs.joinpath(category_base_path, "Shaders") },
+      Programs = { files = component.files.programs, dirs = component.dirs.programs, root = fs.joinpath(category_base_path, "Programs") },
     }
     
     for name, data in pairs(categories) do
