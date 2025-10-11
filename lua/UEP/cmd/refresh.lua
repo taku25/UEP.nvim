@@ -86,50 +86,43 @@ refresh_project_core.update_project_structure(refresh_opts, uproject_path, progr
 
     -- STEP 3: ファイルスキャン対象のコンポーネントを決定する
     local components_to_scan = {}
-    local components_added = {} -- 重複追加を防ぐためのセット
-
-    local function add_to_scan_list(component_list)
-      for _, component in ipairs(component_list) do
-        if not components_added[component.name] then
-          table.insert(components_to_scan, component)
-          components_added[component.name] = true
-        end
-      end
-    end
 
     if refresh_opts.bang or refresh_opts.force then
-      -- ケースA: bang(!) または --force が指定された場合
-      -- スコープ内の全コンポーネントを強制的にスキャン対象にする
+      -- ケースA: bang(!) または --force が指定された場合、スコープ内の全コンポーネントをスキャン対象とする
       log.info("Bang(!) or --force specified. All components in scope will be scanned for files.")
       
-      local scope_list = {}
       if refresh_opts.scope == "Full" then
-        scope_list = full_component_list
-      else -- Game, Engine, or nil (defaults to Game)
+        components_to_scan = full_component_list
+      else -- Game または Engine
         local game_name = files_cache_manager.get_name_from_root(game_root)
         local eng_name = files_cache_manager.get_name_from_root(engine_root)
         local owner_name_to_match = (refresh_opts.scope == "Engine" and eng_name) or game_name
         
         for _, comp in ipairs(full_component_list) do
             if comp.owner_name == owner_name_to_match then
-                table.insert(scope_list, comp)
+                table.insert(components_to_scan, comp)
             end
         end
       end
-      add_to_scan_list(scope_list)
-      
     else
       -- ケースB: 通常の refresh の場合
-      -- B-1: プロジェクト構造が変更されたコンポーネントをまず追加
-      add_to_scan_list(changed_components)
+      local components_added = {}
+      local function add_to_scan_list(component)
+          if not components_added[component.name] then
+              table.insert(components_to_scan, component)
+              components_added[component.name] = true
+          end
+      end
+      
+      -- B-1: 構造が変更されたコンポーネントを追加
+      for _, c in ipairs(changed_components) do add_to_scan_list(c) end
 
-      -- B-2: 次に、ファイルキャッシュが存在しないコンポーネントをスキャン対象に追加
+      -- B-2: ファイルキャッシュが存在しないコンポーネントを追加
       for _, component in ipairs(full_component_list) do
         if not components_added[component.name] then
-          local files_cache = files_cache_manager.load_component_cache(component)
-          if not files_cache then
+          if not files_cache_manager.load_component_cache(component) then
             log.info("File cache for component '%s' not found. Adding to scan queue.", component.display_name)
-            add_to_scan_list({component}) -- add_to_scan_listはリストを期待するのでテーブルでラップ
+            add_to_scan_list(component)
           end
         end
       end
