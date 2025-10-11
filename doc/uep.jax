@@ -266,6 +266,10 @@ APIモジュールを`require`する:
 *uep_api.module_grep({opts})*
     特定モジュールのLiveGrep UIを開きます。optsでmodule_nameを指定できます。
 
+*uep_api.program_grep({opts})*
+    Programsディレクトリを対象としたLiveGrep UIを開きます。optsは現在使用
+    されません。
+
 *uep_api.tree({opts})*
     論理プロジェクトツリーを開きます。optsでdeps_flagを指定できます。
 
