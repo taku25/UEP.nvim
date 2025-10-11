@@ -68,6 +68,9 @@ UIをブロックすることなく、非常に高速でインテリジェント
 :UEP module_grep [ModuleName]
   特定のモジュール内をLiveGrepします。
 
+:UEP program_grep
+  Programsディレクトリ内のファイルをLiveGrepします。
+
 :UEP tree [--no-deps|--all-deps]
   プロジェクト全体の論理ツリーを表示します。(neo-tree-unl.nvim が必要)
 
@@ -127,6 +130,11 @@ UIをブロックすることなく、非常に高速でインテリジェント
 :UEP module_grep [ModuleName]
     特定のモジュールのディレクトリ内に限定してLiveGrepします。
     - [ModuleName]: (省略可) 省略した場合、モジュールを選択するUIが開きます。
+
+:UEP program_grep
+    プロジェクトとエンジンに関連する全てのProgramsディレクトリ内のファイルを
+    LiveGrepします。ビルドツールや自動化スクリプトのコードを調査する際に
+    便利です。
 
 :UEP tree [--no-deps|--all-deps]
     neo-treeで論理的なプロジェクトエクスプローラーを開きます。

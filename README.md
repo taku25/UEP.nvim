@@ -38,6 +38,7 @@ With [tree-sitter-unreal-cpp](https://github.com/taku25/tree-sitter-unreal-cpp),
       * Performs high-speed content searches across the entire project and engine source code (requires ripgrep).
       * The `:UEP grep` command lets you specify the search scope (**Game** (default), **Engine**).
       * The `:UEP module_grep` command enables focused, noise-free searches within a specific module (`<module_name>`).
+      * The `:UEP program_grep` command allows for targeted searches within all `Programs` directories.
   * **UI Integration**:
       * Leverages `UNL.nvim`'s UI abstraction layer to automatically use UI frontends like [Telescope](https://github.com/nvim-telescope/telescope.nvim) and [fzf-lua](https://github.com/ibhagwan/fzf-lua).
       * Falls back to the native Neovim UI if no UI plugin is installed.
@@ -153,6 +154,9 @@ All commands start with `:UEP`.
 " LiveGrep files belonging to a specific module.
 :UEP module_grep [ModuleName]
 
+" LiveGrep for files within Programs directories.
+:UEP program_grep
+
 " Display the logical tree for the entire project (requires neo-tree-unl.nvim).
 :UEP tree
 
@@ -205,6 +209,9 @@ All commands start with `:UEP`.
       * Searches for content within the directory of the specified `<ModuleName>`.
       * Provides noise-free results when investigating the implementation of a specific feature.
       * If no module is specified, a picker will be shown to select a module.
+  * **`:UEP program_grep`**:
+      * Performs a live grep for files within all `Programs` directories related to the project and engine.
+      * Useful for investigating the code of build tools and automation scripts.
 
 ## 🤖 API & Automation (Automation Examples)
 

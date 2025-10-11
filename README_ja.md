@@ -39,6 +39,7 @@
       * プロジェクトとエンジンのソースコード全体を横断して、ファイルの中身を高速に検索します (ripgrepが必須)。
       * :UEP grep コマンドで、検索範囲をスコープ (Game (デフォルト), Engine) で指定できます。
       * :UEP module_grep コマンドで、特定のモジュール (<module_name>) 内に限定した、ノイズのない集中検索が可能です。
+      * :UEP program_grep コマンドで、全ての`Programs`ディレクトリ内に限定した検索が可能です。
   * **UI統合**:
       * `UNL.nvim`のUI抽象化レイヤーを活用し、[Telescope](https://github.com/nvim-telescope/telescope.nvim)や[fzf-lua](https://github.com/ibhagwan/fzf-lua)のようなUIフロントエンドを自動的に使用します。
       * UIプラグインがインストールされていない場合でも、NeovimネイティブのUIにフォールバックします。
@@ -153,6 +154,9 @@ opts = {
 
 " 特定のモジュールに属するファイルをLiveGrepします。
 :UEP module_grep [ModuleName]
+
+" Programsディレクトリ内のファイルをLiveGrepします。
+:UEP program_grep
 
 " プロジェクト全体の論理ツリーを表示します (neo-tree-unl.nvim が必要)。
 :UEP tree

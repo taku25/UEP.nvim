@@ -96,6 +96,11 @@ local command_spec = {
       desc = "Find all files in Programs directories.",
       args = {},
     },
+    program_grep = {
+      handler = uep_api.program_grep,
+      desc = "Live grep within all Programs directories.",
+      args = {},
+    },
   },
 }
 

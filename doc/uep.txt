@@ -68,6 +68,9 @@ Command List                                           *UEP-commands-list*
 :UEP module_grep [ModuleName]
     LiveGrep within a specific module.
 
+:UEP program_grep
+    LiveGrep for files within Programs directories.
+
 :UEP tree [--no-deps|--all-deps]
     Displays a logical tree of the entire project. (Requires neo-tree-unl.nvim)
 
@@ -129,6 +132,11 @@ UEP grep [Game|Engine]
     Performs a live grep limited to the directory of a specific module.
     - [ModuleName]: (Optional)
     If omitted, a UI will open to select a module.
+
+:UEP program_grep
+    Performs a live grep for files within all `Programs` directories related to
+   the project and engine. Useful for investigating the code of build tools
+    and automation scripts.
 
 :UEP tree [--no-deps|--all-deps]
     Opens a logical project explorer in neo-tree. Requires neo-tree-unl.nvim.
@@ -256,6 +264,11 @@ Require the API module:
 
 *uep_api.module_grep({opts})*
     Opens the live grep UI for a specific module. opts can specify module_name.
+
+*uep_api.program_grep({opts})*
+    Opens the live grep UI for `Programs` directories. opts is not currently
+    used.
+
 
 *uep_api.tree({opts})*
     Opens the logical project tree. opts can specify deps_flag.
