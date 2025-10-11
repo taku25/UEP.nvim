@@ -34,7 +34,8 @@ Main Features:
   It also allows sharing of the engine cache across multiple projects.
 - Powerful File Search:
   Instantly search for files within your project by specifying the module
-  scope (Game/Engine) and dependency depth (shallow/deep).
+  scope (Game/Engine) and dependency depth (shallow/deep). Specialized
+  commands are available for module-specific and Programs files.
 - UI Abstraction Layer:
   Automatically selects and uses the best available UI, such as Telescope,
   fzf-lua, or the native Neovim UI, depending on your environment.
@@ -53,19 +54,31 @@ Command List                                           *UEP-commands-list*
     Updates the project cache.
 
 :UEP files[!] [Game|Engine] [--no-deps|--all-deps]
-    Searches for and selects files using a UI.
+    Searches for common source and config files using a UI.
 
 :UEP module_files[!] [ModuleName]
     Searches for files belonging to a specific module.
+
+:UEP program_files
+    Searches for files within Programs directories.
+
+:UEP grep [Game|Engine]
+    LiveGrep across the project or engine source code.
+
+:UEP module_grep [ModuleName]
+    LiveGrep within a specific module.
+
+:UEP tree [--no-deps|--all-deps]
+    Displays a logical tree of the entire project. (Requires neo-tree-unl.nvim)
+
+:UEP module_tree [ModuleName] [--no-deps|--all-deps]
+    Displays a logical tree focused on a specific module. (Requires neo-tree-unl.nvim)
 
 :UEP cd
     Selects a destination from a list of known projects to change to.
 
 :UEP delete
     Deletes a project from the list of known projects.
-
-:UEP tree
-    Opens the module root in a filer.
 
 ------------------------------------------------------------------------------
 Command Details                                     *UEP-commands-detail*
@@ -102,6 +115,32 @@ Command Details                                     *UEP-commands-detail*
       If omitted, a UI will open to select from all modules, and then the
       files for the selected module will be displayed.
 
+:UEP program_files
+    Searches for files within all Programs directories related to the
+    project and engine (e.g., UnrealBuildTool, AutomationTool).
+
+UEP grep [Game|Engine]
+    Performs a live grep across project and engine source code (requires rg).
+    - [Game|Engine]: (Optional, default: Game)
+    - Game: Searches only your project's source files and plugins.
+    - Engine: Includes the associated engine's source code in the search.
+
+:UEP module_grep [ModuleName]
+    Performs a live grep limited to the directory of a specific module.
+    - [ModuleName]: (Optional)
+    If omitted, a UI will open to select a module.
+
+:UEP tree [--no-deps|--all-deps]
+    Opens a logical project explorer in neo-tree. Requires neo-tree-unl.nvim.
+    The view includes Game, Plugins, and Engine components.
+    - [--no-deps|--all-deps]: (Optional) Controls which dependent modules
+    are displayed within the tree.
+
+:UEP module_tree [ModuleName] [--no-deps|--all-deps]
+    Opens a logical tree focused on a single module or its dependencies.
+    Requires neo-tree-unl.nvim.
+    - [ModuleName]: (Optional) If omitted, a UI will open to select a module.
+
 :UEP cd
     Displays a UI with a list of known cached projects and changes the current
     directory to the root of the selected project.
@@ -109,10 +148,6 @@ Command Details                                     *UEP-commands-detail*
 :UEP delete
     Displays a UI with a list of known projects and removes the selected
     project from the list. The actual project files are not deleted.
-
-:UEP tree
-    Opens a UI to select a module and then opens the root directory of the
-    selected module in a filer (like neo-tree).
 
 ==============================================================================
 3. Configuration                                       *UEP-configuration*
@@ -216,15 +251,23 @@ Require the API module:
         update of the module cache.
       - `module_name` (string, optional): Directly specify the module name.
 
-*uep_api.cd({opts})*
-    Opens the project selection UI. `opts` is not currently used.
+*uep_api.grep({opts})*
+    Opens the live grep UI. opts can specify category ("Game", "Engine").
 
-*uep_api.delete({opts})*
-    Opens the project deletion UI. `opts` is not currently used.
+*uep_api.module_grep({opts})*
+    Opens the live grep UI for a specific module. opts can specify module_name.
 
 *uep_api.tree({opts})*
-    Opens the module selection UI to display in a filer. `opts` is not
-    currently used.
+    Opens the logical project tree. opts can specify deps_flag.
+
+*uep_api.module_tree({opts})*
+    Opens the logical module tree. opts can specify module_name and deps_flag.
+
+*uep_api.cd({opts})*
+    Opens the project selection UI. opts is not currently used.
+
+*uep_api.delete({opts})*
+    Opens the project deletion UI. opts is not currently used.
 
 ==============================================================================
 5. Integration Examples (neo-tree)         *UEP-integration-examples*
