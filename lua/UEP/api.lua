@@ -10,6 +10,7 @@ local cmd_module_tree = require("UEP.cmd.module_tree")
 local cmd_tree = require("UEP.cmd.tree")
 local cmd_grep = require("UEP.cmd.grep")
 local cmd_module_grep = require("UEP.cmd.module_grep")
+local cmd_program_files = require("UEP.cmd.program_files")
 
 local M = {}
 
@@ -67,4 +68,9 @@ end
 function M.module_grep(opts)
   cmd_module_grep.execute(opts or {})
 end
+
+function M.program_files(opts)
+  cmd_program_files.execute(opts or {})
+end
+
 return M

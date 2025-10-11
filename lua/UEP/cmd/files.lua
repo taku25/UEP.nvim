@@ -18,9 +18,13 @@ local is_generating_alldeps = false
 -- ▼▼▼【変更点 1/2】`cmd`サブフォルダに保存するようパスを修正 ▼▼▼
 local function get_cache_filepath(deps_flag)
   local cache_dir = unl_cache_core.get_cache_dir(uep_config.get())
-  if not cache_dir then return nil end
+  if not cache_dir then
+    return nil
+  end
   local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
-  if not project_root then return nil end
+  if not project_root then
+    return nil
+  end
   local project_name = unl_path.normalize(project_root):gsub("[\\/:]", "_")
   local suffix = (deps_flag == "--all-deps") and "_alldeps" or "_nodeps"
   local filename = project_name .. ".picker_files" .. suffix .. ".cache.json"

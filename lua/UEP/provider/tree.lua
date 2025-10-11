@@ -92,33 +92,34 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
 
       -- ▼▼▼ この ifブロック全体を置き換えてください ▼▼▼
       if name == "Source" then
-        -- STEP 1: 表示すべきパスのリストを作成する
+        -- STEP 1: 表示すべきパスのリストを作成する (変更なし)
         local paths_to_include = {}
-
-        -- 1a: --all-deps/--no-deps に基づいて、表示すべきモジュールのルートパスを追加
         for mod_name, mod_meta in pairs(filtered_modules_meta or {}) do
           if mod_meta.module_root and mod_meta.module_root:find(component.root_path, 1, true) then
             table.insert(paths_to_include, mod_meta.module_root)
           end
         end
-
-        -- 1b: Engineコンポーネントの場合、"Programs"ディレクトリを特別にリストへ追加
         if component.type == "Engine" then
-          -- data.root は "Engine/Source" を指している
           local programs_root = fs.joinpath(data.root, "Programs")
           table.insert(paths_to_include, programs_root)
         end
 
-        -- STEP 2: 作成したリストに基づいて、表示するファイルとディレクトリをフィルタリング
-        for _, file in ipairs(data.files or {}) do
+        -- STEP 2: フィルタリング対象となるファイル/ディレクトリのリストを準備する
+        -- ★★★ ここが新しいロジック ★★★
+        -- sourceカテゴリとprogramsカテゴリの両方からファイルを集める
+        local candidate_files = vim.list_extend(vim.deepcopy(data.files or {}), component.files.programs or {})
+        local candidate_dirs = vim.list_extend(vim.deepcopy(data.dirs or {}), component.dirs.programs or {})
+
+        -- STEP 3: 準備したリストをフィルタリングする (変更なし)
+        for _, file in ipairs(candidate_files) do
           for _, include_path in ipairs(paths_to_include) do
             if file:find(include_path, 1, true) then
               table.insert(files_to_render, file)
-              break -- 同じファイルを重複して追加しないようにする
+              break
             end
           end
         end
-        for _, dir in ipairs(data.dirs or {}) do
+        for _, dir in ipairs(candidate_dirs) do
           for _, include_path in ipairs(paths_to_include) do
             if dir:find(include_path, 1, true) then
               table.insert(dirs_to_render, dir)
@@ -127,7 +128,7 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
           end
         end
       else
-        -- Source以外のカテゴリ(Config, Shadersなど)は、常に全てのファイルを表示する
+        -- Source以外のカテゴリはそのまま
         files_to_render = data.files or {}
         dirs_to_render = data.dirs or {}
       end

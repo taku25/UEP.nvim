@@ -91,6 +91,11 @@ local command_spec = {
         { name = "module_name", required = false },
       },
     },
+    program_files = {
+      handler = uep_api.program_files,
+      desc = "Find all files in Programs directories.",
+      args = {},
+    },
   },
 }
 
