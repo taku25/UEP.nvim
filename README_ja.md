@@ -32,8 +32,9 @@
       * `generation`ハッシュシステムにより、ファイルリストが常にモジュール構造と同期していることを保証します。
   * **強力なファイル検索**:
       * ファイルを即座に見つけるための柔軟な`:UEP files`コマンドを提供します。
-      * スコープ（**Game**, **Engine**, **All**）でファイルをフィルタリングできます。
-      * モジュールの依存関係（**--no-deps** `dependencies`または**--all-deps** `dependencies`）を検索に含めることが可能です。
+      * スコープ（**Game**, **Engine**）でファイルをフィルタリングできます。
+      * モジュールの依存関係（**--no-deps** または **--all-deps**）を検索に含めることが可能です。
+      * モジュールや`Programs`ディレクトリに特化した検索コマンドを提供します。
   * **インテリジェントなコンテンツ検索 (Grep)**:
       * プロジェクトとエンジンのソースコード全体を横断して、ファイルの中身を高速に検索します (ripgrepが必須)。
       * :UEP grep コマンドで、検索範囲をスコープ (Game (デフォルト), Engine) で指定できます。
@@ -138,23 +139,25 @@ opts = {
 " プロジェクトを再スキャンしてキャッシュを更新します。これが最も重要なコマンドです。
 :UEP refresh [Game|Engine]
 
-" 様々な条件でファイルを検索するためのUIを開きます。
+" 日常的に使うソースや設定ファイルを検索するためのUIを開きます。
 :UEP files[!] [Game|Engine] [--all-deps]
 
 " 特定のモジュールに属するファイルを検索します。
 :UEP module_files[!] [ModuleName]
-" 様々な条件でファイルを検索するためのUIを開きます。
 
-" 特定のモジュールに属するファイルをLiveGrepします
-:UEP grep [Game|Engine] ]
+" Programsディレクトリ内のファイルを検索します。
+:UEP program_files
 
-" 特定のモジュールに属するファイルをLiveGrepします
+" プロジェクトまたはエンジンのソースコード全体からLiveGrepします。
+:UEP grep [Game|Engine]
+
+" 特定のモジュールに属するファイルをLiveGrepします。
 :UEP module_grep [ModuleName]
 
-" プロジェクト全体の論理ツリーを表示します (neo-tree-unl.nvim が必要)
+" プロジェクト全体の論理ツリーを表示します (neo-tree-unl.nvim が必要)。
 :UEP tree
 
-" 特定のモジュールの論理ツリーを表示します (neo-tree-unl.nvim が必要)
+" 特定のモジュールの論理ツリーを表示します (neo-tree-unl.nvim が必要)。
 :UEP module_tree [ModuleName]
 
 " 既知のプロジェクト一覧をUIで表示し、選択したプロジェクトにカレントディレクトリを変更します。
@@ -187,6 +190,9 @@ opts = {
   * **`:UEP tree`**:
       * `neo-tree-unl.nvim` がインストールされている場合にのみ機能します。
       * プロジェクト全体の「Game」「Plugins」「Engine」のカテゴリを含む、完全な論理ツリーを`neo-tree`で開きます。
+  * **`:UEP program_files`**:
+      * プロジェクトとエンジンに関連する全ての`Programs`ディレクトリ（例: UnrealBuildTool, AutomationTool）内のファイルを検索します。
+      * ビルドツールのコードを調査する際に便利です。
   * **`:UEP module_tree [ModuleName]`**:
       * `neo-tree-unl.nvim` がインストールされている場合にのみ機能します。
       * `ModuleName`を引数として渡すと、そのモジュールのみをルートとしたツリーが表示されます。

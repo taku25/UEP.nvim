@@ -30,9 +30,10 @@ With [tree-sitter-unreal-cpp](https://github.com/taku25/tree-sitter-unreal-cpp),
       * Intelligently separates game and engine caches, maximizing efficiency by allowing multiple projects to share a single engine cache.
       * Ensures the file list is always in sync with the module structure through a `generation` hash system.
   * **Powerful File Searching**:
-      * Provides a flexible `:UEP files` command to find files instantly.
-      * Allows filtering files by scope (**Game**, **Engine**, **All**).
-      * Supports including module dependencies in the search (**--no-deps** `dependencies` or **--all-deps** `dependencies`).
+      * Provides a flexible `:UEP files` command to find your most-used source and config files instantly.
+      * Offers specialized commands for targeted searches within a single module (`:UEP module_files`) or across all `Programs` directories (`:UEP program_files`).
+      * Allows filtering files by scope (**Game**, **Engine**).
+      * Supports including module dependencies in the search (**--no-deps** or **--all-deps**).
   * **Intelligent Content Searching (Grep)**:
       * Performs high-speed content searches across the entire project and engine source code (requires ripgrep).
       * The `:UEP grep` command lets you specify the search scope (**Game** (default), **Engine**).
@@ -137,22 +138,25 @@ All commands start with `:UEP`.
 " Re-scan the project and update the cache. This is the most important command.
 :UEP refresh [Game|Engine]
 
-" Open a UI to search for files under various conditions.
+" Open a UI to search for commonly-used source and config files.
 :UEP files[!] [Game|Engine] [--all-deps]
 
 " Search for files belonging to a specific module.
 :UEP module_files[!] [ModuleName]
 
-" LiveGrep files belonging to a specific module.
-:UEP grep [Game|Engine] <Query>
+" Search for files within Programs directories.
+:UEP program_files
+
+" LiveGrep across the project or engine source code.
+:UEP grep [Game|Engine]
 
 " LiveGrep files belonging to a specific module.
-:UEP module_grep <ModuleName> <Query>
+:UEP module_grep [ModuleName]
 
-" Display the logical tree for the entire project (requires neo-tree-unl.nvim)
+" Display the logical tree for the entire project (requires neo-tree-unl.nvim).
 :UEP tree
 
-" Display the logical tree for a specific module (requires neo-tree-unl.nvim)
+" Display the logical tree for a specific module (requires neo-tree-unl.nvim).
 :UEP module_tree [ModuleName]
 
 " Display a list of known projects in a UI and change the current directory to the selected project.
@@ -182,6 +186,9 @@ All commands start with `:UEP`.
   * **`:UEP module_files[!]`**:
       * Without `!`: Searches for files in the specified module using the existing cache.
       * With `!`: Performs a lightweight update of the file cache for only the specified module before searching.
+  * **`:UEP program_files`**:
+      * Searches for files within all `Programs` directories related to the project and engine (e.g., UnrealBuildTool, AutomationTool).
+      * Useful for investigating the code of build tools.
   * **`:UEP tree`**:
       * Only works if `neo-tree-unl.nvim` is installed.
       * Opens a full logical tree in `neo-tree`, including "Game", "Plugins", and "Engine" categories for the entire project.
