@@ -80,6 +80,12 @@ Command List                                           *UEP-commands-list*
 :UEP find_parents [ClassName]
     Finds the inheritance chain for a specified class.
 
+:UEP purge [ComponentName]
+    Delete the file cache for a specified component (Game/Engine/Plugin).
+
+:UEP cleanup
+    Delete ALL structural and file caches for the current project.
+
 :UEP tree [--no-deps|--all-deps]
     Displays a logical tree of the entire project. (Requires neo-tree-unl.nvim)
 
@@ -156,6 +162,18 @@ UEP grep [Game|Engine]
       2. Relative to the current module's Public/Private directories.
       3. Within the current module's shallow and deep dependencies.
       4. Globally across the project cache (fallback).
+
+:UEP purge [ComponentName]
+    Deletes only the **file cache** (`*.files.json`) for the specified component
+    (Game, Engine, or a specific Plugin).
+    This command runs asynchronously and requires confirmation.
+
+:UEP cleanup
+    **DANGEROUS**: Permanently deletes **ALL** structural caches
+    (`*.project.json`) and **ALL** file caches (`*.files.json`) associated
+    with the current project, including all plugins and the linked engine.
+    This command runs asynchronously with a progress bar and requires confirmation.
+    You **must** run |:UEP refresh| immediately afterwards to rebuild the cache.
 
 :UEP find_derived [ClassName]
     Searches for all classes that inherit from a specified base class.

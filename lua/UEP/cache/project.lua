@@ -80,4 +80,29 @@ function M.load(cache_filename)
   return file_data
 end
 
+function M.delete_component_cache_file(cache_filename)
+  local log = require("UEP.logger").get()
+  local path = get_cache_path(cache_filename)
+  if not path then return false end
+  
+  -- 1. オンメモリキャッシュをクリア
+  local context_key = get_context_key_name(cache_filename)
+  require("UEP.context").del(context_key)
+
+  -- 2. ディスク上のファイルを削除
+  local stat = vim.loop.fs_stat(path)
+  if stat then
+    local ok, err = vim.loop.fs_unlink(path)
+    if ok then
+      log.info("Successfully deleted project cache: %s", path)
+      return true
+    else
+      log.error("Failed to delete project cache %s: %s", path, tostring(err))
+      return false
+    end
+  end
+  
+  return true -- ファイルが存在しない場合は成功
+end
+
 return M

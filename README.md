@@ -164,6 +164,12 @@ All commands start with `:UEP`.
 " Open an include file by searching the project cache.
 :UEP open_file [Path]
 
+" Delete the file cache for a specified component (Game/Engine/Plugin).
+:UEP purge [ComponentName]
+
+" Delete ALL structural (*.project.json) and file (*.files.json) caches for the current project.
+:UEP cleanup
+
 " Find all derived classes of a base class.
 :UEP find_derived [ClassName]
 
@@ -236,7 +242,14 @@ All commands start with `:UEP`.
       * Displays the inheritance hierarchy from the specified `[ClassName]` all the way up to `UObject`.
       * If `ClassName` is omitted, a picker will be shown to select a starting class.
       * A powerful tool for learning the architecture of an unfamiliar class.
- 
+  * **`:UEP purge [ComponentName]`**:
+      * Deletes only the **file cache** (`*.files.json`) for the specified Game, Engine, or Plugin component.
+      * This allows forcing a file rescan without re-analyzing the project's dependency structure.
+  * **`:UEP cleanup`**:
+      * **DANGEROUS**: Permanently deletes **ALL** structural caches (`*.project.json`) and **ALL** file caches (`*.files.json`) associated with the current project, including all plugins and the linked engine.
+      * The command runs asynchronously with a progress bar and requires confirmation.
+      * After running this, you **must** run `:UEP refresh` to rebuild the project structure from scratch. 
+
 ## 🤖 API & Automation (Automation Examples)
 
 You can use the `UEP.api` module to integrate with other Neovim configurations.

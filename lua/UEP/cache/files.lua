@@ -32,6 +32,9 @@ local function get_component_cache_path(component)
   return fs.joinpath(files_dir, filename)
 end
 
+function M.get_component_cache_path(component)
+  return get_component_cache_path(component)
+end
 -- ▼▼▼ オンメモリキャッシュ対応の、新しい load / save ▼▼▼
 
 function M.save_component_cache(component, data)
@@ -72,4 +75,27 @@ function M.load_component_cache(component)
   return file_data
 end
 
+function M.delete_component_cache_file(component)
+  local log = uep_log.get()
+  local path = get_component_cache_path(component)
+  if not path then return false end
+  
+  -- 1. オンメモリキャッシュをクリア (パスがコンテキストのキーとして使われているため)
+  uep_context.del(path)
+
+  -- 2. ディスク上のファイルを削除
+  local stat = vim.loop.fs_stat(path)
+  if stat then
+    local ok, err = vim.loop.fs_unlink(path)
+    if ok then
+      log.info("Successfully deleted file cache: %s", path)
+      return true
+    else
+      log.error("Failed to delete file cache %s: %s", path, tostring(err))
+      return false
+    end
+  end
+  
+  return true -- ファイルが存在しない場合は成功
+end
 return M

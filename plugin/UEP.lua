@@ -122,6 +122,18 @@ local command_spec = {
         { name = "path", required = false },
       },
     },
+    purge = {
+      handler = uep_api.purge,
+      desc = "Purge the file cache for a specified component (Game/Engine/Plugin).",
+      args = {
+        { name = "component_name", required = false },
+      },
+    },
+    cleanup = {
+      handler = uep_api.cleanup,
+      desc = "Delete all structural and file caches for the current project.",
+      args = {},
+    },
   },
 }
 

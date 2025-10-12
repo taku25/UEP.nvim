@@ -12,37 +12,32 @@ local M = {}
 -------------------------------------------------
 -- Core Logic
 -------------------------------------------------
--- ▼▼▼ 修正点: 引数をproject_rootからproject_display_nameに変更 ▼▼▼
 local function execute_project_deletion(project_display_name)
   local prompt_str = ("Permanently remove '%s' from the project registry?"):format(project_display_name)
 
-  vim.ui.select(
-    { "Yes, remove from registry", "No, cancel" },
-    { prompt = prompt_str },
-    function(choice)
-      if not choice or choice ~= "Yes, remove from registry" then
-        uep_log.get().info("Project registry deletion cancelled.")
-        return vim.notify("Deletion cancelled.", vim.log.levels.INFO)
-      end
-      
-      -- ▼▼▼ 修正点: 正しい引数で削除関数を呼び出す ▼▼▼
-      local ok = projects_cache.remove_project(project_display_name)
-      -- ▲▲▲ ここまで ▲▲▲
+  -- vim.fn.confirm の戻り値は 1=Yes, 2=No
+  local choices = "&Yes\n&No"
+  local decision = vim.fn.confirm(prompt_str, choices, 2) -- 2はデフォルトボタンの位置 (2番目の"No"をデフォルト)
 
-      unl_events.publish(unl_event_types.ON_AFTER_DELETE_PROJECT_REGISTRY, {
-        status = ok and "success" or "failed",
-        project_display_name = project_display_name,
-      })
+  if decision ~= 1 then
+    uep_log.get().info("Project registry deletion cancelled.")
+    return vim.notify("Deletion cancelled.", vim.log.levels.INFO)
+  end
+  
+  -- Yesが選択された (decision == 1) 場合の処理
+  local ok = projects_cache.remove_project(project_display_name)
 
-      if ok then
-        uep_log.get().info("Project removed from registry: %s", project_display_name)
-      else
-        uep_log.get().error("Failed to remove project from registry: %s", project_display_name)
-      end
-    end
-  )
+  unl_events.publish(unl_event_types.ON_AFTER_DELETE_PROJECT_REGISTRY, {
+    status = ok and "success" or "failed",
+    project_display_name = project_display_name,
+  })
+
+  if ok then
+    uep_log.get().info("Project removed from registry: %s", project_display_name)
+  else
+    uep_log.get().error("Failed to remove project from registry: %s", project_display_name)
+  end
 end
--- ▲▲▲ ここまで ▲▲▲
 
 -------------------------------------------------
 -- Public API (UI Flow)

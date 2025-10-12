@@ -38,4 +38,14 @@ function M.get(key)
   return nil
 end
 
+function M.del(key)
+  local handle = get_current_project_handle()
+  if handle then
+    -- ★ 修正: handle:del() を実行する関数を追加 ★
+    handle:del(key)
+    return true
+  end
+  return false
+end
+
 return M

@@ -15,6 +15,8 @@ local cmd_program_grep = require("UEP.cmd.program_grep")
 local cmd_find_derived = require("UEP.cmd.find_derived")
 local cmd_find_parents = require("UEP.cmd.find_parents")
 local cmd_open_file = require("UEP.cmd.open_file")
+local cmd_purge = require("UEP.cmd.purge")
+local cmd_cleanup = require("UEP.cmd.cleanup")
 
 local M = {}
 
@@ -93,4 +95,11 @@ function M.open_file(opts)
   cmd_open_file.execute(opts or {})
 end
 
+function M.purge(opts)
+  cmd_purge.execute(opts or {})
+end
+
+function M.cleanup(opts)
+  cmd_cleanup.execute(opts or {})
+end
 return M
