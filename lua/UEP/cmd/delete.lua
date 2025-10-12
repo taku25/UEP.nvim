@@ -74,6 +74,7 @@ function M.execute(opts)
     title = "Select Project to DELETE from registry",
     items = picker_items,
     conf = uep_config.get(),
+    preview_enabled = false,
     on_submit = function(selected_display_name) -- ★受け取る値は表示名
       if not selected_display_name then
         return

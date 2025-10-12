@@ -36,7 +36,8 @@ function M.execute(opts)
     title = "Select Project to Change Directory",
     items = picker_items,
     conf = uep_config.get(),
-    
+    preview_enabled = false,
+
     format = function(item)
       return item.label
     end,
