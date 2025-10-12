@@ -142,7 +142,14 @@ function M.create_component_caches_for(components_to_refresh, all_components_dat
             
             progress:stage_define("header_analysis", #relevant_files)
             local headers_to_parse = {}
-            for _, file in ipairs(relevant_files) do if file:match("%.h$") then table.insert(headers_to_parse, file) end end
+            for _, file in ipairs(relevant_files) do
+              -- 元のコード: if file:match("%.h$") then table.insert(headers_to_parse, file) end
+
+              -- 修正後のコード: NoExportTypes.h を除外する条件を追加
+              if file:match("%.h$") and not file:find("NoExportTypes.h", 1, true) then
+                table.insert(headers_to_parse, file)
+              end
+            end
             
             -- ▼▼▼ 修正箇所 ▼▼▼
             local all_existing_header_details = {}

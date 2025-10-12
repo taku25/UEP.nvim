@@ -71,6 +71,12 @@ Command List                                           *UEP-commands-list*
 :UEP program_grep
     LiveGrep for files within Programs directories.
 
+:UEP find_derived [ClassName]
+    Finds all derived classes of a specified base class.
+
+:UEP find_parents [ClassName]
+    Finds the inheritance chain for a specified class.
+
 :UEP tree [--no-deps|--all-deps]
     Displays a logical tree of the entire project. (Requires neo-tree-unl.nvim)
 
@@ -135,8 +141,18 @@ UEP grep [Game|Engine]
 
 :UEP program_grep
     Performs a live grep for files within all `Programs` directories related to
-   the project and engine. Useful for investigating the code of build tools
+    the project and engine. Useful for investigating the code of build tools
     and automation scripts.
+
+:UEP find_derived [ClassName]
+    Searches for all classes that inherit from a specified base class.
+    - [ClassName]: (Optional) If omitted, a UI will open to select a
+    base class from the entire project.
+
+:UEP find_parents [ClassName]
+    Displays the inheritance chain from a specified class up to `UObject`.
+    - [ClassName]: (Optional) If omitted, a UI will open to select the
+    starting class.
 
 :UEP tree [--no-deps|--all-deps]
     Opens a logical project explorer in neo-tree. Requires neo-tree-unl.nvim.

@@ -34,6 +34,10 @@ With [tree-sitter-unreal-cpp](https://github.com/taku25/tree-sitter-unreal-cpp),
       * Offers specialized commands for targeted searches within a single module (`:UEP module_files`) or across all `Programs` directories (`:UEP program_files`).
       * Allows filtering files by scope (**Game**, **Engine**).
       * Supports including module dependencies in the search (**--no-deps** or **--all-deps**).
+  * **Intelligent Code Navigation**:
+      * The `:UEP find_derived` command instantly finds all child classes that inherit from a specified base class.
+      * The `:UEP find_parents` command displays the entire inheritance chain from a specified class up to `UObject`.
+      * Leverages the class inheritance data cached by `:UEP refresh` for high-speed navigation.
   * **Intelligent Content Searching (Grep)**:
       * Performs high-speed content searches across the entire project and engine source code (requires ripgrep).
       * The `:UEP grep` command lets you specify the search scope (**Game** (default), **Engine**).
@@ -157,6 +161,12 @@ All commands start with `:UEP`.
 " LiveGrep for files within Programs directories.
 :UEP program_grep
 
+" Find all derived classes of a base class.
+:UEP find_derived [ClassName]
+
+" Find the inheritance chain of a class.
+:UEP find_parents [ClassName]
+
 " Display the logical tree for the entire project (requires neo-tree-unl.nvim).
 :UEP tree
 
@@ -212,7 +222,15 @@ All commands start with `:UEP`.
   * **`:UEP program_grep`**:
       * Performs a live grep for files within all `Programs` directories related to the project and engine.
       * Useful for investigating the code of build tools and automation scripts.
-
+  * **`:UEP find_derived [ClassName]`**:
+      * Searches the entire project for all classes that inherit from the specified `[ClassName]`.
+      * If `ClassName` is omitted, a picker will be shown to select a base class from all classes in the project.
+      * Extremely useful for understanding the impact of changes to a base class.
+  * **`:UEP find_parents [ClassName]`**:
+      * Displays the inheritance hierarchy from the specified `[ClassName]` all the way up to `UObject`.
+      * If `ClassName` is omitted, a picker will be shown to select a starting class.
+      * A powerful tool for learning the architecture of an unfamiliar class.
+ 
 ## 🤖 API & Automation (Automation Examples)
 
 You can use the `UEP.api` module to integrate with other Neovim configurations.

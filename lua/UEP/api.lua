@@ -12,6 +12,8 @@ local cmd_grep = require("UEP.cmd.grep")
 local cmd_module_grep = require("UEP.cmd.module_grep")
 local cmd_program_files = require("UEP.cmd.program_files")
 local cmd_program_grep = require("UEP.cmd.program_grep")
+local cmd_find_derived = require("UEP.cmd.find_derived")
+local cmd_find_parents = require("UEP.cmd.find_parents")
 
 local M = {}
 
@@ -76,6 +78,14 @@ end
 
 function M.program_grep(opts)
   cmd_program_grep.execute(opts or {})
+end
+
+function M.find_derived(opts)
+  cmd_find_derived.execute(opts or {})
+end
+
+function M.find_parents(opts)
+  cmd_find_parents.execute(opts or {})
 end
 
 return M

@@ -101,6 +101,20 @@ local command_spec = {
       desc = "Live grep within all Programs directories.",
       args = {},
     },
+    find_derived = {
+      handler = uep_api.find_derived,
+      desc = "Find all derived classes of a specified base class.",
+      args = {
+        { name = "class_name", required = false },
+      },
+    },
+    find_parents = {
+      handler = uep_api.find_parents,
+      desc = "Find the inheritance chain of a specified class.",
+      args = {
+        { name = "class_name", required = false },
+      },
+    },
   },
 }
 

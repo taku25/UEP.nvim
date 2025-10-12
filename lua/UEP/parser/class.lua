@@ -21,7 +21,6 @@ local function strip_comments(text)
 end
 
 local function parse_single_header_with_user_logic(file_path)
-  -- (この関数は長いため省略... 変更はありません)
   local read_ok, lines = pcall(vim.fn.readfile, file_path)
   if not read_ok then
     uep_log.warn("Could not read file for parsing: %s", file_path)
@@ -34,6 +33,7 @@ local function parse_single_header_with_user_logic(file_path)
     local line_content = lines[i]
     local is_uclass = line_content:find("UCLASS")
     local is_uinterface = line_content:find("UINTERFACE")
+    local is_declare_class = line_content:find("DECLARE_CLASS")
 
     if is_uclass or is_uinterface then
       local macro_type = is_uclass and "UCLASS" or "UINTERFACE"
@@ -70,6 +70,33 @@ local function parse_single_header_with_user_logic(file_path)
       else
         i = i + 1
       end
+
+    elseif is_declare_class then
+      -- --- 【ロジック2: UObject用】修正済みの後方探索ロジック ---
+      for k = i - 1, 1, -1 do
+        local prev_line = lines[k]
+        local cleaned_prev_line = strip_comments(prev_line)
+
+        if cleaned_prev_line:match("^%s*class") then
+          -- UCLASS/UINTERFACEを除いた、class定義に特化した正規表現
+          local vim_pattern = [[class\s\+\(\w\+_API\s\+\)\?\(\w\+\)\s*:\s*\(public\|protected\|private\)\s*\(\w\+\)]]
+          local result = vim.fn.matchlist(cleaned_prev_line, vim_pattern)
+
+          if result and #result > 0 and result[1] and result[1] ~= "" then
+            local class_name = result[3]
+            local parent_class = result[5] and result[5] ~= "" and result[5] or nil
+            table.insert(final_classes, {
+              class_name = class_name,
+              base_class = parent_class,
+              is_final = false,
+              is_interface = false,
+            })
+            found_class_def = true
+            break -- class定義を見つけたら後方探索を終了
+          end
+        end
+      end
+      i = i + 1
     else
       i = i + 1
     end

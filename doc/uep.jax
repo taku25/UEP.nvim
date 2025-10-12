@@ -71,6 +71,12 @@ UIをブロックすることなく、非常に高速でインテリジェント
 :UEP program_grep
   Programsディレクトリ内のファイルをLiveGrepします。
 
+:UEP find_derived [ClassName]
+  指定した基底クラスの全ての派生クラスを検索します。
+
+:UEP find_parents [ClassName]
+  指定したクラスの継承チェーンを検索します。
+
 :UEP tree [--no-deps|--all-deps]
   プロジェクト全体の論理ツリーを表示します。(neo-tree-unl.nvim が必要)
 
@@ -135,6 +141,16 @@ UIをブロックすることなく、非常に高速でインテリジェント
     プロジェクトとエンジンに関連する全てのProgramsディレクトリ内のファイルを
     LiveGrepします。ビルドツールや自動化スクリプトのコードを調査する際に
     便利です。
+
+:UEP find_derived [ClassName]
+    指定した基底クラスを継承する全てのクラスを検索します。
+    - [ClassName]: (省略可) 省略した場合、プロジェクト全体のクラスから基底
+    クラスを選択するUIが開きます。
+
+:UEP find_parents [ClassName]
+    指定したクラスから `UObject` に至るまでの継承チェーンを表示します。
+    - [ClassName]: (省略可) 省略した場合、起点となるクラスを選択するUIが
+    開きます。
 
 :UEP tree [--no-deps|--all-deps]
     neo-treeで論理的なプロジェクトエクスプローラーを開きます。
