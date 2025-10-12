@@ -115,6 +115,13 @@ local command_spec = {
         { name = "class_name", required = false },
       },
     },
+    open_file = {
+      handler = uep_api.open_file,
+      desc = "Open an include file by searching the project cache.",
+      args = {
+        { name = "path", required = false },
+      },
+    },
   },
 }
 

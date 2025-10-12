@@ -71,6 +71,9 @@ Command List                                           *UEP-commands-list*
 :UEP program_grep
     LiveGrep for files within Programs directories.
 
+:UEP open_file [Path]
+    Open an include file by searching the project cache.
+
 :UEP find_derived [ClassName]
     Finds all derived classes of a specified base class.
 
@@ -143,6 +146,16 @@ UEP grep [Game|Engine]
     Performs a live grep for files within all `Programs` directories related to
     the project and engine. Useful for investigating the code of build tools
     and automation scripts.
+
+:UEP open_file [Path]
+    Finds and opens a file based on an include path.
+    - `[Path]`: (Optional) The include path to search for. If omitted, the
+      path will be extracted from the text on the current line (e.g., inside
+      `"..."` or `<...>` includes). The search intelligently checks:
+      1. Relative to the current file's directory.
+      2. Relative to the current module's Public/Private directories.
+      3. Within the current module's shallow and deep dependencies.
+      4. Globally across the project cache (fallback).
 
 :UEP find_derived [ClassName]
     Searches for all classes that inherit from a specified base class.

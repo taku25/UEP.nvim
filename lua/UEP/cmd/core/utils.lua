@@ -2,6 +2,7 @@
 local unl_finder = require("UNL.finder")
 local project_cache = require("UEP.cache.project")
 local projects_cache = require("UEP.cache.projects")
+local unl_path = require("UNL.path")
 
 local M = {}
 -- ▲▲▲ ここまで ▲▲▲
@@ -89,6 +90,32 @@ function M.create_relative_path(file_path, base_path)
 
   -- 5. 共通部分がない、または完全に一致する場合は、元のパスを返す
   return file_path
+end
+
+---
+-- 指定された絶対パスが属するモジュール情報を検索する
+-- @param file_path string 検索対象のファイルパス
+-- @param all_modules_map table get_project_mapsで取得したモジュールマップ
+-- @return table|nil 見つかったモジュールのメタデータ、またはnil
+function M.find_module_for_path(file_path, all_modules_map)
+  if not file_path or not all_modules_map then return nil end
+
+  local normalized_path = unl_path.normalize(file_path)
+  local best_match = nil
+  local longest_path = 0
+
+  -- 最も長く一致するモジュールルートを持つモジュールを探す（ネストされたモジュール対策）
+  for _, module_meta in pairs(all_modules_map) do
+    if module_meta.module_root then
+      local normalized_root = unl_path.normalize(module_meta.module_root)
+      if normalized_path:find(normalized_root, 1, true) and #normalized_root > longest_path then
+        longest_path = #normalized_root
+        best_match = module_meta
+      end
+    end
+  end
+
+  return best_match
 end
 
 return M
