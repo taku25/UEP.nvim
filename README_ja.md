@@ -13,13 +13,6 @@
 
 これは **Unreal Neovim Plugin sweet** の中核をなすプラグインであり、ライブラリとして [UNL.nvim](https://github.com/taku25/UNL.nvim) に依存しています。
 
-[UBT](https://github.com/taku25/UBT.nvim)を使うとBuildやGenerateClangDataBaseなどを非同期でNeovim上から使えるようになります
-[UCM](https://github.com/taku25/UCM.nvim)を使うとクラスの追加や削除がNeovim上からできるようになります。
-[ULG](https://github.com/taku25/ULG.nvim)を使うとUEのログやliveCoding,stat fpsなどnvim上からできるようになります
-[neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)を使うとIDEのようなプロジェクトエクスプローラーを表示できます。
-[tree-sitter for Unreal Engine](https://github.com/taku25/tree-sitter-unreal-cpp)があります
-
-
 [English](README.md) | [日本語 (Japanese)](README_ja.md)
 
 -----
@@ -295,6 +288,24 @@ opts = {
 }
 ```
 
+## その他
+Unreal Engine 関連プラグイン:
+
+* [UEP](https://github.com/taku25/UEP.nvim)
+  * urpojectを解析してファイルナビゲートなどを簡単に行えるようになります
+* [UBT](https://github.com/taku25/UBT.nvim)
+  * BuildやGenerateClangDataBaseなどを非同期でNeovim上から使えるようになります
+* [UCM](https://github.com/taku25/UCM.nvim)
+  * クラスの追加や削除がNeovim上からできるようになります。
+* [ULG](https://github.com/taku25/ULG.nvim)
+  * UEのログやliveCoding,stat fpsなどnvim上からできるようになります
+* [USH](https://github.com/taku25/USH.nvim)
+  * ushellをnvimから対話的に操作できるようになります
+* [neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)
+  * IDEのようなプロジェクトエクスプローラーを表示できます。
+* [tree-sitter for Unreal Engine](https://github.com/taku25/tree-sitter-unreal-cpp)
+  * UCLASSなどを含めてtree-sitterの構文木を使ってハイライトができます。
+  
 ## 📜 ライセンス (License)
 
 MIT License

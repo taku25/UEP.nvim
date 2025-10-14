@@ -13,12 +13,6 @@
 
 This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.nvim](https://github.com/taku25/UNL.nvim) as its library.
 
-With [UBT](https://github.com/taku25/UBT.nvim), you can use features like Build and GenerateClangDataBase asynchronously from within Neovim.
-With [UCM](https://github.com/taku25/UCM.nvim), you can add and delete classes from within Neovim.
-With [ULG](https://github.com/taku25/ULG.nvim), you can access UE logs, trigger Live Coding, and use `stat fps` from within Neovim.
-With [neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim), you can display an IDE-like project explorer.
-With [tree-sitter-unreal-cpp](https://github.com/taku25/tree-sitter-unreal-cpp), tree-sitter-unreal-cpp
-
 [English](README.md) | [日本語 (Japanese)](README_ja.md)
 
 -----
@@ -292,6 +286,26 @@ opts = {
   },
 }
 ```
+
+## Others
+
+**Unreal Engine Related Plugins:**
+
+* **[UEP](https://github.com/taku25/UEP.nvim)**
+    * Analyzes `uproject` files for easy file navigation.
+* **[UBT](https://github.com/taku25/UBT.nvim)**
+    * Asynchronously run Build, GenerateClangDataBase, and other tasks from Neovim.
+* **[UCM](https://github.com/taku25/UCM.nvim)**
+    * Add and delete classes directly from Neovim.
+* **[ULG](https://github.com/taku25/ULG.nvim)**
+    * View UE logs, live coding status, stat fps, and more within nvim.
+* **[USH](https://github.com/taku25/USH.nvim)**
+    * Interact with `ushell` from nvim.
+* **[neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)**
+    * Display an IDE-like project explorer.
+* **[tree-sitter for Unreal Engine](https://github.com/taku25/tree-sitter-unreal-cpp)**
+    * Provides tree-sitter highlighting, including support for `UCLASS` and other Unreal Engine specific syntax.
+    
 
 ## 📜 License
 
