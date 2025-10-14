@@ -1,4 +1,4 @@
--- lua/UEP/provider/tree.lua (コンポーネント中心構造・最終版・完全コード)
+-- lua/UEP/provider/tree.lua (コンポーネント中心構造・Rider風表示対応・完全コード)
 
 local unl_context = require("UNL.context")
 local uep_log = require("UEP.logger").get()
@@ -33,7 +33,6 @@ local function build_fs_hierarchy(root_path, files, dirs)
         local full_path = raw_full_path:gsub("[/\\]$", "")
         local root_prefix = root_path:gsub("[/\\]$", "") .. "/"
         
-        -- string.gsubから、より確実なstring.find + string.subによる切り出しに変更
         if full_path:sub(1, #root_prefix) == root_prefix then
             local current_level = trie
             local relative_path = full_path:sub(#root_prefix + 1)
@@ -69,13 +68,26 @@ local function build_fs_hierarchy(root_path, files, dirs)
 end
 
 
-
--- ▼▼▼ この関数内のフィルタリングロジックを修正 ▼▼▼
-local function build_final_hierarchy(components_with_files, filtered_modules_meta)
-  local root_categories = { Game = { id = "category_Game", name = "Game", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, Engine = { id = "category_Engine", name = "Engine", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, Plugins = { id = "category_Plugins", name = "Plugins", type = "directory", extra = { uep_type = "category", hierarchy = {}, is_loaded = false } }, }
+local function build_final_hierarchy(components_with_files, filtered_modules_meta, game_name, engine_name)
+  -- Pluginsカテゴリを削除し、GameとEngine内にplugins_nodeを追跡するフィールドを追加
+  local root_categories = {
+    Game = {
+      id = "category_Game", name = "Game", type = "directory",
+      extra = { uep_type = "category", hierarchy = {}, is_loaded = false, plugins_node = nil }
+    },
+    Engine = {
+      id = "category_Engine", name = "Engine", type = "directory",
+      extra = { uep_type = "category", hierarchy = {}, is_loaded = false, plugins_node = nil }
+    },
+  }
 
   for _, component in ipairs(components_with_files) do
-    local component_node = { id = component.root_path, name = component.display_name, path = component.root_path, type = "directory", extra = { uep_type = component.type, hierarchy = {}, is_loaded = false }, }
+    local component_node = {
+      id = component.root_path, name = component.display_name, path = component.root_path,
+      type = "directory",
+      extra = { uep_type = component.type, hierarchy = {}, is_loaded = false },
+    }
+    
     local category_base_path = component.root_path
     if component.type == "Engine" then category_base_path = fs.joinpath(component.root_path, "Engine") end
     
@@ -90,9 +102,7 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
       local files_to_render = {}
       local dirs_to_render = {}
 
-      -- ▼▼▼ この ifブロック全体を置き換えてください ▼▼▼
       if name == "Source" then
-        -- STEP 1: 表示すべきパスのリストを作成する (変更なし)
         local paths_to_include = {}
         for mod_name, mod_meta in pairs(filtered_modules_meta or {}) do
           if mod_meta.module_root and mod_meta.module_root:find(component.root_path, 1, true) then
@@ -104,13 +114,9 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
           table.insert(paths_to_include, programs_root)
         end
 
-        -- STEP 2: フィルタリング対象となるファイル/ディレクトリのリストを準備する
-        -- ★★★ ここが新しいロジック ★★★
-        -- sourceカテゴリとprogramsカテゴリの両方からファイルを集める
         local candidate_files = vim.list_extend(vim.deepcopy(data.files or {}), component.files.programs or {})
         local candidate_dirs = vim.list_extend(vim.deepcopy(data.dirs or {}), component.dirs.programs or {})
 
-        -- STEP 3: 準備したリストをフィルタリングする (変更なし)
         for _, file in ipairs(candidate_files) do
           for _, include_path in ipairs(paths_to_include) do
             if file:find(include_path, 1, true) then
@@ -128,31 +134,26 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
           end
         end
       else
-        -- Source以外のカテゴリはそのまま
         files_to_render = data.files or {}
         dirs_to_render = data.dirs or {}
       end
-      -- ▲▲▲ ここまで ▲▲▲
-
+      
       if #files_to_render > 0 or #dirs_to_render > 0 then
-        local category_node = { id = data.root, name = name, path = data.root, type = "directory", extra = { uep_type = "category_in_component", is_loaded = false, hierarchy = build_fs_hierarchy(data.root, files_to_render, dirs_to_render) }, }
+        local category_node = {
+          id = data.root, name = name, path = data.root, type = "directory",
+          extra = { uep_type = "category_in_component", is_loaded = false, hierarchy = build_fs_hierarchy(data.root, files_to_render, dirs_to_render) },
+        }
         table.insert(component_node.extra.hierarchy, category_node)
       end
     end
     
-    -- STEP 2: 次に、uproject/uplugin などの「コンポーネント直下のファイル」を処理する
     local root_file_categories = { uproject = "uproject", uplugin = "uplugin" }
     for cat_name, uep_type in pairs(root_file_categories) do
-      -- filesキャッシュに uproject や uplugin キーが存在するかチェック
       if component.files[cat_name] and #component.files[cat_name] > 0 then
         for _, file_path in ipairs(component.files[cat_name]) do
           local file_name = vim.fn.fnamemodify(file_path, ":t")
-          -- ファイルノードを直接 component_node の hierarchy に追加する
           table.insert(component_node.extra.hierarchy, {
-            id = file_path,
-            name = file_name,
-            path = file_path,
-            type = "file",
+            id = file_path, name = file_name, path = file_path, type = "file",
             extra = { uep_type = uep_type },
           })
         end
@@ -161,16 +162,41 @@ local function build_final_hierarchy(components_with_files, filtered_modules_met
 
     if #component_node.extra.hierarchy > 0 then
       table.sort(component_node.extra.hierarchy, directory_first_sorter)
-      if component.type == "Game" then table.insert(root_categories.Game.extra.hierarchy, component_node)
-      elseif component.type == "Engine" then table.insert(root_categories.Engine.extra.hierarchy, component_node)
-      elseif component.type == "Plugin" then table.insert(root_categories.Plugins.extra.hierarchy, component_node)
+
+      if component.type == "Game" then
+        table.insert(root_categories.Game.extra.hierarchy, component_node)
+      elseif component.type == "Engine" then
+        table.insert(root_categories.Engine.extra.hierarchy, component_node)
+      elseif component.type == "Plugin" then
+        local owner_category
+        if component.owner_name == game_name then
+          owner_category = root_categories.Game
+        elseif component.owner_name == engine_name then
+          owner_category = root_categories.Engine
+        end
+
+        if owner_category then
+          if not owner_category.extra.plugins_node then
+            local plugins_node_path = fs.joinpath(owner_category.id, "Plugins")
+            owner_category.extra.plugins_node = {
+              id = plugins_node_path, name = "Plugins", path = plugins_node_path,
+              type = "directory",
+              extra = { uep_type = "category", hierarchy = {}, is_loaded = false },
+            }
+            table.insert(owner_category.extra.hierarchy, owner_category.extra.plugins_node)
+          end
+          table.insert(owner_category.extra.plugins_node.extra.hierarchy, component_node)
+        end
       end
     end
   end
   
   local final_nodes = {}
-  for _, category_name in ipairs({ "Game", "Engine", "Plugins" }) do
+  for _, category_name in ipairs({ "Game", "Engine" }) do
     local category_node = root_categories[category_name]
+    if category_node.extra.plugins_node then
+      table.sort(category_node.extra.plugins_node.extra.hierarchy, directory_first_sorter)
+    end
     if #category_node.extra.hierarchy > 0 then
       table.sort(category_node.extra.hierarchy, directory_first_sorter)
       table.insert(final_nodes, category_node)
@@ -191,12 +217,8 @@ function M.get_pending_tree_request(opts)
 end
 
 function M.build_tree_model(opts)
- -- ▼▼▼ ここに修正を追加 ▼▼▼
-  -- 1. コマンドから渡されたリクエストを取得
   local request_payload = M.get_pending_tree_request({ consumer = "neo-tree-uproject" }) or {}
-  -- 2. neo-treeから渡されたoptsとマージ（コマンドからの指定を優先）
   opts = vim.tbl_deep_extend("force", opts or {}, request_payload)
-  -- ▲▲▲ ここまで ▲▲▲
   local project_root = opts.project_root
   if not project_root then return nil end
 
@@ -221,6 +243,16 @@ function M.build_tree_model(opts)
   end
   if not next(all_modules_map) then return nil end
   
+  -- プラグインの所属判定に使うため、GameとEngineのユニーク名を取得する
+  local game_name, engine_name
+  for name, comp in pairs(all_components_map) do
+      if comp.type == "Game" then game_name = name end
+      if comp.type == "Engine" then engine_name = name end
+  end
+  if not game_name or not engine_name then
+      return {{ id = "_message_", name = "Game/Engine component not found in cache.", type = "message" }}
+  end
+
   local target_module_names = {}
   if opts.target_module then
     target_module_names[opts.target_module] = true
@@ -278,10 +310,7 @@ function M.build_tree_model(opts)
   end
 
   -- STEP 5: 準備したデータを使って、新しいコンポーネント中心のツリー構造を構築
-  local hierarchy = build_final_hierarchy(components_with_files)
- -- ▼▼▼ 修正点: 第2引数に filtered_modules_meta を渡す ▼▼▼
-  local hierarchy = build_final_hierarchy(components_with_files, filtered_modules_meta)
-  -- ▲▲▲ ここまで ▲▲▲
+  local hierarchy = build_final_hierarchy(components_with_files, filtered_modules_meta, game_name, engine_name)
  
   if not next(hierarchy) then
     return {{ id = "_message_", name = "No components to display with current filters.", type = "message" }}
