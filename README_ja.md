@@ -32,6 +32,7 @@
       * `:UEP find_derived` コマンドで、指定した基底クラスを継承する全ての子クラスを瞬時に発見します。
       * `:UEP find_parents` コマンドで、指定したクラスから`UObject`に至るまでの全継承チェーンを表示します。
       * `:UEP refresh` によってキャッシュされたクラス継承データを活用し、高速なナビゲーションを実現します。
+      * `:UEP add_include` コマンドで、カーソル下のクラス名やリストから選択したクラスの `#include` ディレクティブを自動で挿入します。
   * **インテリジェントなコンテンツ検索 (Grep)**:
       * プロジェクトとエンジンのソースコード全体を横断して、ファイルの中身を高速に検索します (ripgrepが必須)。
       * :UEP grep コマンドで、検索範囲をスコープ (Game (デフォルト), Engine) で指定できます。
@@ -158,6 +159,9 @@ opts = {
 " プロジェクトキャッシュを検索して、インクルードファイルを開きます。
 :UEP open_file [Path]
 
+" クラスの#includeディレクティブを検索し、挿入します。
+:UEP add_include[!] [ClassName]
+
 " 特定のコンポーネント(Game/Engine/Plugin)のファイルキャッシュのみを削除します。
 :UEP purge [ComponentName]
 
@@ -228,6 +232,11 @@ opts = {
   * **`:UEP open_file [Path]`**:
       * 現在のカーソル位置の行からインクルードパスを自動で抽出するか、`[Path]`で指定されたパスに基づいて、プロジェクトキャッシュ内からファイルを検索して開きます。
       * **インテリジェントな階層的検索**を実行します（現在のファイルディレクトリ、現在のモジュールのPublic/Privateフォルダ、依存モジュールなど）
+  * **`:UEP add_include[!] [ClassName]`**:
+      * C++クラスの正しい`#include`ディレクティブを検索し、挿入します。
+      * `!`なし: `[ClassName]`引数が指定されていればそれを使用し、なければカーソル下の単語を使用します。
+      * `!`あり: 引数やカーソル下の単語を無視し、常にプロジェクト全体のクラスを選択するためのピッカーUIを開きます。
+      * **インテリジェントな挿入**: ヘッダーファイル(`.h`)では`.generated.h`の行の前に、ソースファイル(`.cpp`)では最後の`#include`文の後に、ディレクティブを挿入します。
   * **`:UEP find_derived [ClassName]`**
       * プロジェクト全体から、指定された `[ClassName]` を継承する全てのクラスを検索します。
      * `ClassName` を省略した場合、プロジェクト内の全クラスから基底クラスを選択するためのPickerが表示されます。
@@ -248,7 +257,39 @@ opts = {
 
 `UEP.api`モジュールを使用して、他のNeovim設定と連携させることができます。
 
-### ファイル検索のキーマップ作成
+* **`uep_api.open_file({opts})`**
+    * インテリジェントな階層検索を使ってインクルードファイルを開きます。
+    * `opts`テーブル:
+        * `path` (string, optional): 検索対象のインクルードパス。省略した場合、現在の行から抽出されます。
+
+* **`uep_api.add_include({opts})`**
+    * プログラムで`#include`ディレクティブを検索・挿入します。
+    * `opts`テーブル:
+        * `has_bang` (boolean, optional): `true`でピッカーUIを強制的に開きます。
+        * `class_name` (string, optional): インクルードしたいクラス名。
+
+### キーマップ作成例
+
+日常的なタスクを素早く実行するためのキーマップを作成します。
+
+#### インクルードファイルを開く (Open File)
+標準の`gf`コマンドをUEPのインテリジェントなファイル検索で強化します。
+
+```lua
+-- init.lua や keymaps.lua などに記述
+vim.keymap.set('n', 'gf', require('UEP.api').open_file, { noremap = true, silent = true, desc = "UEP: インクルードファイルを開く" })
+````
+
+#### インクルードを追加 (Add Include)
+
+カーソル下のクラスに対する\#includeディレクティブを素早く追加します。
+
+```lua
+-- init.lua や keymaps.lua などに記述
+vim.keymap.set('n', '<leader>ai', require('UEP.api').add_include, { noremap = true, silent = true, desc = "UEP: #includeディレクティブを追加" })
+```
+
+#### ファイル検索
 
 現在のプロジェクトのファイルを素早く検索するためのキーマップを作成します。
 
@@ -257,12 +298,12 @@ opts = {
 vim.keymap.set('n', '<leader>pf', function()
   -- APIはシンプルでクリーンです
   require('UEP.api').files({})
-end, { desc = "[P]roject [F]iles" })
+end, { desc = "UEP: プロジェクトファイル検索" })
 ```
 
 ### Neo-treeとの連携
 
-Neo-treeでキーマップを追加し、選択したディレクトリが属するプロジェクトを対象にUEPファイラーを開きます。
+Neo-treeでキーマップを追加し、選択したディレクトリが属するプロジェクトを対象にUEPの論理ツリーを開きます。
 
 ```lua
 -- Neo-treeのセットアップ例
@@ -270,7 +311,7 @@ opts = {
   filesystem = {
     window = {
       mappings = {
-        ["<leader>pf"] = function(state)
+        ["<leader>pt"] = function(state)
           -- 現在選択されているノードのディレクトリを取得
           local node = state.tree:get_node()
           local path = node:get_id()
@@ -280,7 +321,7 @@ opts = {
 
           -- APIを呼ぶ前にCWDをプロジェクト内に設定
           vim.api.nvim_set_current_dir(path)
-          require("UEP.api').tree({})
+          require("UEP.api").tree({})
         end,
       },
     },
@@ -291,15 +332,15 @@ opts = {
 ## その他
 Unreal Engine 関連プラグイン:
 
-* [UEP](https://github.com/taku25/UEP.nvim)
+* [UEP.nvim](https://github.com/taku25/UEP.nvim)
   * urpojectを解析してファイルナビゲートなどを簡単に行えるようになります
-* [UBT](https://github.com/taku25/UBT.nvim)
+* [UBT.nvim](https://github.com/taku25/UBT.nvim)
   * BuildやGenerateClangDataBaseなどを非同期でNeovim上から使えるようになります
-* [UCM](https://github.com/taku25/UCM.nvim)
+* [UCM.nvim](https://github.com/taku25/UCM.nvim)
   * クラスの追加や削除がNeovim上からできるようになります。
-* [ULG](https://github.com/taku25/ULG.nvim)
+* [ULG.nvim](https://github.com/taku25/ULG.nvim)
   * UEのログやliveCoding,stat fpsなどnvim上からできるようになります
-* [USH](https://github.com/taku25/USH.nvim)
+* [USH.nvim](https://github.com/taku25/USH.nvim)
   * ushellをnvimから対話的に操作できるようになります
 * [neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)
   * IDEのようなプロジェクトエクスプローラーを表示できます。

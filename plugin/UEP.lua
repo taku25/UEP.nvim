@@ -134,6 +134,14 @@ local command_spec = {
       desc = "Delete all structural and file caches for the current project.",
       args = {},
     },
+    add_include = {
+      handler = uep_api.add_include,
+      bang = true,
+      desc = "Finds and inserts the #include directive for the specified class.",
+      args = {
+        { name = "class_name", required = false },
+      },
+    }
   },
 }
 

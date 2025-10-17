@@ -74,6 +74,9 @@ Command List                                           *UEP-commands-list*
 :UEP open_file [Path]
     Open an include file by searching the project cache.
 
+:UEP add_include[!] [ClassName]
+    Finds and inserts the #include directive for a class.
+
 :UEP find_derived [ClassName]
     Finds all derived classes of a specified base class.
 
@@ -162,6 +165,20 @@ UEP grep [Game|Engine]
       2. Relative to the current module's Public/Private directories.
       3. Within the current module's shallow and deep dependencies.
       4. Globally across the project cache (fallback).
+
+:UEP add_include[!] [ClassName]
+    Finds and inserts the correct #include directive for a C++ class based
+    on the project cache.
+    - `[!](bang)`: (Optional)
+      If `!` is added, it ignores any arguments or the word under the
+      cursor and opens a picker UI to select a class from the entire
+      project.
+    - `[ClassName]`: (Optional) The name of the class to include. If
+      omitted, the word under the cursor (`<cword>`) is used.
+    The command intelligently places the include directive:
+      - In header files (`.h`), it is inserted before the `.generated.h` line.
+      - In source files (`.cpp`), it is inserted after the last existing
+        `#include` statement.
 
 :UEP purge [ComponentName]
     Deletes only the **file cache** (`*.files.json`) for the specified component
@@ -329,6 +346,17 @@ Require the API module:
 *uep_api.delete({opts})*
     Opens the project deletion UI. opts is not currently used.
 
+*uep_api.open_file({opts})*
+    Finds and opens an include file using intelligent search.
+    `opts` table:
+      - `path` (string, optional): The include path to search for. If
+        omitted, it is extracted from the current line.
+
+*uep_api.add_include({opts})*
+    Programmatically inserts an #include directive.
+    `opts` table:
+      - `has_bang` (boolean, optional): If `true`, forces the picker UI.
+      - `class_name` (string, optional): The name of the class to include.
 ==============================================================================
 5. Integration Examples (neo-tree)         *UEP-integration-examples*
 

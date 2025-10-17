@@ -31,6 +31,7 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
   * **Intelligent Code Navigation**:
       * The `:UEP find_derived` command instantly finds all child classes that inherit from a specified base class.
       * The `:UEP find_parents` command displays the entire inheritance chain from a specified class up to `UObject`.
+      * The `:UEP add_include` command automatically finds and inserts the correct `#include` directive for a class name under the cursor or one chosen from a list.
       * Leverages the class inheritance data cached by `:UEP refresh` for high-speed navigation.
   * **Intelligent Content Searching (Grep)**:
       * Performs high-speed content searches across the entire project and engine source code (requires ripgrep).
@@ -158,6 +159,9 @@ All commands start with `:UEP`.
 " Open an include file by searching the project cache.
 :UEP open_file [Path]
 
+" Find and insert an #include directive for a class.
+:UEP add_include[!] [ClassName]
+
 " Delete the file cache for a specified component (Game/Engine/Plugin).
 :UEP purge [ComponentName]
 
@@ -228,6 +232,11 @@ All commands start with `:UEP`.
   * **`:UEP open_file [Path]`**:
       * Finds and opens a file based on an include path, either extracted automatically from the text on the current line or explicitly provided by `[Path]`.
       * It performs an **intelligent hierarchical search** within the project cache (checking current file directory, module Public/Private folders, dependency modules, etc.).
+  * **`:UEP add_include[!] [ClassName]`**:
+      * Finds and inserts the correct `#include` directive for a C++ class.
+      * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor.
+      * With `!`: Ignores arguments and the word under the cursor, and always opens a picker UI to select a class from the entire project.
+      * **Intelligently places the include directive**: In header files (`.h`), it is inserted before the `.generated.h` line. In source files (`.cpp`), it is inserted after the last existing `#include` statement.
   * **`:UEP find_derived [ClassName]`**:
       * Searches the entire project for all classes that inherit from the specified `[ClassName]`.
       * If `ClassName` is omitted, a picker will be shown to select a base class from all classes in the project.
@@ -244,11 +253,32 @@ All commands start with `:UEP`.
       * The command runs asynchronously with a progress bar and requires confirmation.
       * After running this, you **must** run `:UEP refresh` to rebuild the project structure from scratch. 
 
-## 🤖 API & Automation (Automation Examples)
+## 🤖 API & Automation Examples
 
 You can use the `UEP.api` module to integrate with other Neovim configurations.
 
-### Create a keymap for file searching
+### Keymap Examples
+
+Create keymaps to quickly perform common tasks.
+
+#### Open File
+Enhance the built-in `gf` command to use UEP's intelligent file searching for includes.
+
+```lua
+-- in init.lua or keymaps.lua
+vim.keymap.set('n', 'gf', require('UEP.api').open_file, { noremap = true, silent = true, desc = "UEP: Open include file" })
+````
+
+#### Add Include
+
+Quickly add an \#include directive for the class under the cursor.
+
+```lua
+-- in init.lua or keymaps.lua
+vim.keymap.set('n', '<leader>ai', require('UEP.api').add_include, { noremap = true, silent = true, desc = "UEP: Add #include directive" })
+```
+
+#### File Search
 
 Create a keymap to quickly search for files in the current project.
 
@@ -257,11 +287,12 @@ Create a keymap to quickly search for files in the current project.
 vim.keymap.set('n', '<leader>pf', function()
   -- The API is simple and clean
   require('UEP.api').files({})
-end, { desc = "[P]roject [F]iles" })```
+end, { desc = "UEP: [P]roject [F]iles" })
+```
 
 ### Integration with Neo-tree
 
-Add a keymap in Neo-tree to open the UEP file finder for the project to which the selected directory belongs.
+Add a keymap in Neo-tree to open the UEP logical tree for the project to which the selected directory belongs.
 
 ```lua
 -- Example Neo-tree setup
@@ -269,7 +300,7 @@ opts = {
   filesystem = {
     window = {
       mappings = {
-        ["<leader>pf"] = function(state)
+        ["<leader>pt"] = function(state)
           -- Get the directory of the currently selected node
           local node = state.tree:get_node()
           local path = node:get_id()
@@ -279,7 +310,7 @@ opts = {
 
           -- Set CWD inside the project before calling the API
           vim.api.nvim_set_current_dir(path)
-          require("UEP.api').tree({})
+          require("UEP.api").tree({})
         end,
       },
     },
@@ -291,15 +322,15 @@ opts = {
 
 **Unreal Engine Related Plugins:**
 
-* **[UEP](https://github.com/taku25/UEP.nvim)**
+* **[UEP.nvim](https://github.com/taku25/UEP.nvim)**
     * Analyzes `uproject` files for easy file navigation.
-* **[UBT](https://github.com/taku25/UBT.nvim)**
+* **[UBT.nvim](https://github.com/taku25/UBT.nvim)**
     * Asynchronously run Build, GenerateClangDataBase, and other tasks from Neovim.
-* **[UCM](https://github.com/taku25/UCM.nvim)**
+* **[UCM.nvim](https://github.com/taku25/UCM.nvim)**
     * Add and delete classes directly from Neovim.
-* **[ULG](https://github.com/taku25/ULG.nvim)**
+* **[ULG.nvim](https://github.com/taku25/ULG.nvim)**
     * View UE logs, live coding status, stat fps, and more within nvim.
-* **[USH](https://github.com/taku25/USH.nvim)**
+* **[USH.nvim](https://github.com/taku25/USH.nvim)**
     * Interact with `ushell` from nvim.
 * **[neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)**
     * Display an IDE-like project explorer.
