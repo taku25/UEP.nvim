@@ -103,6 +103,7 @@ local command_spec = {
     },
     find_derived = {
       handler = uep_api.find_derived,
+      bang = true,
       desc = "Find all derived classes of a specified base class.",
       args = {
         { name = "class_name", required = false },
@@ -110,6 +111,7 @@ local command_spec = {
     },
     find_parents = {
       handler = uep_api.find_parents,
+      bang = true,
       desc = "Find the inheritance chain of a specified class.",
       args = {
         { name = "class_name", required = false },

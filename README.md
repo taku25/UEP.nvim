@@ -172,11 +172,11 @@ All commands start with `:UEP`.
 " Delete ALL structural (*.project.json) and file (*.files.json) caches for the current project.
 :UEP cleanup
 
-" Find all derived classes of a base class.
-:UEP find_derived [ClassName]
+" Find derived classes. Use [!] to open the base class picker.
+:UEP find_derived[!] [ClassName]
 
-" Find the inheritance chain of a class.
-:UEP find_parents [ClassName]
+" Find the inheritance chain. Use [!] to open the starting class picker.
+:UEP find_parents[!] [ClassName]
 
 " Display the logical tree for the entire project (requires neo-tree-unl.nvim).
 :UEP tree
@@ -241,14 +241,12 @@ All commands start with `:UEP`.
       * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor.
       * With `!`: Ignores arguments and the word under the cursor, and always opens a picker UI to select a class from the entire project.
       * **Intelligently places the include directive**: In header files (`.h`), it is inserted before the `.generated.h` line. In source files (`.cpp`), it is inserted after the last existing `#include` statement.
-  * **`:UEP find_derived [ClassName]`**:
-      * Searches the entire project for all classes that inherit from the specified `[ClassName]`.
-      * If `ClassName` is omitted, a picker will be shown to select a base class from all classes in the project.
-      * Extremely useful for understanding the impact of changes to a base class.
-  * **`:UEP find_parents [ClassName]`**:
-      * Displays the inheritance hierarchy from the specified `[ClassName]` all the way up to `UObject`.
-      * If `ClassName` is omitted, a picker will be shown to select a starting class.
-      * A powerful tool for learning the architecture of an unfamiliar class.
+  * **`:UEP find_derived[!] [ClassName]`**: Searches for all classes that inherit from a specified base class.
+      * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor.
+      * With `!`: Ignores arguments and opens a picker UI to select a base class from the entire project.
+  * **`:UEP find_parents[!] [ClassName]`**: Displays the inheritance chain for a specified class.
+      * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor.
+      * With `!`: Ignores arguments and opens a picker UI to select the starting class.
   * **`:UEP purge [ComponentName]`**:
       * Deletes only the **file cache** (`*.files.json`) for the specified Game, Engine, or Plugin component.
       * This allows forcing a file rescan without re-analyzing the project's dependency structure.
