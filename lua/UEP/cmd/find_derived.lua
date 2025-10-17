@@ -7,7 +7,6 @@ local uep_log = require("UEP.logger")
 
 local M = {}
 
--- ▼▼▼ 修正点 1/2: こちらのPickerもより明確なキー名を使うように修正 ▼▼▼
 -- 派生クラスのリストをPickerで表示するヘルパー関数
 local function show_derived_picker(derived_list, base_class_name)
   if #derived_list == 0 then

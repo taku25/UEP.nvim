@@ -36,7 +36,11 @@ function M.execute(opts)
   -- Engine スコープの場合、Engineのパスも追加
   if scope == "engine" then
     local proj_info = unl_finder.project.find_project(project_root)
-    local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject, { logger = log }) or nil
+    local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject,
+      {
+        logger = log,
+        engine_override_path = uep_config.get().engine_path,
+      }) or nil
 
     if engine_root then
       for _, dir in ipairs(include_dirs) do

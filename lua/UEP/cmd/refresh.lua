@@ -66,9 +66,9 @@ function M.execute(opts, on_complete)
     if on_complete then on_complete(ok) end
   end
 
-  -- ▼▼▼ ここが正しい4引数の呼び出しです ▼▼▼
-refresh_project_core.update_project_structure(refresh_opts, uproject_path, progress, function(ok, result)
-    if not ok then return finish_all(false) end
+
+  refresh_project_core.update_project_structure(refresh_opts, uproject_path, progress, function(ok, result)
+  if not ok then return finish_all(false) end
 
     -- STEP 1: プロジェクト構造の更新結果を取得
     local changed_components = result.changed_components
@@ -76,12 +76,16 @@ refresh_project_core.update_project_structure(refresh_opts, uproject_path, progr
     local full_component_list = result.full_component_list
 
     -- STEP 2: マスターインデックスを更新 (これは常に実行)
-    local engine_root = unl_finder.engine.find_engine_root(uproject_path, {})
+    local engine_root = unl_finder.engine.find_engine_root(uproject_path,
+      {
+        engine_override_path = uep_config.get().engine_path,
+      })
     local registration_info = {
       root_path = game_root,
       uproject_path = uproject_path,
       engine_root = engine_root,
     }
+
     projects_cache.register_project_with_components(registration_info, full_component_list)
 
     -- STEP 3: ファイルスキャン対象のコンポーネントを決定する

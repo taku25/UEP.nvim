@@ -7,6 +7,8 @@ local unl_analyzer = require("UNL.analyzer.build_cs")
 local uep_graph = require("UEP.graph")
 local uep_log = require("UEP.logger")
 local project_cache = require("UEP.cache.project")
+local uep_config = require("UEP.config")
+
 
 local M = {}
 
@@ -29,7 +31,15 @@ local function parse_single_component(component, on_done)
   local build_cs_files = {}
   vim.fn.jobstart(fd_cmd, {
     stdout_buffered = true,
-    on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(build_cs_files, line) end end end end,
+    on_stdout = function(_, data) 
+      if data then 
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(build_cs_files, line)
+          end
+        end
+      end
+    end,
     on_exit = function(_, code)
       local modules_meta = {}
       local source_mtimes = {} -- mtimeを収集
@@ -57,12 +67,15 @@ end
 function M.update_project_structure(refresh_opts, uproject_path, progress, on_done)
   local log = uep_log.get()
   local game_root = vim.fn.fnamemodify(uproject_path, ":h")
-  local engine_root = unl_finder.engine.find_engine_root(uproject_path, {})
+  local engine_root = unl_finder.engine.find_engine_root(uproject_path, {
+    engine_override_path = uep_config.get().engine_path,
+  })
   if not engine_root then return on_done(false) end
 
+ -- ▼▼▼ この2行を追加してください ▼▼▼
   local game_name = get_name_from_root(game_root)
   local engine_name = get_name_from_root(engine_root)
-  
+  -- ▲▲▲ ここまで ▲▲▲ 
   local uproject_mtime = vim.fn.getftime(uproject_path)
 
   local plugin_search_paths = {
@@ -124,7 +137,6 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
           return
         end
         local component = all_components[current_index]
-        -- ▼▼▼ バグ修正: コールバックの引数受け取りを修正 ▼▼▼
         parse_single_component(component, function(ok, result)
           if ok then
             raw_modules_by_component[component.name] = result.meta

@@ -4,6 +4,7 @@ local grep_core = require("UEP.cmd.core.grep")
 local unl_finder = require("UNL.finder")
 local uep_log = require("UEP.logger")
 local fs = require("vim.fs")
+local uep_config = require("UEP.config")
 
 local M = {}
 
@@ -20,7 +21,10 @@ function M.execute(opts)
 
   -- STEP 2: エンジンルートを特定（見つからなくても処理は続行）
   local proj_info = unl_finder.project.find_project(project_root)
-  local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject, {})
+  local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject,
+    {
+      engine_override_path = uep_config.get().engine_path,
+    })
 
   -- STEP 3: 検索対象となる固定パスのリストを作成
   local potential_paths = {

@@ -111,6 +111,10 @@ opts = {
     "cpp", "h", "hpp", "inl", "ini", "cs",
   },
 
+  -- エンジンの自動検出が失敗する場合に、手動でパスを指定します
+  -- 例: "C:/Program Files/Epic Games/UE_5.4"
+  engine_path = nil,
+
   -- UIバックエンドの設定 (UNL.nvimから継承)
   ui = {
     picker = {

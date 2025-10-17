@@ -111,6 +111,10 @@ opts = {
     "cpp", "h", "hpp", "inl", "ini", "cs",
   },
 
+  -- Manually specify the engine path if automatic detection fails.
+  -- Example: "C:/Program Files/Epic Games/UE_5.4"
+  engine_path = nil,
+
   -- UI backend settings (inherited from UNL.nvim)
   ui = {
     picker = {

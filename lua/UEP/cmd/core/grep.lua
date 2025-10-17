@@ -21,7 +21,10 @@ function M.start_live_grep(opts)
     local engine_root
     local proj_info = unl_finder.project.find_project(maps.project_root)
     if proj_info and proj_info.uproject then
-      engine_root = unl_finder.engine.find_engine_root(proj_info.uproject, {})
+      engine_root = unl_finder.engine.find_engine_root(proj_info.uproject,
+        {
+          engine_override_path = uep_config.get().engine_path,
+        })
     end
 
     -- STEP 2: パス解決のためのデータを準備

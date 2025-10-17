@@ -29,7 +29,10 @@ function M.execute(opts)
   local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
   if not project_root then return end
   local proj_info = unl_finder.project.find_project(project_root)
-  local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject, {})
+  local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject,
+    {
+      engine_override_path = uep_config.get().engine_path,
+    })
   
   local payload = {
     project_root = project_root,

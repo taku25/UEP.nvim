@@ -11,6 +11,8 @@ local M = {
   include_directory = { "Source", "Plugins", "Config", "Shaders", "Programs", "Platforms" },
   excludes_directory  = {  "Intermediate", "Binaries", "Saved", ".git", ".vs", "Templates" },
 
+  engine_path = nil,
+
   files_extensions = {
     "cpp", "h", "hpp", "inl", "ini", "cs",
   },

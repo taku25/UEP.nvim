@@ -5,6 +5,7 @@ local unl_finder = require("UNL.finder")
 local unl_context = require("UNL.context")
 local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
+local uep_config = require("UEP.config")
 
 local M = {}
 
@@ -15,7 +16,10 @@ function M.execute(opts)
   end
   
   local proj_info = unl_finder.project.find_project(project_root)
-  local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject, {})
+  local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject,
+    {
+      engine_override_path = uep_config.get().engine_path,
+    })
 
   -- 1. neo-treeに渡したい"リクエスト情報"を作成する
   --    これには、具体的なファイルリストなどは含まれない。
