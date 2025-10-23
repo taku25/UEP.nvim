@@ -65,7 +65,7 @@ function M.get_merged_files_for_project(start_path, opts, on_complete)
       local component_cache = files_cache_manager.load_component_cache(component)
       if component_cache and component_cache.files then
         for category, file_list in pairs(component_cache.files) do
-          if category == "source" or category == "shader" or category == "other" then
+          if category == "source" or category == "other" then
             -- For module-specific files, check if they belong to a required module
             for _, file_path in ipairs(file_list) do
               for _, module_root in ipairs(required_module_roots) do
@@ -79,7 +79,7 @@ function M.get_merged_files_for_project(start_path, opts, on_complete)
                 end
               end
             end
-          elseif category == "config" or category == "uproject" or category == "uplugin" then
+          elseif category == "config" or category == "uproject" or category == "uplugin" or category == "shader" then
             -- For component-wide files, add them directly without a module check
             for _, file_path in ipairs(file_list) do
               table.insert(merged_files_with_context, {

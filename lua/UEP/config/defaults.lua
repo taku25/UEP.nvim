@@ -14,7 +14,7 @@ local M = {
   engine_path = nil,
 
   files_extensions = {
-    "cpp", "h", "hpp", "inl", "ini", "cs",
+    "cpp", "h", "hpp", "inl", "ini", "cs", "usf", "ush",
   },
 
   logging = {
