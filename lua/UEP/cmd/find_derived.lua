@@ -46,7 +46,7 @@ function M.execute(opts)
   -- ケース1: bang (!) が指定された場合、強制的に基底クラス選択Pickerを表示
   if opts.has_bang then
     log.get().info("Bang detected! Forcing base class picker.")
-    derived_core.get_all_classes(function(all_classes)
+    derived_core.get_all_classes({},function(all_classes)
       if not all_classes or #all_classes == 0 then
         return log.get().error("No classes found. Please run :UEP refresh.")
       end

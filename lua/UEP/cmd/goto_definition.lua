@@ -99,7 +99,7 @@ function M.execute(opts)
     log.info("Bang detected! Forcing class picker for definition jump.")
     
     -- (UEP.cmd.core.derived)
-    derived_core.get_all_classes(function(all_classes_data)
+    derived_core.get_all_classes({},function(all_classes_data)
       if not all_classes_data or #all_classes_data == 0 then
         return log.error("No classes found. Please run :UDEV refresh.")
       end

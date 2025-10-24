@@ -83,6 +83,12 @@ UIをブロックすることなく、非常に高速でインテリジェント
 :UEP find_parents [ClassName]
   指定したクラスの継承チェーンを検索します。
 
+:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+  指定したスコープ内のC++クラスを検索します。
+
+:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+  指定したスコープ内のC++構造体を検索します。
+
 :UEP purge [ComponentName]
   特定のコンポーネントのファイルキャッシュのみを削除します。
 
@@ -201,6 +207,23 @@ UIをブロックすることなく、非常に高速でインテリジェント
     指定したクラスから `UObject` に至るまでの継承チェーンを表示します。
     - [ClassName]: (省略可) 省略した場合、起点となるクラスを選択するUIが
     開きます。
+
+:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+    C++クラスの定義を選択し、ジャンプするためのピッカーを表示します。
+    - **使い方**: |:UEP files| と同様に動作し、スコープと依存関係の深さに
+      基づいて、既知のシンボルリストをフィルタリングします。
+    - **`[Game|Engine|Editor]`**: (省略可、デフォルト: `Editor`) 検索のベース
+      となるモジュールのスコープを指定します。
+        - `Editor`: 全てのコンポーネント（Game, Engine, Plugins）をスキャン
+          し、最も豊富なEditor/Runtimeシンボルセットを提供します。（Full
+          Scanと等価）。
+    - `[--no-deps|--all-deps]`: (省略可、デフォルト: `--no-deps`)
+        - `--no-deps`: 指定されたスコープのモジュールと、その浅い依存関係内のみを検索します。
+        - `--all-deps`: ベーススコープのモジュールが依存する全てのモジュール（深い依存関係）を検索対象に含めます。
+
+:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+    C++構造体の定義を選択し、ジャンプするためのピッカーを表示します。
+    - **使い方**: |:UEP classes| と全く同じ挙動をします。
 
 :UEP tree [--no-deps|--all-deps]
     neo-treeで論理的なプロジェクトエクスプローラーを開きます。

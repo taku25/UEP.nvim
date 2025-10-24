@@ -28,6 +28,7 @@
       * スコープ（**Game**, **Engine**）でファイルをフィルタリングできます。
       * モジュールの依存関係（**--no-deps** または **--all-deps**）を検索に含めることが可能です。
       * モジュールや`Programs`ディレクトリに特化した検索コマンドを提供します。
+      * 指定されたスコープ内の全てのクラスまたは構造体を即座に検索します（:UEP classes, :UEP structs）。"
   * **インテリジェントなコードナビゲーション**:
       * `:UEP find_derived` コマンドで、指定した基底クラスを継承する全ての子クラスを瞬時に発見します。
       * `:UEP find_parents` コマンドで、指定したクラスから`UObject`に至るまでの全継承チェーンを表示します。
@@ -178,6 +179,12 @@ opts = {
 " 継承チェーンを検索します。[!]で起点クラスのピッカーを開きます。
 :UEP find_parents[!] [ClassName]
 
+" C++クラスを検索します（'!'でキャッシュを強制更新）。
+:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+
+" C++構造体を検索します（'!'でキャッシュを強制更新）。
+:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+
 " プロジェクト全体の論理ツリーを表示します (neo-tree-unl.nvim が必要)。
 :UEP tree
 
@@ -250,6 +257,12 @@ opts = {
   * **`:UEP find_parents[!] [ClassName]`**: 指定したクラスの継承チェーンを表示します。
       * `!`なし: `[ClassName]`引数が指定されていればそれを使用し、なければカーソル下の単語を使用します。
       * `!`あり: 引数を無視し、常にプロジェクト全体のクラスから起点となるクラスを選択するためのピッカーUIを開きます。
+  * **`:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]`**: C++クラスの定義を選択し、ジャンプするためのピッカーを開きます。
+      * フラグ: `[!]`、`[Game|Engine|Editor]`、および`[--no-deps|--all-deps]` フラグは、`:UEP files` コマンドと同様に、キャッシュの再生成とスコープのフィルタリングを制御します。
+      * スコープ: `[Game|Engine|Editor]` がベーススコープです。デフォルトは\*\*`Editor`\*\*で、全てのコンポーネントをスキャンし（Fullスキャンと同等）、最も豊富なEditor/Runtimeシンボルセットを提供します。
+  * **`:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]`**: C++構造体の定義を選択し、ジャンプするためのピッカーを開きます。
+      * フラグ: `[!]`、`[Game|Engine|Editor]`、および`[--no-deps|--all-deps]` フラグは、`:UEP files` コマンドと同様に、キャッシュの再生成とスコープのフィルタリングを制御します。
+      * スコープ: `[Game|Engine|Editor]` がベーススコープです。デフォルトは\*\*`Editor`\*\*で、全てのコンポーネントをスキャンし（Fullスキャンと同等）、最も豊富なEditor/Runtimeシンボルセットを提供します。
   * **`:UEP purge [ComponentName]`**:
       * 指定されたGame、Engine、またはPluginコンポーネントの**ファイルキャッシュ** (`*.files.json`) のみを削除します。
       * プロジェクトの依存関係構造を再解析することなく、ファイルのスキャンを強制的に再実行したい場合に便利です。

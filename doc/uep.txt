@@ -83,6 +83,12 @@ Command List                                           *UEP-commands-list*
 :UEP find_parents [ClassName]
     Finds the inheritance chain for a specified class.
 
+:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+    Searches for C++ classes within the specified scope.
+
+:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+    Searches for C++ structs within the specified scope.
+
 :UEP purge [ComponentName]
     Delete the file cache for a specified component (Game/Engine/Plugin).
 
@@ -204,6 +210,22 @@ UEP grep [Game|Engine]
     Displays the inheritance chain from a specified class up to `UObject`.
     - [ClassName]: (Optional) If omitted, a UI will open to select the
     starting class.
+
+:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+    Displays a picker to select and jump to the definition of a C++ class.
+    - **Usage**: Similar to |:UEP files|, this command filters the list of all
+      known symbols by scope and dependency depth.
+    - **`[Game|Engine|Editor]`**: (Optional, default: `Editor`) Specifies the
+      base scope of modules for the search.
+        - `Editor`: Scans all components (Game, Engine, Plugins), providing the richest
+          set of Editor/Runtime symbols. (Equivalent to Full Scan).
+    - `[--no-deps|--all-deps]`: (Optional, default: `--no-deps`)
+        - `--no-deps`: Searches only within the specified scope's modules and their shallow dependencies.
+        - `--all-deps`: Includes all modules that the base scope's modules depend on (deep dependencies).
+
+:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+    Displays a picker to select and jump to the definition of a C++ struct.
+    - **Usage**: Behaves identically to |:UEP cl
 
 :UEP tree [--no-deps|--all-deps]
     Opens a logical project explorer in neo-tree. Requires neo-tree-unl.nvim.

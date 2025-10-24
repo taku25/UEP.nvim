@@ -151,7 +151,25 @@ local command_spec = {
       args = {
         { name = "class_name", required = false },
       },
-    }
+    },
+    classes = {
+      handler = uep_api.find_classes, -- 直接 execute 関数を指定
+      bang = true,
+      desc = "Find and jump to a class definition by name (shows picker if no name).",
+      args = {
+        { name = "category", required = false },
+        { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
+      },
+    },
+    structs = {
+      handler = uep_api.find_structs, -- 直接 execute 関数を指定
+      bang = true,
+      desc = "Find and jump to a struct definition by name (shows picker if no name).",
+      args = {
+        { name = "category", required = false },
+        { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
+      },
+    },
   },
 }
 

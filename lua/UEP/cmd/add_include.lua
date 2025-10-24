@@ -27,7 +27,7 @@ end
 local function insert_include_for_class(target_class_name)
   local log = uep_log.get()
   log.info("Attempting to add #include for class: '%s'", target_class_name)
-  derived_core.get_all_classes(function(all_classes)
+  derived_core.get_all_classes({}, function(all_classes)
     if not all_classes then
       return log.error("Could not retrieve class info.")
     end
@@ -119,7 +119,7 @@ function M.execute(opts)
   -- ケース1: bang (!) が指定された場合、強制的にPickerを表示
   if opts.has_bang then
     log.info("Bang detected! Forcing class picker.")
-    derived_core.get_all_classes(function(all_classes)
+    derived_core.get_all_classes({},function(all_classes)
       if not all_classes or #all_classes == 0 then
         return log.error("No classes found. Please run :UEP refresh.")
       end

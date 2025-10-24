@@ -27,21 +27,27 @@ local function parse_single_header_with_user_logic(file_path)
     return nil
   end
 
-  local final_classes = {}
+  local final_classes = {} -- ★注意: 名前はclassesだがstructも入れる
   local i = 1
   while i <= #lines do
     local line_content = lines[i]
     local is_uclass = line_content:find("UCLASS")
     local is_uinterface = line_content:find("UINTERFACE")
+    local is_ustruct = line_content:find("USTRUCT") -- [!] USTRUCTを検出
     local is_declare_class = line_content:find("DECLARE_CLASS")
 
-    if is_uclass or is_uinterface then
-      local macro_type = is_uclass and "UCLASS" or "UINTERFACE"
+    -- [!] UCLASS, UINTERFACE, USTRUCT をまとめて処理する
+    if is_uclass or is_uinterface or is_ustruct then
+      local macro_type = is_uclass and "UCLASS" or (is_uinterface and "UINTERFACE" or "USTRUCT")
+      local keyword_to_find = (macro_type == "USTRUCT") and "struct" or "class" -- [!] structを探す
+      local body_macro_pattern = "_BODY" -- UCLASS/UINTERFACE/USTRUCT 共通
+
       local block_lines = {}
       local j = i
       while j <= #lines do
         table.insert(block_lines, lines[j])
-        if lines[j]:find("_BODY") then
+        -- [!] USTRUCT() の場合、 GENERATED_BODY() or GENERATED_USTRUCT_BODY() で終わる
+        if lines[j]:find(body_macro_pattern) then
           break
         end
         j = j + 1
@@ -51,19 +57,39 @@ local function parse_single_header_with_user_logic(file_path)
         local block_text = table.concat(block_lines, "\n")
         local cleaned_text = strip_comments(block_text)
         local flattened_text = cleaned_text:gsub("[\n\r]", " "):gsub("%s+", " ")
-        
-        local vim_pattern = [[.\{-}\(UCLASS\|UINTERFACE\)\s*(.\{-})\s*class\s\+\(\w\+_API\s\+\)\?\(\w\+\)\s*:\s*\(public\|protected\|private\)\s*\(\w\+\)]]
+
+        -- [!] パターンを USTRUCT と struct にも対応させる
+        -- 例: USTRUCT(...) struct FMyStruct : public FBaseStruct
+        -- 例: UCLASS(...) class AMyActor : public AActor
+        local vim_pattern
+        if keyword_to_find == "struct" then
+          -- struct FMyStruct : public FBaseStruct
+          -- struct FMyStruct (継承なし)
+          vim_pattern = [[.\{-}\(USTRUCT\)\s*(.\{-})\s*struct\s\+\(\w\+_API\s\+\)\?\(\w\+\)\s*\(:\s*\(public\|protected\|private\)\s*\(\w\+\)\)\?]]
+        else -- class
+          -- class AMyActor : public AActor
+          vim_pattern = [[.\{-}\(UCLASS\|UINTERFACE\)\s*(.\{-})\s*class\s\+\(\w\+_API\s\+\)\?\(\w\+\)\s*:\s*\(public\|protected\|private\)\s*\(\w\+\)]]
+        end
+
         local result = vim.fn.matchlist(flattened_text, vim_pattern)
-        
-        if result and #result > 0 and result[4] then
-          local class_name = result[4]
-          local parent_class = result[6]
-          local is_interface = (macro_type == "UINTERFACE") or (parent_class == "UInterface")
+
+        if result and #result > 0 and result[4] and result[4] ~= "" then
+          local symbol_name = result[4] -- クラス名 or 構造体名
+          local parent_symbol -- 親クラス or 親構造体 (structの場合は省略可能)
+          if keyword_to_find == "struct" then
+             parent_symbol = result[7] and result[7] ~= "" and result[7] or nil -- グループ7が親
+          else -- class
+             parent_symbol = result[6] and result[6] ~= "" and result[6] or nil -- グループ6が親
+          end
+
+          local is_interface = (macro_type == "UINTERFACE") or (parent_symbol == "UInterface")
+
           table.insert(final_classes, {
-            class_name = class_name,
-            base_class = parent_class or (is_interface and nil or "UObject"),
-            is_final = false,
+            class_name = symbol_name,
+            base_class = parent_symbol or (is_interface and nil or ((keyword_to_find == "class") and "UObject" or nil)), -- [!] structは親がなければnil
+            is_final = false, -- TODO: finalキーワードを検出する？
             is_interface = is_interface,
+            symbol_type = keyword_to_find, -- [!] 'class' か 'struct' かを記録
           })
         end
         i = j + 1
@@ -90,6 +116,7 @@ local function parse_single_header_with_user_logic(file_path)
               base_class = parent_class,
               is_final = false,
               is_interface = false,
+              symbol_type = "class"
             })
             found_class_def = true
             break -- class定義を見つけたら後方探索を終了

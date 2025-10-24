@@ -14,7 +14,7 @@ local M = {}
 -- @param child_class_name string 起点となるクラスの名前
 local function find_and_show_parents(child_class_name)
   -- 継承チェーンの検索には全クラスの情報が必要
-  derived_core.get_all_classes(function(all_classes)
+  derived_core.get_all_classes({},function(all_classes)
     if not all_classes then
       return log.get().error("Could not retrieve class information for parent search.")
     end
@@ -63,7 +63,7 @@ function M.execute(opts)
   -- ケース1: bang (!) が指定された場合、強制的に起点クラス選択Pickerを表示
   if opts.has_bang then
     log.get().info("Bang detected! Forcing child class picker.")
-    derived_core.get_all_classes(function(all_classes)
+    derived_core.get_all_classes({},function(all_classes)
       if not all_classes or #all_classes == 0 then
         return log.get().error("No classes found. Please run :UEP refresh.")
       end

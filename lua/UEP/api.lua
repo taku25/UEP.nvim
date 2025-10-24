@@ -19,6 +19,8 @@ local cmd_purge = require("UEP.cmd.purge")
 local cmd_cleanup = require("UEP.cmd.cleanup")
 local cmd_add_include = require("UEP.cmd.add_include")
 local cmd_goto_definition = require("UEP.cmd.goto_definition")
+local cmd_find_classes = require("UEP.cmd.find_classes")
+local cmd_find_structs = require("UEP.cmd.find_structs")
 
 local M = {}
 
@@ -113,4 +115,11 @@ function M.goto_definition(opts)
   cmd_goto_definition.execute(opts or {})
 end
 
+function M.find_classes(opts)
+  cmd_find_classes.execute(opts or {})
+end
+
+function M.find_structs(opts)
+  cmd_find_structs.execute(opts or {})
+end
 return M

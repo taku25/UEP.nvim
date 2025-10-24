@@ -28,6 +28,7 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
       * Offers specialized commands for targeted searches within a single module (`:UEP module_files`) or across all `Programs` directories (`:UEP program_files`).
       * Allows filtering files by scope (**Game**, **Engine**).
       * Supports including module dependencies in the search (**--no-deps** or **--all-deps**).
+      * Instantly search for all classes or structs within the specified scope (:UEP classes, :UEP structs)."
   * **Intelligent Code Navigation**:
       * The `:UEP find_derived` command instantly finds all child classes that inherit from a specified base class.
       * The `:UEP find_parents` command displays the entire inheritance chain from a specified class up to `UObject`.
@@ -178,6 +179,12 @@ All commands start with `:UEP`.
 " Find the inheritance chain. Use [!] to open the starting class picker.
 :UEP find_parents[!] [ClassName]
 
+" Search for C++ classes (use '!' to refresh cache).
+:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+
+" Search for C++ structs (use '!' to refresh cache).
+:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+
 " Display the logical tree for the entire project (requires neo-tree-unl.nvim).
 :UEP tree
 
@@ -250,6 +257,12 @@ All commands start with `:UEP`.
   * **`:UEP find_parents[!] [ClassName]`**: Displays the inheritance chain for a specified class.
       * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor.
       * With `!`: Ignores arguments and opens a picker UI to select the starting class.
+  * **`:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]`**: Opens a picker to select and jump to the definition of a C++ class.
+      * Flags: The `[!]`, `[Game|Engine|Editor]`, and `[--no-deps|--all-deps]` flags control cache regeneration and scope filtering in the same way as the `:UEP files` command.
+      * Scope: `[Game|Engine|Editor]` is the base scope. The default is **`Editor`**, which scans all components (equivalent to a Full scan) to provide the richest set of Editor/Runtime symbols.
+  * **`:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]`**: Opens a picker to select and jump to the definition of a C++ struct.
+      * Flags: The `[!]`, `[Game|Engine|Editor]`, and `[--no-deps|--all-deps]` flags control cache regeneration and scope filtering in the same way as the `:UEP files` command.
+      * Scope: `[Game|Engine|Editor]` is the base scope. The default is **`Editor`**, which scans all components (equivalent to a Full scan) to provide the richest set of Editor/Runtime symbols.
   * **`:UEP purge [ComponentName]`**:
       * Deletes only the **file cache** (`*.files.json`) for the specified Game, Engine, or Plugin component.
       * This allows forcing a file rescan without re-analyzing the project's dependency structure.
