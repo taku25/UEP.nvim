@@ -143,6 +143,14 @@ local command_spec = {
       args = {
         { name = "class_name", required = false },
       },
+    },
+    goto_definition = {
+      handler = uep_api.goto_definition,
+      bang = true,
+      desc = "Jump to true definition (skips forward declarations). Use `!` for class picker.",
+      args = {
+        { name = "class_name", required = false },
+      },
     }
   },
 }

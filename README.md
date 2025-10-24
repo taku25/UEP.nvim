@@ -189,6 +189,9 @@ All commands start with `:UEP`.
 
 " Remove a project from the list of known projects (does not delete files).
 :UEP delete
+
+" Jump to the true definition, skipping forward declarations (Use ! for picker).
+:UEP goto_definition[!] [ClassName]
 ```
 
 ### Command Details
@@ -254,6 +257,9 @@ All commands start with `:UEP`.
       * **DANGEROUS**: Permanently deletes **ALL** structural caches (`*.project.json`) and **ALL** file caches (`*.files.json`) associated with the current project, including all plugins and the linked engine.
       * The command runs asynchronously with a progress bar and requires confirmation.
       * After running this, you **must** run `:UEP refresh` to rebuild the project structure from scratch. 
+  * **`:UEP goto_definition[!] [ClassName]`**: Jumps to the actual definition file of a class, skipping forward declarations.
+      * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor. It performs an **intelligent hierarchical search** based on the current module's dependencies (current component -> shallow deps -> deep deps) before falling back to LSP.
+      * With `!`: Ignores arguments and the word under the cursor, and always opens a picker UI to select a class from the entire project.
 
 ## 🤖 API & Automation Examples
 
@@ -290,6 +296,18 @@ vim.keymap.set('n', '<leader>pf', function()
   -- The API is simple and clean
   require('UEP.api').files({})
 end, { desc = "UEP: [P]roject [F]iles" })
+```
+#### Go to Definition (UEP)
+Use UEP's intelligent definition jump, complementing LSP's default jump.
+
+```lua
+-- in init.lua or keymaps.lua
+-- Use standard 'gd' for LSP
+vim.keymap.set('n', 'gd', vim.lsp.buf.definition, { desc = "LSP Definition" })
+-- Use <leader><C-]> for UEP's enhanced definition jump (cursor word)
+vim.keymap.set('n', '<leader><C-]>', function() require('UEP.api').goto_definition({ has_bang = false }) end, { noremap = true, silent = true, desc = "UEP: Go to Definition (Cursor)" })
+-- Optional: Use <leader>gD for UEP's definition jump via picker
+vim.keymap.set('n', '<leader>gD', function() require('UEP.api').goto_definition({ has_bang = true }) end, { noremap = true, silent = true, desc = "UEP: Go to Definition (Picker)" })
 ```
 
 ### Integration with Neo-tree

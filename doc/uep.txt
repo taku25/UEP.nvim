@@ -101,6 +101,9 @@ Command List                                           *UEP-commands-list*
 :UEP delete
     Deletes a project from the list of known projects.
 
+:UEP goto_definition[!] [ClassName]
+    Jump to the true definition, skipping forward declarations (Use ! for picker).
+
 ------------------------------------------------------------------------------
 Command Details                                     *UEP-commands-detail*
 
@@ -220,6 +223,19 @@ UEP grep [Game|Engine]
 :UEP delete
     Displays a UI with a list of known projects and removes the selected
     project from the list. The actual project files are not deleted.
+
+:UEP goto_definition[!] [ClassName]
+    Jumps to the actual definition file of a class, skipping forward
+    declarations.
+    - `[!](bang)`: (Optional)
+      If `!` is added, it ignores any arguments or the word under the
+      cursor and opens a picker UI to select a class from the entire
+      project to jump to.
+    - `[ClassName]`: (Optional) The name of the class to jump to. If
+      omitted, the word under the cursor (`<cword>`) is used.
+    This command performs an intelligent hierarchical search based on the
+    current module's dependencies (current component -> shallow deps ->
+    deep deps) and falls back to LSP if not found.
 
 ==============================================================================
 3. Configuration                                       *UEP-configuration*
@@ -360,6 +376,15 @@ Require the API module:
     `opts` table:
       - `has_bang` (boolean, optional): If `true`, forces the picker UI.
       - `class_name` (string, optional): The name of the class to include.
+
+*uep_api.goto_definition({opts})*
+    Intelligently finds and jumps to the definition file of a class, skipping
+    forward declarations and searching through dependencies.
+    `opts` table:
+      - `has_bang` (boolean, optional): `true` forces the class picker UI.
+      - `class_name` (string, optional): The class name to jump to. If
+        omitted and `has_bang` is false, uses the word under the cursor.
+
 ==============================================================================
 5. Integration Examples (neo-tree)         *UEP-integration-examples*
 

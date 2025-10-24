@@ -18,6 +18,7 @@ local cmd_open_file = require("UEP.cmd.open_file")
 local cmd_purge = require("UEP.cmd.purge")
 local cmd_cleanup = require("UEP.cmd.cleanup")
 local cmd_add_include = require("UEP.cmd.add_include")
+local cmd_goto_definition = require("UEP.cmd.goto_definition")
 
 local M = {}
 
@@ -107,4 +108,9 @@ end
 function M.add_include(opts)
   cmd_add_include.execute(opts or {})
 end
+
+function M.goto_definition(opts)
+  cmd_goto_definition.execute(opts or {})
+end
+
 return M

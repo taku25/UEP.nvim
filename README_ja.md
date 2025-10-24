@@ -189,6 +189,9 @@ opts = {
 
 " プロジェクトを既知のプロジェクトリストから削除します（ファイルは削除しません）。
 :UEP delete
+
+" 先行宣言をスキップして定義にジャンプします (!でピッカー使用)。
+:UEP goto_definition[!] [ClassNam
 ```
 
 ### コマンド詳細
@@ -254,6 +257,9 @@ opts = {
       * **危険**: 現在のプロジェクトに関連する**全て**の構造キャッシュ (`*.project.json`) および**全て**のファイルキャッシュ (`*.files.json`) を永久に削除します（プラグインやリンクされたエンジンも含む）。
       * このコマンドはプログレスバーを表示しながら非同期で実行され、実行にはユーザーの確認が必要です。
       * 実行後、プロジェクトの構造をゼロから再構築するために、**必ず** `:UEP refresh` を実行してください。
+  * **`:UEP goto_definition[!] [ClassName]`**: 先行宣言をスキップして、クラスの実際の定義ファイルにジャンプします。
+      * `!`なし: `[ClassName]`引数が指定されていればそれを使用し、なければカーソル下の単語を使用します。現在のモジュールの依存関係（現在のコンポーネント -> 浅い依存 -> 深い依存）に基づいて**インテリジェントな階層的検索**を実行し、見つからなければLSPにフォールバックします。
+      * `!`あり: 引数やカーソル下の単語を無視し、常にプロジェクト全体のクラスを選択するためのピッカーUIを開きます。
 
 ## 🤖 API & 自動化 (Automation Examples)
 
@@ -301,6 +307,20 @@ vim.keymap.set('n', '<leader>pf', function()
   -- APIはシンプルでクリーンです
   require('UEP.api').files({})
 end, { desc = "UEP: プロジェクトファイル検索" })
+```
+
+#### 定義へジャンプ (UEP)
+LSPのデフォルトジャンプを補完する、UEPのインテリジェントな定義ジャンプを使用します。
+
+```lua
+-- init.lua や keymaps.lua などに記述
+-- 標準の 'gd' はLSPに使用
+vim.keymap.set('n', 'gd', vim.lsp.buf.definition, { desc = "LSP 定義へジャンプ" })
+-- <leader><C-]> をUEPの強化版ジャンプ（カーソル下の単語）に使用
+vim.keymap.set('n', '<leader><C-]>', function() require('UEP.api').goto_definition({ has_bang = false }) end, { noremap = true, silent = true, desc = "UEP: 定義へジャンプ (カーソル)" })
+-- オプション: <leader>gD をUEPのピッカー経由ジャンプに使用
+vim.keymap.set('n', '<leader>gD', function() require('UEP.api').goto_definition({ has_bang = true }) end, { noremap = true, silent = true, desc = "UEP: 定義へジャンプ (ピッカー)" })
+
 ```
 
 ### Neo-treeとの連携
