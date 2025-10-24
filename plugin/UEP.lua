@@ -153,7 +153,7 @@ local command_spec = {
       },
     },
     classes = {
-      handler = uep_api.find_classes, -- 直接 execute 関数を指定
+      handler = uep_api.classes, -- 直接 execute 関数を指定
       bang = true,
       desc = "Find and jump to a class definition by name (shows picker if no name).",
       args = {
@@ -162,7 +162,7 @@ local command_spec = {
       },
     },
     structs = {
-      handler = uep_api.find_structs, -- 直接 execute 関数を指定
+      handler = uep_api.structs, -- 直接 execute 関数を指定
       bang = true,
       desc = "Find and jump to a struct definition by name (shows picker if no name).",
       args = {
