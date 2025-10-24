@@ -13,7 +13,6 @@ function M.execute(opts)
   -- [!] :UEP files と同じ引数パースロジック (Scope, DepsFlag のみ)
   local scope = opts.category or "Game"
   local deps_flag = opts.deps_flag or "--no-deps"
-  print(deps_flag)
 
   core_find_symbol.find_and_jump({
     symbol_type = "class",
