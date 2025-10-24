@@ -37,7 +37,7 @@ local function find_symbol_in_component_cache(component_meta, symbol_name)
 end
 
 ---
--- ファイルを開き、シンボルの定義行にジャンプするヘルパー
+-- ファイルを開き、シンボルの定義行にジャンプするヘルパー (先行宣言スキップ・改訂版)
 -- @param target_file_path string 開くファイル
 -- @param symbol_name string ジャンプ先のシンボル名
 local function open_file_and_jump(target_file_path, symbol_name)
@@ -47,16 +47,35 @@ local function open_file_and_jump(target_file_path, symbol_name)
   if not ok then
     return log.error("Failed to open file: %s", tostring(err))
   end
+
   local file_content = vim.fn.readfile(target_file_path)
-  local line_number = 1
+  local line_number = 1 -- デフォルトはファイルの先頭
+
+  -- まずはシンプルな検索パターンに戻す
   local search_pattern_class = "class " .. symbol_name
   local search_pattern_struct = "struct " .. symbol_name
+
   for i, line in ipairs(file_content) do
-    if line:find(search_pattern_class, 1, true) or line:find(search_pattern_struct, 1, true) then
-      line_number = i
-      break
+    -- 1. まず、クラス名 or 構造体名を含む行を探す (APIマクロは一旦無視)
+    local class_match_start, class_match_end = line:find(search_pattern_class, 1, true)
+    local struct_match_start, struct_match_end = line:find(search_pattern_struct, 1, true)
+
+    if class_match_start or struct_match_start then
+      -- 2. マッチした場合、その行が ';' で終わるかチェック (空白は無視)
+      local trimmed_line = line:match("^%s*(.-)%s*$") -- 行頭・行末の空白を除去
+      
+      -- 行末が ';' で終わる -> 先行宣言なのでスキップ
+      if trimmed_line:match(";%s*$") then
+         log.debug("Skipping potential forward declaration on line %d: %s", i, line)
+      else
+         -- ';' で終わらない -> 本体定義とみなす！
+         line_number = i
+         log.debug("Definition found on line %d: %s", i, line)
+         break -- 最初の本体定義を見つけたらループを抜ける
+      end
     end
   end
+
   vim.fn.cursor(line_number, 0)
   vim.cmd("normal! zz")
 end

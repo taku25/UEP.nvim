@@ -190,7 +190,7 @@ All commands start with `:UEP`.
 " Remove a project from the list of known projects (does not delete files).
 :UEP delete
 
-" Jump to the true definition, skipping forward declarations (Use ! for picker).
+" Jumps to the actual class or struct definition file, skipping forward declarations.
 :UEP goto_definition[!] [ClassName]
 ```
 

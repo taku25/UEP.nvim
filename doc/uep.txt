@@ -102,7 +102,7 @@ Command List                                           *UEP-commands-list*
     Deletes a project from the list of known projects.
 
 :UEP goto_definition[!] [ClassName]
-    Jump to the true definition, skipping forward declarations (Use ! for picker).
+    Jumps to the actual class or struct definition file of a class, skipping forward declarations.
 
 ------------------------------------------------------------------------------
 Command Details                                     *UEP-commands-detail*
