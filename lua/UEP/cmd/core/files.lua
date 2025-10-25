@@ -173,8 +173,47 @@ function M.get_files(opts, on_complete)
   end) -- line 154?: コールバック関数の終わり
 end -- M.get_files の終わり
 
--- (古い関数はコメントアウト)
--- M.get_merged_files_for_project = function(...) end
+function M.get_files_for_module(module_name, on_complete)
+    local log = uep_log.get()
+    log.debug("core_files.get_files_for_module called for '%s'", module_name)
+    local start_time = os.clock()
+
+    -- STEP 1: プロジェクトマップを取得してモジュールメタデータを検索
+    core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
+        if not ok then
+            log.error("get_files_for_module: Failed to get project maps: %s", tostring(maps))
+            return on_complete(false, "Failed to get project maps.")
+        end
+
+        local mod_meta = maps.all_modules_map[module_name]
+        if not mod_meta then
+            log.error("get_files_for_module: Module '%s' not found in project maps.", module_name)
+            return on_complete(false, ("Module '%s' not found."):format(module_name))
+        end
+
+        -- STEP 2: モジュールキャッシュをロード
+        local mod_cache_data = module_cache.load(mod_meta)
+        if not mod_cache_data then
+            log.warn("get_files_for_module: Module cache not found for '%s'. Run :UEP refresh!", module_name)
+            -- キャッシュがなくてもエラーではないので、空リストを返す
+            return on_complete(true, { files = {}, module_meta = mod_meta })
+        end
+
+        -- STEP 3: キャッシュ内の全ファイルパスを集約
+        local module_files = {}
+        if mod_cache_data.files then
+            for category, files in pairs(mod_cache_data.files) do
+                vim.list_extend(module_files, files)
+            end
+        end
+
+        local end_time = os.clock()
+        log.info("get_files_for_module for '%s' finished in %.4f seconds. Found %d files.",
+                 module_name, end_time - start_time, #module_files)
+
+        on_complete(true, { files = module_files, module_meta = mod_meta })
+    end)
+end
 -- M.get_files_for_single_module = function(...) end
 
 return M

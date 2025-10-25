@@ -47,8 +47,8 @@ local command_spec = {
       bang = true,
       desc = ":UEP files [Category] [--no-deps]",
       args = {
-        { name = "category", required = false },
-        { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
+        { name = "scope", required = false },
+        { name = "deps_flag", required = false },
       },
     },
     module_files = {
@@ -64,6 +64,7 @@ local command_spec = {
       handler = uep_api.tree,
       desc = "Open a project-aware filer (requires neo-tree or nvim-tree)",
       args = {
+        { name = "scope", required = false }, -- 例: Runtime or Editor
         { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
       },
     },
