@@ -86,6 +86,8 @@ function M.resolve_all_dependencies(all_modules_meta)
       location = original_meta.location,
       shallow_dependencies = shallow_deps_list,
       deep_dependencies = deep_deps_list,
+      type = original_meta.type,           -- ★ type をコピー
+      owner_name = original_meta.owner_name -- ★ owner_name もコピー
     }
   end
 
