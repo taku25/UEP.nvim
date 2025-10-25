@@ -1,10 +1,11 @@
--- lua/UEP/parser/class.lua (修正版)
+-- lua/UEP/parser/class.lua (ロガー取得タイミング修正版)
 
-local uep_log = require("UEP.logger").get()
+-- ▼▼▼【修正点 1/3】ここで .get() を呼び出さない ▼▼▼
+local uep_logger_module = require("UEP.logger")
 local M = {}
 
 ----------------------------------------------------------------------
--- 解析関数 (変更なし)
+-- 解析関数 (get_file_hash, strip_comments は変更なし)
 ----------------------------------------------------------------------
 local function get_file_hash(file_path)
   local file, err = io.open(file_path, "rb")
@@ -21,6 +22,9 @@ local function strip_comments(text)
 end
 
 local function parse_single_header_with_user_logic(file_path)
+  -- ▼▼▼【修正点 2/3】関数内で .get() を呼び出す ▼▼▼
+  local uep_log = uep_logger_module.get()
+
   local read_ok, lines = pcall(vim.fn.readfile, file_path)
   if not read_ok then
     uep_log.warn("Could not read file for parsing: %s", file_path)
@@ -140,6 +144,9 @@ end
 -- 非同期実行関数 (APIシグネチャ変更)
 ----------------------------------------------------------------------
 function M.parse_headers_async(existing_header_details, header_files, progress, on_complete)
+  -- ▼▼▼【修正点 3/3】ここでも関数内で .get() を呼び出す ▼▼▼
+  local uep_log = uep_logger_module.get()
+  
   local new_details = {}
   existing_header_details = existing_header_details or {}
 
@@ -149,7 +156,7 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
     for i, file_path in ipairs(header_files) do
       progress:stage_update("header_analysis_detail", i, ("Parsing: %s (%d/%d)..."):format(vim.fn.fnamemodify(file_path, ":t"), i, total_header_file))
       
-      -- ▼▼▼ 修正点: ハイブリッドキャッシュ検証ロジック ▼▼▼
+      -- ▼▼▼ ハイブリッドキャッシュ検証ロジック (変更なし) ▼▼▼
       local existing_entry = existing_header_details[file_path]
       local current_mtime = vim.fn.getftime(file_path)
 
@@ -182,6 +189,7 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
     if status ~= "dead" then
       local ok, err = coroutine.resume(co)
       if not ok then
+        -- ★この uep_log が、今度は「本物」のロガーになる
         uep_log.error("Error during header parsing coroutine: %s", tostring(err))
         on_complete(false, nil)
         return
