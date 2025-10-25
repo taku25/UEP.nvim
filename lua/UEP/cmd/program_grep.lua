@@ -1,62 +1,50 @@
--- lua/UEP/cmd/program_grep.lua
+-- lua/UEP/cmd/program_grep.lua (Use get_project_maps)
 
 local grep_core = require("UEP.cmd.core.grep")
-local unl_finder = require("UNL.finder")
+-- local unl_finder = require("UNL.finder") -- Use utils instead
 local uep_log = require("UEP.logger")
 local fs = require("vim.fs")
 local uep_config = require("UEP.config")
+local core_utils = require("UEP.cmd.core.utils") -- ★ Use utils
 
 local M = {}
 
----
--- プロジェクトとエンジン内の固定された'Programs'ディレクトリを対象にLive Grepを実行します。
 function M.execute(opts)
   local log = uep_log.get()
+  log.info("Executing :UEP program_grep...")
 
-  -- STEP 1: プロジェクトルートを特定
-  local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
-  if not project_root then
-    return log.error("program_grep: Unreal Engineのプロジェクト内ではありません。")
-  end
+  -- ★ Use get_project_maps to find program modules
+  core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
+      if not ok then
+        log.error("program_grep: Failed to get project info: %s", tostring(maps))
+        return vim.notify("Error getting project info.", vim.log.levels.ERROR)
+      end
 
-  -- STEP 2: エンジンルートを特定（見つからなくても処理は続行）
-  local proj_info = unl_finder.project.find_project(project_root)
-  local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject,
-    {
-      engine_override_path = uep_config.get().engine_path,
-    })
+      local programs_modules = maps.programs_modules_map or {}
+      local search_paths = {}
 
-  -- STEP 3: 検索対象となる固定パスのリストを作成
-  local potential_paths = {
-    fs.joinpath(project_root, "Programs"),
-    fs.joinpath(project_root, "Source", "Programs"),
-  }
+      for mod_name, mod_meta in pairs(programs_modules) do
+          if mod_meta.module_root then
+              table.insert(search_paths, mod_meta.module_root)
+          else
+              log.warn("program_grep: Module '%s' is missing module_root.", mod_name)
+          end
+      end
 
-  if engine_root then
-    table.insert(potential_paths, fs.joinpath(engine_root, "Engine", "Programs"))
-    table.insert(potential_paths, fs.joinpath(engine_root, "Engine", "Source", "Programs"))
-  end
+      if #search_paths == 0 then
+        log.warn("program_grep: No program modules with valid roots found.")
+        return vim.notify("No program modules found.", vim.log.levels.WARN)
+      end
 
-  -- STEP 4: 実際に存在するディレクトリのみを検索パスとして確定させる
-  local search_paths = {}
-  for _, path in ipairs(potential_paths) do
-    if vim.fn.isdirectory(path) == 1 then
-      table.insert(search_paths, path)
-    end
-  end
+      log.info("program_grep: Starting grep in %d program module directories.", #search_paths)
 
-  if #search_paths == 0 then
-    return log.warn("検索対象となる'Programs'ディレクトリが見つかりませんでした。")
-  end
-
-  log.info("Starting grep in %d 'Programs' directories.", #search_paths)
-
-  -- STEP 5: 確定した検索パスをコアのgrepエンジンに渡して実行
-  grep_core.start_live_grep({
-    search_paths = search_paths,
-    title = "Live Grep (Programs)",
-    initial_query = "",
-  })
+      -- Call core grep with the identified program module roots
+      grep_core.start_live_grep({
+        search_paths = search_paths,
+        title = "Live Grep (Programs)",
+        initial_query = "",
+      })
+  end)
 end
 
 return M
