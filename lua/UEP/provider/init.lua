@@ -33,6 +33,19 @@ M.setup = function()
       impl = tree_provider, 
     })
 
+    -- [New] 子ノード遅延読み込みプロバイダーの登録
+    unl_api.provider.register({
+      capability = "uep.load_tree_children",
+      name = "UEP.nvim",
+      impl = tree_provider,
+    })
+
+
+    unl_api.provider.register({
+      capability = "uep.clear_tree_state",
+      name = "UEP.nvim",
+      impl = tree_provider,
+    })
     -- ★ unl_log.get("UEP") ではなく、UEP独自のロガーラッパーを使うのがより良い実践
     local uep_logger = require("UEP.logger").get()
     if uep_logger then
@@ -40,7 +53,6 @@ M.setup = function()
     end
 
 
-    -- ▼▼▼ ここから追記 ▼▼▼
     -- モジュールリストプロバイダーの登録
     local modules_provider = require("UEP.provider.modules")
     unl_api.provider.register({
@@ -48,7 +60,6 @@ M.setup = function()
       name = "UEP.nvim",
       impl = modules_provider,
     })
-    -- ▲▲▲ ここまで追記 ▲▲▲
   end
 end
 

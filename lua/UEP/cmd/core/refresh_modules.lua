@@ -6,6 +6,8 @@ local module_cache = require("UEP.cache.module")
 local uep_log = require("UEP.logger")
 local core_utils = require("UEP.cmd.core.utils")
 local fs = require("vim.fs")
+local unl_events_ok, unl_events = pcall(require, "UNL.event.events")
+local unl_types_ok, unl_event_types = pcall(require, "UNL.event.types")
 
 local M = {}
 
@@ -434,7 +436,14 @@ function M.update_single_module_cache(module_name, on_complete)
                   directories = dirs_by_category,
                   header_details = header_details_by_file or {},
                 }
-
+                if unl_events_ok and unl_types_ok then
+                  log.debug("Firing ON_AFTER_UEP_LIGHTWEIGHT_REFRESH event from refresh_modules.")
+                  unl_events.publish(unl_event_types.ON_AFTER_UEP_LIGHTWEIGHT_REFRESH, {
+                    status = "success",
+                    event_type = "refresh_module", -- イベントソースを明確化
+                    updated_module = module_name,
+                  })
+                end
                 if module_cache.save(module_meta, data_to_save) then
                   log.info("Lightweight cache update for module '%s' succeeded.", module_name)
                   if on_complete then
