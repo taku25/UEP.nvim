@@ -103,7 +103,7 @@ if component.type == "Engine" then
         for _, raw_path in ipairs(build_cs_files) do
           local build_cs_path = unl_path.normalize(raw_path)
           source_mtimes[build_cs_path] = vim.fn.getftime(build_cs_path)
-          local module_name = vim.fn.fnamemodify(build_cs_path, ":h:t")
+          local module_name = vim.fn.fnamemodify(build_cs_path, ":t:r:r")
           local module_root = vim.fn.fnamemodify(build_cs_path, ":h")
           local location = build_cs_path:find("/Plugins/", 1, true) and "in_plugins" or "in_source"
           local dependencies = unl_analyzer.parse(build_cs_path)
