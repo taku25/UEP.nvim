@@ -287,4 +287,173 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
   if not job_ok then log.error("Failed to start fd (files) job: %s", tostring(job_id_or_err)); if on_done then on_done(false) end end
 end
 
+
+---
+-- 特定のモジュールのみのファイルキャッシュとシンボル情報を更新する
+-- (lua/UEP/event/hub.lua や api.lua からの呼び出しを想定)
+-- @param module_name string 更新するモジュール名
+-- @param on_complete function(ok) コールバック
+function M.update_single_module_cache(module_name, on_complete)
+  local log = uep_log.get()
+
+  -- 1. モジュールのメタデータを取得
+  core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
+    if not ok then
+      log.error("update_single_module_cache: Failed to get project maps: %s", tostring(maps))
+      if on_complete then
+        on_complete(false)
+      end
+      return
+    end
+
+    local module_meta = maps.all_modules_map[module_name]
+    if not module_meta or not module_meta.module_root then
+      log.error("Cannot update module '%s': not found in cache or 'module_root' is missing.", module_name)
+      if on_complete then
+        on_complete(false)
+      end
+      return
+    end
+
+    log.info("Starting lightweight refresh for module: %s (Path: %s)", module_name, module_meta.module_root)
+
+    -- 2. fdコマンドをこのモジュールルートのみに限定して実行
+    local fd_cmd_files = M.create_fd_command({ module_meta.module_root }, "f")
+    local fd_cmd_dirs = M.create_fd_command({ module_meta.module_root }, "d")
+    local new_files = {}
+    local new_dirs = {}
+    local files_stderr = {}
+
+    vim.fn.jobstart(fd_cmd_files, {
+      stdout_buffered = true,
+      stderr_buffered = true,
+      on_stdout = function(_, data)
+        if data then
+          for _, line in ipairs(data) do
+            if line ~= "" then
+              table.insert(new_files, line)
+            end
+          end
+        end
+      end,
+      on_stderr = function(_, data)
+        if data then
+          for _, line in ipairs(data) do
+            if line ~= "" then
+              table.insert(files_stderr, line)
+            end
+          end
+        end
+      end,
+      on_exit = function(_, files_code)
+        if files_code ~= 0 then
+          log.error("fd (files) failed for module '%s': %s", module_name, table.concat(files_stderr, "\n"))
+          if on_complete then
+            on_complete(false)
+          end
+          return
+        end
+        vim.schedule(function()
+          local dirs_stderr = {}
+          vim.fn.jobstart(fd_cmd_dirs, {
+            stdout_buffered = true,
+            stderr_buffered = true,
+            on_stdout = function(_, data)
+              if data then
+                for _, line in ipairs(data) do
+                  if line ~= "" then
+                    table.insert(new_dirs, line)
+                  end
+                end
+              end
+            end,
+            -- ▼▼▼ 修正箇所 ▼▼▼
+            on_stderr = function(_, data)
+              if data then
+                for _, line in ipairs(data) do
+                  if line ~= "" then
+                    table.insert(dirs_stderr, line)
+                  end
+                end
+              end
+            end, -- ★ ここにカンマを追加し、余計な 'end' を削除
+            -- ▲▲▲ 修正完了 ▲▲▲
+            on_exit = function(_, dirs_code)
+              if dirs_code ~= 0 then
+                log.error("fd (dirs) failed for module '%s': %s", module_name, table.concat(dirs_stderr, "\n"))
+                if on_complete then on_complete(false) end
+                return
+              end
+
+              log.debug("Lightweight scan found %d files and %d dirs for '%s'", #new_files, #new_dirs, module_name)
+
+              -- 3. ファイルを分類
+              local files_by_category = { source = {}, config = {}, shader = {}, programs = {}, other = {}, content = {} }
+              local dirs_by_category = { source = {}, config = {}, shader = {}, programs = {}, other = {}, content = {} }
+              local headers_to_parse = {}
+
+              for _, file in ipairs(new_files) do
+                local category = core_utils.categorize_path(file)
+                if category ~= "uproject" and category ~= "uplugin" then
+                  if not files_by_category[category] then files_by_category[category] = {} end
+                  table.insert(files_by_category[category], file)
+                  if file:match("%.h$") and not file:find("NoExportTypes.h", 1, true) then
+                    table.insert(headers_to_parse, file)
+                  end
+                end
+              end
+              for _, dir in ipairs(new_dirs) do
+                local category = core_utils.categorize_path(dir)
+                if category ~= "uproject" and category ~= "uplugin" then
+                  if not dirs_by_category[category] then dirs_by_category[category] = {} end
+                  table.insert(dirs_by_category[category], dir)
+                end
+              end
+
+              -- 4. 既存のヘッダー詳細をロード (mtime/hash比較のため)
+              local existing_cache = module_cache.load(module_meta)
+              local existing_header_details = (existing_cache and existing_cache.header_details) or {}
+
+              -- 5. クラス解析を実行 (ダミープログレスを使用)
+              local dummy_progress = {
+                stage_define = function() end,
+                stage_update = function() end,
+              }
+              class_parser.parse_headers_async(existing_header_details, headers_to_parse, dummy_progress, function(ok, header_details_by_file)
+                if not ok then
+                  log.error("Header parsing failed for lightweight refresh of '%s'.", module_name)
+                  if on_complete then
+                    on_complete(false)
+                  end
+                  return
+                end
+
+                -- 6. 新しいキャッシュデータを構築して保存
+                local data_to_save = {
+                  files = files_by_category,
+                  directories = dirs_by_category,
+                  header_details = header_details_by_file or {},
+                }
+
+                if module_cache.save(module_meta, data_to_save) then
+                  log.info("Lightweight cache update for module '%s' succeeded.", module_name)
+                  if on_complete then
+                    on_complete(true)
+                  end
+                else
+                  log.error("Failed to save lightweight cache for module '%s'.", module_name)
+                  if on_complete then
+                    on_complete(false)
+                  end
+                end
+              end)
+            end,
+          })
+        end)
+      end,
+    })
+  end)
+end
+
+
 return M
