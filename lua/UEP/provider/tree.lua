@@ -1,13 +1,16 @@
--- lua/UEP/provider/tree.lua (コンポーネント中心構造・Rider風表示対応・完全コード)
+-- From: C:\Users\taku3\Documents\git\UEP.nvim\lua\UEP\provider\tree.lua
+-- (:UEP module_tree でEagerロードを実装)
 
 local unl_context = require("UNL.context")
-local uep_log = require("UEP.logger").get()
+local uep_log = require("UEP.logger") 
 local projects_cache = require("UEP.cache.projects")
 local project_cache = require("UEP.cache.project")
-local files_cache_manager = require("UEP.cache.files")
+local module_cache = require("UEP.cache.module")
 local fs = require("vim.fs")
 
 local M = {}
+
+M.expanded_nodes = {} 
 
 -------------------------------------------------
 -- ヘルパー関数
@@ -19,195 +22,170 @@ local function directory_first_sorter(a, b)
   else return a.name < b.name end
 end
 
-local function build_fs_hierarchy(root_path, files, dirs)
-    local dir_set = {}
-    for _, dir_path in ipairs(dirs or {}) do
-        dir_set[dir_path:gsub("[/\\]$", "")] = true
-    end
-    local all_paths = {}
-    if files then vim.list_extend(all_paths, files) end
-    if dirs then vim.list_extend(all_paths, dirs) end
-    if #all_paths == 0 then return {} end
-    local trie = {}
-    for _, raw_full_path in ipairs(all_paths) do
-        local full_path = raw_full_path:gsub("[/\\]$", "")
-        local root_prefix = root_path:gsub("[/\\]$", "") .. "/"
-        
-        if full_path:sub(1, #root_prefix) == root_prefix then
-            local current_level = trie
-            local relative_path = full_path:sub(#root_prefix + 1)
-            
-            local parts = vim.split(relative_path, "[/\\]")
-            for _, part in ipairs(parts) do
-                if part ~= "" then
-                    if not current_level[part] then current_level[part] = {} end
-                    current_level = current_level[part]
+-- ▼▼▼ 修正: build_fs_hierarchy を Eager/Lazy 両対応にする ▼▼▼
+local function build_fs_hierarchy(root_path, aggregated_files, aggregated_dirs, is_eager)
+    local log = uep_log.get()
+    log.trace("build_fs_hierarchy called for root: %s (Eager: %s)", root_path, tostring(is_eager))
+    
+    local nodes = {}
+    local direct_children_map = {} 
+    local grand_children_exist = {} 
+
+    local root_prefix = root_path:gsub("[/\\]$", "") .. "/"
+    local root_prefix_lower = root_prefix:lower()
+    local root_prefix_len = #root_prefix
+
+    local function process_paths(paths, item_type)
+        for _, raw_full_path in ipairs(paths or {}) do
+            local full_path_lower = raw_full_path:lower()
+            if full_path_lower:sub(1, root_prefix_len) == root_prefix_lower then
+                local relative_path = raw_full_path:sub(root_prefix_len + 1)
+                if relative_path ~= "" then
+                  local separator_pos = relative_path:find("[/\\]")
+                  if separator_pos then
+                      local first_part = relative_path:sub(1, separator_pos - 1)
+                      if not direct_children_map[first_part] then
+                          direct_children_map[first_part] = "directory"
+                      end
+                      grand_children_exist[first_part] = true
+                  else
+                      if not direct_children_map[relative_path] then
+                         direct_children_map[relative_path] = item_type
+                      end
+                  end
                 end
             end
         end
     end
-    local function trie_to_nodes(sub_trie, current_path)
-        local nodes = {}
-        for name, content in pairs(sub_trie) do
-            local new_path = fs.joinpath(current_path, name)
-            local node_type = "file"
-            local hierarchy = nil
-            if dir_set[new_path] or next(content) then
-                node_type = "directory"
-                hierarchy = trie_to_nodes(content, new_path)
-            end
-            table.insert(nodes, {
-                id = new_path, name = name, path = new_path, type = node_type,
-                extra = { is_loaded = false, hierarchy = hierarchy },
-            })
-        end
-        table.sort(nodes, directory_first_sorter)
-        return nodes
-    end
-    return trie_to_nodes(trie, root_path)
-end
 
+    process_paths(aggregated_dirs, "directory")
+    process_paths(aggregated_files, "file")
 
-local function build_final_hierarchy(components_with_files, filtered_modules_meta, game_name, engine_name)
-  -- Pluginsカテゴリを削除し、GameとEngine内にplugins_nodeを追跡するフィールドを追加
-  local root_categories = {
-    Game = {
-      id = "category_Game", name = "Game", type = "directory",
-      extra = { uep_type = "category", hierarchy = {}, is_loaded = false, plugins_node = nil }
-    },
-    Engine = {
-      id = "category_Engine", name = "Engine", type = "directory",
-      extra = { uep_type = "category", hierarchy = {}, is_loaded = false, plugins_node = nil }
-    },
-  }
-
-  for _, component in ipairs(components_with_files) do
-    local component_node = {
-      id = component.root_path, name = component.display_name, path = component.root_path,
-      type = "directory",
-      extra = { uep_type = component.type, hierarchy = {}, is_loaded = false },
-    }
-    
-    local category_base_path = component.root_path
-    if component.type == "Engine" then category_base_path = fs.joinpath(component.root_path, "Engine") end
-    
-    local categories = {
-      Source = { files = component.files.source, dirs = component.dirs.source, root = fs.joinpath(category_base_path, "Source") },
-      Config = { files = component.files.config, dirs = component.dirs.config, root = fs.joinpath(category_base_path, "Config") },
-      Shaders = { files = component.files.shader, dirs = component.dirs.shader, root = fs.joinpath(category_base_path, "Shaders") },
-      Programs = { files = component.files.programs, dirs = component.dirs.programs, root = fs.joinpath(category_base_path, "Programs") },
-    }
-    
-    for name, data in pairs(categories) do
-      local files_to_render = {}
-      local dirs_to_render = {}
-
-      if name == "Source" then
-        local paths_to_include = {}
-        for mod_name, mod_meta in pairs(filtered_modules_meta or {}) do
-          if mod_meta.module_root and mod_meta.module_root:find(component.root_path, 1, true) then
-            table.insert(paths_to_include, mod_meta.module_root)
-          end
-        end
-        if component.type == "Engine" then
-          local programs_root = fs.joinpath(data.root, "Programs")
-          table.insert(paths_to_include, programs_root)
-        end
-
-        local candidate_files = vim.list_extend(vim.deepcopy(data.files or {}), component.files.programs or {})
-        local candidate_dirs = vim.list_extend(vim.deepcopy(data.dirs or {}), component.dirs.programs or {})
-
-        for _, file in ipairs(candidate_files) do
-          for _, include_path in ipairs(paths_to_include) do
-            if file:find(include_path, 1, true) then
-              table.insert(files_to_render, file)
-              break
-            end
-          end
-        end
-        for _, dir in ipairs(candidate_dirs) do
-          for _, include_path in ipairs(paths_to_include) do
-            if dir:find(include_path, 1, true) then
-              table.insert(dirs_to_render, dir)
-              break
-            end
-          end
-        end
-      else
-        files_to_render = data.files or {}
-        dirs_to_render = data.dirs or {}
-      end
-      
-      if #files_to_render > 0 or #dirs_to_render > 0 then
-        local category_node = {
-          id = data.root, name = name, path = data.root, type = "directory",
-          extra = { uep_type = "category_in_component", is_loaded = false, hierarchy = build_fs_hierarchy(data.root, files_to_render, dirs_to_render) },
-        }
-        table.insert(component_node.extra.hierarchy, category_node)
-      end
-    end
-    
-    local root_file_categories = { uproject = "uproject", uplugin = "uplugin" }
-    for cat_name, uep_type in pairs(root_file_categories) do
-      if component.files[cat_name] and #component.files[cat_name] > 0 then
-        for _, file_path in ipairs(component.files[cat_name]) do
-          local file_name = vim.fn.fnamemodify(file_path, ":t")
-          table.insert(component_node.extra.hierarchy, {
-            id = file_path, name = file_name, path = file_path, type = "file",
-            extra = { uep_type = uep_type },
-          })
-        end
-      end
-    end
-
-    if #component_node.extra.hierarchy > 0 then
-      table.sort(component_node.extra.hierarchy, directory_first_sorter)
-
-      if component.type == "Game" then
-        table.insert(root_categories.Game.extra.hierarchy, component_node)
-      elseif component.type == "Engine" then
-        table.insert(root_categories.Engine.extra.hierarchy, component_node)
-      elseif component.type == "Plugin" then
-        local owner_category
-        if component.owner_name == game_name then
-          owner_category = root_categories.Game
-        elseif component.owner_name == engine_name then
-          owner_category = root_categories.Engine
-        end
-
-        if owner_category then
-          if not owner_category.extra.plugins_node then
-            local plugins_node_path = fs.joinpath(owner_category.id, "Plugins")
-            owner_category.extra.plugins_node = {
-              id = plugins_node_path, name = "Plugins", path = plugins_node_path,
-              type = "directory",
-              extra = { uep_type = "category", hierarchy = {}, is_loaded = false },
+    for name, node_type in pairs(direct_children_map) do
+        local child_path = fs.joinpath(root_path, name)
+        local has_children = (node_type == "directory" and grand_children_exist[name])
+        
+        local node_data = {
+            id = child_path,
+            name = name,
+            path = child_path,
+            type = node_type,
+            children = has_children and {} or nil,
+            loaded = not has_children, 
+            extra = {
+                uep_type = "fs",
+                child_paths = { files = aggregated_files, dirs = aggregated_dirs }
             }
-            table.insert(owner_category.extra.hierarchy, owner_category.extra.plugins_node)
-          end
-          table.insert(owner_category.extra.plugins_node.extra.hierarchy, component_node)
+        }
+        
+        -- [!] is_eager または M.expanded_nodes[child_path] の場合に再帰
+        if has_children and (is_eager or M.expanded_nodes[child_path]) then
+            log.trace("Node '%s' is being expanded (Eager: %s, Cached: %s).", name, tostring(is_eager), tostring(M.expanded_nodes[child_path]))
+            node_data.loaded = true
+            -- [!] M.load_children ではなく、自分自身 (build_fs_hierarchy) を Eager で再帰呼び出し
+            node_data.children = build_fs_hierarchy(child_path, aggregated_files, aggregated_dirs, is_eager)
         end
-      end
+        table.insert(nodes, node_data)
     end
-  end
-  
-  local final_nodes = {}
-  for _, category_name in ipairs({ "Game", "Engine" }) do
-    local category_node = root_categories[category_name]
-    if category_node.extra.plugins_node then
-      table.sort(category_node.extra.plugins_node.extra.hierarchy, directory_first_sorter)
+    table.sort(nodes, directory_first_sorter)
+    log.trace("build_fs_hierarchy created %d direct children for: %s", #nodes, root_path)
+    return nodes
+end
+-- ▲▲▲
+
+-- (build_top_level_nodes 関数は変更なし)
+-- (M.expanded_nodes[game_node.id] をチェックするロジックも含む)
+local function build_top_level_nodes(required_components_map, filtered_modules_meta, game_name, engine_name, project_root, engine_root)
+    local top_nodes = {}
+    local log = uep_log.get()
+    
+    local game_node = {
+        id = "category_Game", name = game_name, path = project_root, type = "directory",
+        children = {}, loaded = false,
+        extra = {
+            uep_type = "category",
+            child_context = { type = "GameRoot", root = project_root, engine_root = engine_root, game_name = game_name, engine_name = engine_name, required_components_map = required_components_map, filtered_modules_meta = filtered_modules_meta }
+        }
+    }
+    if M.expanded_nodes[game_node.id] then
+        log.trace("Node 'Game' was previously expanded, loading children recursively.")
+        game_node.loaded = true
+        game_node.children = M.load_children(game_node)
     end
-    if #category_node.extra.hierarchy > 0 then
-      table.sort(category_node.extra.hierarchy, directory_first_sorter)
-      table.insert(final_nodes, category_node)
+    table.insert(top_nodes, game_node)
+
+    local engine_node = {
+        id = "category_Engine", name = "Engine", path = engine_root, type = "directory",
+        children = {}, loaded = false,
+        extra = {
+            uep_type = "category",
+            child_context = { type = "EngineRoot", root = engine_root, game_name = game_name, engine_name = engine_name, required_components_map = required_components_map, filtered_modules_meta = filtered_modules_meta }
+        }
+    }
+    if M.expanded_nodes[engine_node.id] then
+        log.trace("Node 'Engine' was previously expanded, loading children recursively.")
+        engine_node.loaded = true
+        engine_node.children = M.load_children(engine_node)
     end
-  end
-  return final_nodes
+    table.insert(top_nodes, engine_node)
+
+    table.sort(top_nodes, directory_first_sorter)
+    return top_nodes
 end
 
+-- ▼▼▼ 修正: Eagerロードを実行する 'build_module_nodes' ▼▼▼
+local function build_module_nodes(filtered_modules_meta)
+    local log = uep_log.get()
+    local top_nodes = {}
+    
+    for mod_name, mod_meta in pairs(filtered_modules_meta) do
+        -- 1. このモジュールの .module.json をロード (Eager)
+        local mod_cache_data = module_cache.load(mod_meta)
+        local source_files = {}
+        local source_dirs = {}
+        if mod_cache_data then
+            if mod_cache_data.files and mod_cache_data.files.source then
+                vim.list_extend(source_files, mod_cache_data.files.source)
+            end
+            if mod_cache_data.directories and mod_cache_data.directories.source then
+                vim.list_extend(source_dirs, mod_cache_data.directories.source)
+            end
+        end
+
+        -- 2. build_fs_hierarchy を Eager モードで呼び出し、完全なツリーを構築
+        local children_nodes = build_fs_hierarchy(mod_meta.module_root, source_files, source_dirs, true) -- [!] true = Eager
+
+        local node_data = {
+            id = "module_root_" .. mod_name,
+            name = mod_name,
+            path = mod_meta.module_root,
+            type = "directory",
+            children = children_nodes,
+            loaded = true, -- [!] Eagerロードしたので loaded = true
+            extra = {
+                uep_type = "module_root",
+                mod_meta = mod_meta 
+            }
+        }
+        table.insert(top_nodes, node_data)
+    end
+    
+    table.sort(top_nodes, directory_first_sorter)
+    return top_nodes
+end
+-- ▲▲▲
+
 -------------------------------------------------
--- プロバイダー公開関数
+-- プロバイダー公開関数 (修正版)
 -------------------------------------------------
+
+function M.clear_tree_state()
+    local log = uep_log.get()
+    log.debug("Tree Provider: Clearing expanded node state.")
+    M.expanded_nodes = {}
+    return true
+end
+
 function M.get_pending_tree_request(opts)
   local consumer_id = (opts and opts.consumer) or "unknown"
   local handle = unl_context.use("UEP"):key("pending_request:" .. consumer_id)
@@ -217,122 +195,336 @@ function M.get_pending_tree_request(opts)
 end
 
 function M.build_tree_model(opts)
-  local request_payload = M.get_pending_tree_request({ consumer = "neo-tree-uproject" }) or {}
+  local log = uep_log.get()
+  
+  local start_time = os.clock()
+  local request_payload = M.get_pending_tree_request({ consumer = "neo-tree-uproject" }) or {} 
   opts = vim.tbl_deep_extend("force", opts or {}, request_payload)
+  
+  -- ( ... STEP 1-3: .project.json のロード (高速) ... )
   local project_root = opts.project_root
+  local engine_root = opts.engine_root
   if not project_root then return nil end
-
-  -- STEP 1 & 2: 必要なモジュールとコンポーネントを特定
+  log.debug("Tree Provider: Starting build_tree_model (True Lazy)...")
   local project_display_name = vim.fn.fnamemodify(project_root, ":t")
   local project_registry_info = projects_cache.get_project_info(project_display_name)
   if not project_registry_info or not project_registry_info.components then
-    return {{ id = "_message_", name = "Project not found in registry. Run :UEP refresh.", type = "message" }}
+    return {{ id = "_message_", name = "Project not registered.", type = "message" }}
   end
   local all_modules_map, module_to_component_name, all_components_map = {}, {}, {}
+  local game_name, engine_name
   for _, comp_name in ipairs(project_registry_info.components) do
     local p_cache = project_cache.load(comp_name .. ".project.json")
     if p_cache then
       all_components_map[comp_name] = p_cache
-      if p_cache.modules then
-        for mod_name, mod_data in pairs(p_cache.modules) do
-          all_modules_map[mod_name] = mod_data
-          module_to_component_name[mod_name] = comp_name
+      p_cache.uproject_path = (p_cache.type == "Game" and project_registry_info.uproject_path) or nil
+      for _, module_type in ipairs({ "runtime_modules", "developer_modules", "editor_modules", "programs_modules" }) do
+        if p_cache[module_type] then
+          for mod_name, mod_data in pairs(p_cache[module_type]) do
+            all_modules_map[mod_name] = mod_data
+            module_to_component_name[mod_name] = comp_name
+          end
         end
       end
+      if p_cache.type == "Game" then game_name = p_cache.display_name end
+      if p_cache.type == "Engine" then engine_name = p_cache.display_name end
     end
   end
-  if not next(all_modules_map) then return nil end
+  if not next(all_modules_map) then return {{ id = "_message_", name = "No modules in cache.", type = "message" }} end
+  if not game_name or not engine_name then return {{ id = "_message_", name = "Game/Engine component missing.", type = "message" }} end
+  local step3_load_time = os.clock()
+  log.debug("Tree Provider: STEP 1-3 (Load Cache) took %.4f seconds", step3_load_time - start_time)
   
-  -- プラグインの所属判定に使うため、GameとEngineのユニーク名を取得する
-  local game_name, engine_name
-  for name, comp in pairs(all_components_map) do
-      if comp.type == "Game" then game_name = name end
-      if comp.type == "Engine" then engine_name = name end
-  end
-  if not game_name or not engine_name then
-      return {{ id = "_message_", name = "Game/Engine component not found in cache.", type = "message" }}
-  end
-
+  -- ▼▼▼ 修正: STEP 4 のロジックを修正 ▼▼▼
   local target_module_names = {}
+  local requested_scope = (opts.scope and opts.scope:lower()) or "runtime"
+  local deps_flag = opts.deps_flag or "--deep-deps"
+  log.info("Tree Provider: Filtering modules for scope='%s', deps_flag='%s'", requested_scope, deps_flag)
+  
+  local seed_modules = {}
   if opts.target_module then
-    target_module_names[opts.target_module] = true
-    local start_module = all_modules_map[opts.target_module]
-    if start_module then
-      local deps_key = opts.all_deps and "deep_dependencies" or "shallow_dependencies"
-      for _, dep_name in ipairs(start_module[deps_key] or {}) do
-        target_module_names[dep_name] = true
-      end
+    log.info("Tree Provider: Building tree for single target module: %s", opts.target_module)
+    if all_modules_map[opts.target_module] then
+        seed_modules[opts.target_module] = true
+    else
+        log.warn("Tree Provider: Target module '%s' not found in map.", opts.target_module)
+        return {{ id = "_message_", name = "Module not found: " .. opts.target_module, type = "message" }}
     end
   else
-    for name, meta in pairs(all_modules_map) do
-      if meta.category == "Game" then
-        target_module_names[name] = true
-        local deps_key = opts.all_deps and "deep_dependencies" or "shallow_dependencies"
-        for _, dep_name in ipairs(meta[deps_key] or {}) do
-          target_module_names[dep_name] = true
+    log.info("Tree Provider: Building tree for scope: %s", requested_scope)
+    if requested_scope == "game" then for n, m in pairs(all_modules_map) do if m.owner_name == game_name then seed_modules[n] = true end end
+    elseif requested_scope == "engine" then for n, m in pairs(all_modules_map) do if m.owner_name == engine_name then seed_modules[n] = true end end
+    elseif requested_scope == "runtime" then for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
+    elseif requested_scope == "developer" then for n, m in pairs(all_modules_map) do if m.type == "Runtime" or m.type == "Developer" then seed_modules[n] = true end end
+    elseif requested_scope == "editor" then for n, m in pairs(all_modules_map) do if m.type and m.type ~= "Program" then local ct = m.type:match("^%s*(.-)%s*$"):lower(); if ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly" then seed_modules[n] = true end end end
+    elseif requested_scope == "full" then for n,_ in pairs(all_modules_map) do seed_modules[n] = true end
+    else requested_scope = "runtime"; for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
+  end
+  end
+  
+  -- [!] :UEP module_tree の場合は deps_flag を無視する
+  if deps_flag == "--no-deps" or opts.target_module then
+    target_module_names = seed_modules
+  else
+    local deps_key = (deps_flag == "--deep-deps") and "deep_dependencies" or "shallow_dependencies"
+    local modules_to_process = vim.tbl_keys(seed_modules)
+    local processed = {}
+    while #modules_to_process > 0 do
+        local current_name = table.remove(modules_to_process)
+        if not processed[current_name] then 
+            processed[current_name] = true
+            target_module_names[current_name] = true
+            local current_meta = all_modules_map[current_name]
+            if current_meta and current_meta[deps_key] then
+                for _, dep_name in ipairs(current_meta[deps_key]) do 
+                    if not processed[dep_name] then 
+                        local dep_meta = all_modules_map[dep_name]
+                        if dep_meta then
+                            -- [!] :UEP tree の場合はスコープでフィルタリング
+                            local should_add = false
+                            if requested_scope == "game" then should_add = (dep_meta.owner_name == game_name) elseif requested_scope == "engine" then should_add = (dep_meta.owner_name == engine_name) elseif requested_scope == "runtime" then should_add = (dep_meta.type == "Runtime") elseif requested_scope == "developer" then should_add = (dep_meta.type == "Runtime" or dep_meta.type == "Developer") elseif requested_scope == "editor" then if dep_meta.type and dep_meta.type ~= "Program" then local ct = dep_meta.type:match("^%s*(.-)%s*$"):lower(); should_add = ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly" end end
+                            
+                            if should_add then table.insert(modules_to_process, dep_name) end
+                        end 
+                    end 
+                end
+            end
         end
-      end
     end
+  end
+  -- ▲▲▲ 修正完了 ▲▲▲
+      
+  local filtered_modules_meta = {}; for name, _ in pairs(target_module_names) do if all_modules_map[name] then filtered_modules_meta[name] = all_modules_map[name] end end
+  local step4_filter_time = os.clock(); log.debug("Tree Provider: STEP 4 (Filtering) took %.4f seconds (%d modules)", step4_filter_time - step3_load_time, vim.tbl_count(filtered_modules_meta))
+
+  -- ( ... STEP 5: 必要なコンポーネントを特定 (高速) ... )
+  local required_components_map = {}; for mod_name, _ in pairs(filtered_modules_meta) do local comp_name = module_to_component_name[mod_name]; if comp_name and not required_components_map[comp_name] then required_components_map[comp_name] = all_components_map[comp_name] end end
+  local step5_reqcomp_time = os.clock(); log.debug("Tree Provider: STEP 5 (Required Components) took %.4f seconds (%d components)", step5_reqcomp_time - step4_filter_time, vim.tbl_count(required_components_map))
+
+  -- [!] STEP 6 (.module.json の全読み込み) は削除
+
+  -- ▼▼▼ 修正: STEP 7 を分岐させる ▼▼▼
+  local hierarchy_build_start_time = os.clock()
+  local top_level_nodes
+  
+  if opts.target_module then
+      -- :UEP module_tree の場合
+      log.debug("Tree Provider: Building module-only tree (Eagerly).")
+      top_level_nodes = build_module_nodes(filtered_modules_meta)
+  else
+      -- :UEP tree の場合
+      log.debug("Tree Provider: Building standard Game/Engine tree (Lazily).")
+      top_level_nodes = build_top_level_nodes(required_components_map, filtered_modules_meta, game_name, engine_name, project_root, engine_root)
   end
   
-  local filtered_modules_meta = {}
-  for name, _ in pairs(target_module_names) do
-    if all_modules_map[name] then
-      filtered_modules_meta[name] = all_modules_map[name]
-    end
+  local step7_hierarchy_time = os.clock()
+  log.debug("Tree Provider: STEP 7 (Tree Build) took %.4f seconds", step7_hierarchy_time - hierarchy_build_start_time)
+  -- ▲▲▲ 修正完了 ▲▲▲
+
+  if not next(top_level_nodes) then
+    return {{ id = "_message_", name = "No components/files to display for current scope/deps.", type = "message" }}
   end
 
-  -- STEP 3: 表示対象となるコンポーネントを特定
-  local required_components_map = {}
-  for mod_name, _ in pairs(filtered_modules_meta) do
-    local comp_name = module_to_component_name[mod_name]
-    if comp_name and not required_components_map[comp_name] then
-      required_components_map[comp_name] = all_components_map[comp_name]
-    end
-  end
-
-  -- STEP 4: 各コンポーネントに属するファイルを集計
-  local components_with_files = {}
-  for comp_name, component_meta in pairs(required_components_map) do
-    local files_cache = files_cache_manager.load_component_cache(component_meta)
-    if files_cache then
-      component_meta.display_name = component_meta.display_name or comp_name
-      component_meta.files = files_cache.files or {}
-      component_meta.dirs = files_cache.directories or {}
-      
-      for _, cat in ipairs({ "source", "config", "shader", "programs", "content", "other" }) do
-        component_meta.files[cat] = component_meta.files[cat] or {}
-        component_meta.dirs[cat] = component_meta.dirs[cat] or {}
-      end
-      
-      table.insert(components_with_files, component_meta)
-    end
-  end
-
-  -- STEP 5: 準備したデータを使って、新しいコンポーネント中心のツリー構造を構築
-  local hierarchy = build_final_hierarchy(components_with_files, filtered_modules_meta, game_name, engine_name)
- 
-  if not next(hierarchy) then
-    return {{ id = "_message_", name = "No components to display with current filters.", type = "message" }}
-  end
-  
-  -- STEP 6: 最終的なルートノードを返す
+  -- STEP 8: ルートノードを返す (トップレベルノードのみを含む)
+  local end_time = os.clock()
+  log.info("Tree Provider: Total execution time: %.4f seconds", end_time - start_time)
   return {{
     id = "logical_root",
-    name = project_registry_info.display_name or "Logical View", -- プロジェクト名をルートに
-    path = project_root,
-    type = "directory",
-    extra = { uep_type = "project_root", hierarchy = hierarchy, is_loaded = false },
+    name = project_display_name or "Logical View",
+    path = project_root, type = "directory",
+    loaded = true,
+    children = top_level_nodes, 
+    extra = { uep_type = "project_root" },
   }}
 end
 
+
+---
+-- [修正] M.load_children (uep_type == "module_root" を削除)
+function M.load_children(node)
+    if node and node.id then
+        M.expanded_nodes[node.id] = true
+    end
+    
+    local log = uep_log.get() 
+    log.debug("Tree Provider: load_children called for node: %s (Type: %s)", node.name, node.extra and node.extra.uep_type or "fs")
+    local start_time = os.clock()
+
+    if not node or not node.extra then
+        log.warn("load_children: Node extra data missing.")
+        return {}
+    end
+
+    local children = {}
+    local uep_type = node.extra.uep_type
+    
+    if uep_type == "category" or uep_type == "Game" or uep_type == "Engine" or uep_type == "Plugin" then
+        -- 1. "Game", "Engine" カテゴリが展開された場合
+        local context = node.extra.child_context
+        if context then
+            -- A. "Game" または "Engine" カテゴリの場合
+            local required_components_map = context.required_components_map
+            local filtered_modules_meta = context.filtered_modules_meta
+            local owner_name_to_match = (context.type == "GameRoot") and context.game_name or context.engine_name
+            local child_files = {} 
+            local child_dirs = {}
+            
+            -- .module.json の読み込みと疑似モジュールのロードをここで行う
+            local pseudo_module_files = {}
+            if context.type == "GameRoot" then
+              pseudo_module_files._GameShaders = { root=fs.joinpath(context.root, "Shaders"), files={}, dirs={} }
+              pseudo_module_files._GameConfig  = { root=fs.joinpath(context.root, "Config"), files={}, dirs={} }
+            else -- EngineRoot
+              pseudo_module_files._EngineShaders = { root=fs.joinpath(context.root, "Engine", "Shaders"), files={}, dirs={} }
+              pseudo_module_files._EngineConfig  = { root=fs.joinpath(context.root, "Engine", "Config"), files={}, dirs={} }
+            end
+            
+            -- 疑似モジュールのキャッシュをロード
+            for pseudo_name, data in pairs(pseudo_module_files) do
+                local pseudo_meta = { name = pseudo_name, module_root = data.root }; local pseudo_cache = module_cache.load(pseudo_meta)
+                if pseudo_cache then
+                    if pseudo_cache.files then for cat, files in pairs(pseudo_cache.files) do if files and #files > 0 then vim.list_extend(data.files, files) end end end
+                    if pseudo_cache.directories then for cat, dirs in pairs(pseudo_cache.directories) do if dirs and #dirs > 0 then vim.list_extend(data.dirs, dirs) end end end
+                end
+                vim.list_extend(child_files, data.files or {})
+                vim.list_extend(child_dirs, data.dirs or {})
+            end
+            
+            -- 実際のコンポーネント処理 (重い .module.json の読み込み)
+            for comp_name, component in pairs(required_components_map) do
+                if component.display_name == owner_name_to_match then
+                    local root_file = component.uproject_path or component.uplugin_path
+                    if root_file then table.insert(child_files, root_file) end
+
+                    local relevant_modules = {}
+                    for _, mtype in ipairs({"runtime_modules", "developer_modules", "editor_modules", "programs_modules"}) do 
+                      if component[mtype] then 
+                        for mod_name, mod_meta in pairs(component[mtype]) do 
+                          if filtered_modules_meta[mod_name] then 
+                            relevant_modules[mod_name] = mod_meta 
+                          end 
+                        end 
+                      end 
+                    end
+                    
+                    for mod_name, mod_meta in pairs(relevant_modules) do
+                        local mod_cache_data = module_cache.load(mod_meta)
+                        if mod_cache_data then
+                            if mod_cache_data.files then 
+                              for cat, files in pairs(mod_cache_data.files) do 
+                                if files and #files > 0 and cat == "source" then 
+                                  vim.list_extend(child_files, files) 
+                                end 
+                              end 
+                            end
+                            if mod_cache_data.directories then 
+                              for cat, dirs in pairs(mod_cache_data.directories) do 
+                                if dirs and #dirs > 0 and cat == "source" then 
+                                  vim.list_extend(child_dirs, dirs) 
+                                end 
+                              end 
+                            end
+                        end
+                    end
+                end
+            end
+            children = build_fs_hierarchy(node.path, child_files, child_dirs, false) -- [!] Eager = false
+            
+        elseif node.extra.child_paths then
+             -- B. "Plugins" ノード (または古い "MyProject" ノード) が展開された場合
+             children = build_fs_hierarchy(node.path, node.extra.child_paths.files, node.extra.child_paths.dirs, false) -- [!] Eager = false
+        end
+        
+    -- ▼▼▼ 修正: "module_root" タイプは Eagerロードされたので、ここでは何もしない ▼▼▼
+    -- elseif uep_type == "module_root" then
+    -- ▲▲▲
+            
+    elseif uep_type == "fs" then
+        -- 2. "fs" (ファイルシステム上のディレクトリ) が展開された場合
+        if node.extra.child_paths then
+             -- [!] M.expanded_nodes をチェックするため、M.load_children を再帰的に呼ぶ
+             
+             local aggregated_files = node.extra.child_paths.files
+             local aggregated_dirs = node.extra.child_paths.dirs
+             local root_path = node.path
+             
+             local direct_children_map = {} 
+             local grand_children_exist = {} 
+
+             local root_prefix = root_path:gsub("[/\\]$", "") .. "/"
+             local root_prefix_lower = root_prefix:lower()
+             local root_prefix_len = #root_prefix
+
+             local function process_paths(paths, item_type)
+                 for _, raw_full_path in ipairs(paths or {}) do
+                     local full_path_lower = raw_full_path:lower()
+                     if full_path_lower:sub(1, root_prefix_len) == root_prefix_lower then
+                         local relative_path = raw_full_path:sub(root_prefix_len + 1)
+                         if relative_path ~= "" then
+                           local separator_pos = relative_path:find("[/\\]")
+                           if separator_pos then
+                               local first_part = relative_path:sub(1, separator_pos - 1)
+                               if not direct_children_map[first_part] then
+                                   direct_children_map[first_part] = "directory"
+                               end
+                               grand_children_exist[first_part] = true
+                           else
+                               if not direct_children_map[relative_path] then
+                                  direct_children_map[relative_path] = item_type
+                               end
+                           end
+                         end
+                     end
+                 end
+             end
+             process_paths(aggregated_dirs, "directory")
+             process_paths(aggregated_files, "file")
+             
+             for name, node_type in pairs(direct_children_map) do
+                 local child_path = fs.joinpath(root_path, name)
+                 local has_children = (node_type == "directory" and grand_children_exist[name])
+                 
+                 local node_data = {
+                     id = child_path,
+                     name = name,
+                     path = child_path,
+                     type = node_type,
+                     children = has_children and {} or nil,
+                     loaded = not has_children, 
+                     extra = {
+                         uep_type = "fs",
+                         child_paths = { files = aggregated_files, dirs = aggregated_dirs }
+                     }
+                 }
+                 if has_children and M.expanded_nodes[child_path] then
+                     log.trace("Node '%s' was previously expanded, loading children recursively.", name)
+                     node_data.loaded = true
+                     node_data.children = M.load_children(node_data)
+                 end
+                 table.insert(children, node_data)
+             end
+        end
+    end
+
+    table.sort(children, directory_first_sorter)
+    local end_time = os.clock()
+    log.debug("Tree Provider: load_children for '%s' took %.4f seconds, found %d children", node.name, end_time - start_time, #children)
+    return children
+end
+
+---
+-- メインのリクエストハンドラ ( capability に応じて振り分ける)
 function M.request(opts)
   if opts and opts.capability == "uep.get_pending_tree_request" then
     return M.get_pending_tree_request(opts)
   elseif opts and opts.capability == "uep.build_tree_model" then
     return M.build_tree_model(opts)
+  elseif opts and opts.capability == "uep.load_tree_children" and opts.node then
+    return M.load_children(opts.node)
+  elseif opts and opts.capability == "uep.clear_tree_state" then
+    return M.clear_tree_state()
   else
-    uep_log.warn("Unknown request to UEP tree provider: %s", vim.inspect(opts))
+    uep_log.get().warn("Unknown request to UEP tree provider: %s", vim.inspect(opts))
     return nil
   end
 end

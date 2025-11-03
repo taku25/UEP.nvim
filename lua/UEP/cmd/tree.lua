@@ -1,4 +1,4 @@
--- lua/UEP/cmd/tree.lua (プロバイダーアーキテクチャ版)
+-- lua/UEP/cmd/tree.lua (新スコープ完全対応版)
 
 local uep_log = require("UEP.logger").get()
 local unl_finder = require("UNL.finder")
@@ -10,47 +10,63 @@ local uep_config = require("UEP.config")
 local M = {}
 
 function M.execute(opts)
+  opts = opts or {}
   local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
-  if not project_root then
-    return uep_log.error("Not in an Unreal Engine project.")
-  end
-  
+  if not project_root then return uep_log.error("Not in an Unreal Engine project.") end
+
   local proj_info = unl_finder.project.find_project(project_root)
   local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject,
-    {
-      engine_override_path = uep_config.get().engine_path,
-    })
+    { engine_override_path = uep_config.get().engine_path })
 
-  -- 1. neo-treeに渡したい"リクエスト情報"を作成する
-  --    これには、具体的なファイルリストなどは含まれない。
-  --    あくまで「どのプロジェクトを、どのオプションで表示したいか」という情報だけ。
+  -- ▼▼▼ 修正箇所: 新しいスコープ引数をパース ▼▼▼
+  local requested_scope = "runtime" -- デフォルトは runtime
+  local valid_scopes = { game=true, engine=true, runtime=true, developer=true, editor=true, full=true }
+
+  if opts.scope then
+      local scope_lower = opts.scope:lower()
+      if valid_scopes[scope_lower] then
+          requested_scope = scope_lower
+      else
+          uep_log.warn("Invalid scope argument '%s'. Defaulting to 'runtime'. Valid scopes are: Game, Engine, Runtime, Developer, Editor, Full.", opts.scope)
+          -- requested_scope はデフォルトの "runtime" のまま
+      end
+  end
+
+  -- 新しい deps フラグのパース (デフォルトは --deep-deps)
+  local requested_deps = "--deep-deps"
+  local valid_deps = { ["--deep-deps"]=true, ["--shallow-deps"]=true, ["--no-deps"]=true }
+  if opts.deps_flag then
+      local deps_lower = opts.deps_flag:lower()
+      if valid_deps[deps_lower] then
+          requested_deps = deps_lower
+      else
+          uep_log.warn("Invalid deps flag '%s'. Defaulting to '--deep-deps'. Valid flags are: --deep-deps, --shallow-deps, --no-deps.", opts.deps_flag)
+      end
+  end
+
+
   local payload = {
     project_root = project_root,
     engine_root = engine_root,
-    all_deps = (opts.deps_flag == "--all-deps"), 
-    target_module = nil, -- :UEP tree コマンドなので、特定のモジュールは指定しない
+    all_deps = (requested_deps == "--deep-deps"), -- all_deps は deep と同義とするか？ provider側で調整
+    target_module = nil,
+    scope = requested_scope,     -- ★ 新しいスコープ名
+    deps_flag = requested_deps, -- ★ 新しい deps フラグ
   }
+  -- ▲▲▲ 修正ここまで ▲▲▲
 
-
-  -- 2. このリクエスト情報を UNL.context に保存する
-  --    キー名 "pending_request:neo-tree-uproject" は、
-  --    neo-tree側がプロバイダーを呼び出すときに使う `consumer` 名と一致させる
-  unl_context.use("UEP"):key("pending_request:neo-tree-uproject"):set("payload", payload)
-  uep_log.info("A request to view the uproject tree has been stored for neo-tree.")
+  unl_context.use("UEP"):key("pending_request:" .. "neo-tree-uproject"):set("payload", payload)
+  uep_log.info("Request stored for neo-tree. Scope: %s, Deps: %s", requested_scope, requested_deps)
 
   unl_events.publish(unl_event_types.ON_REQUEST_UPROJECT_TREE_VIEW, payload )
 
-  -- 3. neo-treeを開くか、フォーカスを当てる
-  --    これにより、neo-treeのnavigate関数がトリガーされ、
-  --    プロバイダー経由で上記のリクエスト情報が取得される
   local ok, neo_tree_cmd = pcall(require, "neo-tree.command")
   if ok then
-    -- neo_tree_cmd.execute({ source = "uproject", action = "focus" })
     neo_tree_cmd.execute({ source = "uproject", action = "focus" })
   else
-    uep_log.warn("neo-tree.command not available. Please open neo-tree manually.")
+    uep_log.warn("neo-tree command not found.")
   end
-    
+
 end
 
 return M

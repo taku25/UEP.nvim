@@ -2,7 +2,8 @@
 
 -- 必要なモジュールをすべてここでrequireする
 local core_utils = require("UEP.cmd.core.utils")
-local files_cache_manager = require("UEP.cache.files")
+-- local files_cache_manager = require("UEP.cache.files") -- [!] 削除
+local module_cache = require("UEP.cache.module") -- [!] 追加
 local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
 local uep_log = require("UEP.logger")
@@ -114,14 +115,18 @@ local function find_and_open(partial_path, from_path)
     log.info("Not found in context-aware search. Falling back to global search...")
     local final_candidates = {}
     local seen = {}
-    for _, component in pairs(maps.all_components_map) do
-      local cache = files_cache_manager.load_component_cache(component)
+    
+    -- [!] all_components_map ではなく all_modules_map をイテレート
+    for mod_name, mod_meta in pairs(maps.all_modules_map) do
+      -- [!] module_cache をロード
+      local cache = module_cache.load(mod_meta)
       if cache and cache.files then
-        for _, file_list in pairs(cache.files) do
+        for category, file_list in pairs(cache.files) do
           for _, abs_path in ipairs(file_list) do
             if not seen[abs_path] and abs_path:gsub("\\", "/"):find(partial_path, 1, true) then
               table.insert(final_candidates, {
-                display = core_utils.create_relative_path(abs_path, component.root_path),
+                -- [!] 相対パスの基準を component.root_path から mod_meta.module_root に変更
+                display = core_utils.create_relative_path(abs_path, mod_meta.module_root),
                 value = abs_path,
                 filename = abs_path,
               })

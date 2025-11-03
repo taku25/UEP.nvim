@@ -1,45 +1,47 @@
--- lua/UnrealDev/api.lua
+-- lua/UEP/cmd/goto_definition.lua (モジュールキャッシュ対応版)
 
 -- 必要なモジュールをrequire
 local core_utils = require("UEP.cmd.core.utils")
-local files_cache_manager = require("UEP.cache.files")
+-- local files_cache_manager = require("UEP.cache.files") -- [!] 削除
+local module_cache = require("UEP.cache.module") -- [!] 追加
 local uep_log = require("UEP.logger")
-local derived_core = require("UEP.cmd.core.derived") -- [!] bang対応で追加
-local unl_picker = require("UNL.backend.picker")     -- [!] bang対応で追加
-local uep_config = require("UEP.config")         -- [!] bang対応で追加
+local derived_core = require("UEP.cmd.core.derived")
+local unl_picker = require("UNL.backend.picker")
+local uep_config = require("UEP.config")
 
 local M = {} -- あなたのAPIモジュール
 
 ----------------------------------------------------------------------
--- ヘルパー関数 (変更なし)
+-- ヘルパー関数 (修正)
 ----------------------------------------------------------------------
 
 ---
--- 特定のコンポーネントのキャッシュ内からシンボルを探すヘルパー
--- @param component_meta table UEPのコンポーネントメタデータ
+-- 特定のモジュールのキャッシュ内からシンボルを探すヘルパー
+-- @param module_meta table UEPのモジュールメタデータ
 -- @param symbol_name string 探したいクラス名
 -- @return string|nil 見つかったファイルのフルパス
-local function find_symbol_in_component_cache(component_meta, symbol_name)
-  if not component_meta then return nil end
-  local files_cache = files_cache_manager.load_component_cache(component_meta)
-  if files_cache and files_cache.header_details then
-    for file_path, details in pairs(files_cache.header_details) do
+local function find_symbol_in_module_cache(module_meta, symbol_name)
+  if not module_meta then return nil end
+  -- [!] モジュールキャッシュをロード
+  local mod_cache = module_cache.load(module_meta)
+  
+  if mod_cache and mod_cache.header_details then
+    for file_path, details in pairs(mod_cache.header_details) do
       if details.classes then
         for _, class_info in ipairs(details.classes) do
           if class_info.class_name == symbol_name then
-            return file_path
+            return file_path -- 見つかった
           end
         end
       end
     end
   end
-  return nil
+  return nil -- 見つからなかった
 end
 
 ---
 -- ファイルを開き、シンボルの定義行にジャンプするヘルパー (先行宣言スキップ・改訂版)
--- @param target_file_path string 開くファイル
--- @param symbol_name string ジャンプ先のシンボル名
+-- (この関数は変更なし)
 local function open_file_and_jump(target_file_path, symbol_name)
   local log = uep_log.get()
   log.info("Found definition in: %s", target_file_path)
@@ -81,40 +83,31 @@ local function open_file_and_jump(target_file_path, symbol_name)
 end
 
 ----------------------------------------------------------------------
--- メインAPI関数 (Bang対応版)
+-- メインAPI関数 (Bang対応・モジュールキャッシュ検索)
 ----------------------------------------------------------------------
 
----
--- カーソル下のシンボル、またはPickerから選択したクラスの
--- 「本当の定義ファイル」を検索してジャンプします。
--- @param opts table | nil
---   opts.has_bang (boolean): trueの場合、クラス選択ピッカーを起動する
---
 function M.execute(opts)
   opts = opts or {}
   local log = uep_log.get()
 
   -- === PATH 1: Bang (!) が指定された場合 ===
+  -- (この部分は 'derived_core' に依存しており、既にリファクタ済みなので変更なし)
   if opts.has_bang then
     log.info("Bang detected! Forcing class picker for definition jump.")
     
-    -- (UEP.cmd.core.derived)
     derived_core.get_all_classes({},function(all_classes_data)
       if not all_classes_data or #all_classes_data == 0 then
         return log.error("No classes found. Please run :UDEV refresh.")
       end
 
-      -- (UNL.backend.picker)
       unl_picker.pick({
         kind = "uep_select_class_to_jump",
         title = "Select Class to Jump to Definition",
-        items = all_classes_data, -- get_all_classesが返すリストはPickerに最適化済み
+        items = all_classes_data,
         conf = uep_config.get(),
         preview_enabled = true,
         on_submit = function(selected_class)
-          -- selected_class は { class_name = "...", file_path = "..." } というテーブル
           if selected_class and selected_class.file_path and selected_class.class_name then
-            -- 選択されたクラスの定義にジャンプ
             open_file_and_jump(selected_class.file_path, selected_class.class_name)
           end
         end,
@@ -130,7 +123,6 @@ function M.execute(opts)
   local current_buf_path = vim.api.nvim_buf_get_name(0)
   log.info("Attempting to find true definition for: '%s' (from %s)", symbol_name, current_buf_path)
 
-  -- (UEP.cmd.core.utils)
   core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
     if not ok then
       return log.error("Could not get project maps: %s. (Run :UDEV refresh)", tostring(maps))
@@ -143,30 +135,26 @@ function M.execute(opts)
       return
     end
 
-    local searched_components = {}
+    -- [!] 検索ロジックをモジュールベースに変更
+    local searched_modules = {}
 
-    -- 【検索順序 1】現在のモジュールが属するコンポーネント
-    local current_comp_name = maps.module_to_component_name[current_module.name]
-    local current_component = maps.all_components_map[current_comp_name]
-    if current_component then
-      searched_components[current_comp_name] = true
-      local found_path = find_symbol_in_component_cache(current_component, symbol_name)
-      if found_path then
-        log.info("Found in current module's component: %s", current_comp_name)
-        return open_file_and_jump(found_path, symbol_name)
-      end
+    -- 【検索順序 1】現在のモジュール
+    searched_modules[current_module.name] = true
+    local found_path = find_symbol_in_module_cache(current_module, symbol_name)
+    if found_path then
+      log.info("Found in current module: %s", current_module.name)
+      return open_file_and_jump(found_path, symbol_name)
     end
 
     -- 【検索順序 2】浅い依存関係 (Shallow Dependencies)
     log.debug("Searching shallow dependencies...")
     for _, mod_name in ipairs(current_module.shallow_dependencies or {}) do
-      local comp_name = maps.module_to_component_name[mod_name]
-      if comp_name and not searched_components[comp_name] then
-        searched_components[comp_name] = true
-        local component = maps.all_components_map[comp_name]
-        local found_path = find_symbol_in_component_cache(component, symbol_name)
+      if not searched_modules[mod_name] then
+        searched_modules[mod_name] = true
+        local dep_module = maps.all_modules_map[mod_name]
+        found_path = find_symbol_in_module_cache(dep_module, symbol_name)
         if found_path then
-          log.info("Found in shallow dependency component: %s (Module: %s)", comp_name, mod_name)
+          log.info("Found in shallow dependency module: %s", mod_name)
           return open_file_and_jump(found_path, symbol_name)
         end
       end
@@ -175,13 +163,12 @@ function M.execute(opts)
     -- 【検索順序 3】深い依存関係 (Deep Dependencies)
     log.debug("Searching deep dependencies...")
     for _, mod_name in ipairs(current_module.deep_dependencies or {}) do
-      local comp_name = maps.module_to_component_name[mod_name]
-      if comp_name and not searched_components[comp_name] then
-        searched_components[comp_name] = true
-        local component = maps.all_components_map[comp_name]
-        local found_path = find_symbol_in_component_cache(component, symbol_name)
+      if not searched_modules[mod_name] then
+        searched_modules[mod_name] = true
+        local dep_module = maps.all_modules_map[mod_name]
+        found_path = find_symbol_in_module_cache(dep_module, symbol_name)
         if found_path then
-          log.info("Found in deep dependency component: %s (Module: %s)", comp_name, mod_name)
+          log.info("Found in deep dependency module: %s", mod_name)
           return open_file_and_jump(found_path, symbol_name)
         end
       end

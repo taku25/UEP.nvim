@@ -1,30 +1,26 @@
--- plugin/UEP.lua (最終修正版)
+-- plugin/UEP.lua (括弧修正版)
 
 local command_builder = require("UNL.command.builder")
-local uep_api = require("UEP.api") -- apiのrequireは必要
+local uep_api = require("UEP.api")
 
--- ★★★ 変更点: 初期化コードを完全に削除 ★★★
--- 以下の2行を削除します:
--- local unl_log = require("UNL.logging").get() or require("UNL.logging").setup({})
-
-local command_spec = {
+local command_spec = { -- line 10: 開始の '{'
   plugin_name = "UEP",
   cmd_name = "UEP",
-  version = "nvim-0.11.3",
-  -- ★★★ 変更点: logger = unl_log の行を削除 ★★★
+  version = "nvim-0.11.3", -- 必要に応じて更新
   desc = "UEP for Unreal Engine main command",
   dependencies = {
     { name = "fd", check = function() return vim.fn.executable("fd") == 1 end, msg = "Please install fd." },
+    { name = "rg", check = function() return vim.fn.executable("rg") == 1 end, msg = "Please install ripgrep (rg) for grep commands." },
   },
 
   subcommands = {
     refresh = {
-      handler = uep_api.refresh, -- uep_api を使うように修正
+      handler = uep_api.refresh,
       bang = true,
-      desc = ":UEP refresh [Game|Engine]",
+      desc = ":UEP refresh [Scope] [--force]", -- Scope は Game|Engine|Full
       args = {
-        { name = "type", required = false },
-        { name = "force", required = false }, -- 例: --force
+        { name = "scope", required = false },
+        { name = "force_flag", required = false }, -- ★ force -> force_flag に変更 (UNL builder 仕様)
       },
     },
     reloadconfig = {
@@ -45,10 +41,10 @@ local command_spec = {
     files = {
       handler = uep_api.files,
       bang = true,
-      desc = ":UEP files [Category] [--no-deps]",
+      desc = ":UEP files [Scope] [DepsFlag]",
       args = {
-        { name = "category", required = false },
-        { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
+        { name = "scope", required = false },
+        { name = "deps_flag", required = false },
       },
     },
     module_files = {
@@ -57,48 +53,49 @@ local command_spec = {
       desc = "Find all files for a specific module.",
       args = {
         { name = "module_name", required = false },
-      { name = "dummy_arg", required = false },
+        { name = "dummy_arg", required = false }, -- 必要なら削除
       },
     },
     tree = {
       handler = uep_api.tree,
-      desc = "Open a project-aware filer (requires neo-tree or nvim-tree)",
+      desc = "Open project filer. Scope: Game|Engine|Runtime(default)|Developer|Editor|Full.",
       args = {
-        { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
+        { name = "scope", required = false },
+        { name = "deps_flag", required = false },
       },
     },
     module_tree = {
       handler = uep_api.module_tree,
-      desc = "Open a project-aware filer (requires neo-tree or nvim-tree)",
+      desc = "Open filer focused on a module and its dependencies.",
       args = {
         { name = "module_name", required = false },
-        { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
+        { name = "deps_flag", required = false },
       },
     },
     grep = {
       handler = uep_api.grep,
       bang = true,
-      desc = ":UEP grep [game|engine]",
+      desc = "Live grep files. Scope: Game|Engine|Runtime(default)|Developer|Editor|Full.",
       args = {
-        { name = "category", required = false },
+        { name = "scope", required = false },
       },
     },
     module_grep = {
       handler = uep_api.module_grep,
       bang = true,
-      desc = ":UEP grep_module {module_name}",
+      desc = "Live grep within a specific module.",
       args = {
         { name = "module_name", required = false },
       },
     },
-    program_files = {
-      handler = uep_api.program_files,
-      desc = "Find all files in Programs directories.",
-      args = {},
-    },
     program_grep = {
       handler = uep_api.program_grep,
-      desc = "Live grep within all Programs directories.",
+      desc = "Live grep within all Program modules.",
+      args = {},
+    },
+    program_files = {
+      handler = uep_api.program_files,
+      desc = "Find all files in Program modules.",
       args = {},
     },
     find_derived = {
@@ -128,7 +125,7 @@ local command_spec = {
       handler = uep_api.purge,
       desc = "Purge the file cache for a specified component (Game/Engine/Plugin).",
       args = {
-        { name = "component_name", required = false },
+        { name = "component_name", required = false }, -- ★ 注意: これはコンポーネントキャッシュ用。モジュールキャッシュ移行後は削除 or 変更が必要
       },
     },
     cleanup = {
@@ -153,25 +150,26 @@ local command_spec = {
       },
     },
     classes = {
-      handler = uep_api.classes, -- 直接 execute 関数を指定
+      handler = uep_api.classes,
       bang = true,
-      desc = "Find and jump to a class definition by name (shows picker if no name).",
+      desc = "Find and jump to a class definition. Scope/Deps flags available.",
       args = {
-        { name = "category", required = false },
-        { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
+        { name = "scope", required = false },
+        { name = "deps_flag", required = false },
       },
     },
     structs = {
-      handler = uep_api.structs, -- 直接 execute 関数を指定
+      handler = uep_api.structs,
       bang = true,
-      desc = "Find and jump to a struct definition by name (shows picker if no name).",
+      desc = "Find and jump to a struct definition. Scope/Deps flags available.",
       args = {
-        { name = "category", required = false },
-        { name = "deps_flag", required = false }, -- 例: --no-deps or --all-deps
+        { name = "scope", required = false },
+        { name = "deps_flag", required = false },
       },
     },
-  },
-}
+  }, -- <<< subcommands テーブルを閉じる '}'
 
--- command_spec テーブルをビルダーに渡してコマンドを作成
+} -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)
+
+-- コマンド登録
 command_builder.create(command_spec)
