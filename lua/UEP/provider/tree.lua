@@ -1,5 +1,5 @@
 -- From: C:\Users\taku3\Documents\git\UEP.nvim\lua\UEP\provider\tree.lua
--- (UEP側で展開状態を記憶するステートフル版)
+-- (:UEP module_tree でEagerロードを実装)
 
 local unl_context = require("UNL.context")
 local uep_log = require("UEP.logger") 
@@ -10,25 +10,22 @@ local fs = require("vim.fs")
 
 local M = {}
 
--- ▼▼▼ 展開状態を保存するテーブルを追加 ▼▼▼
-M.expanded_nodes = {} -- { ["category_Game"] = true, [".../Plugins"] = true }
--- ▲▲▲
+M.expanded_nodes = {} 
 
 -------------------------------------------------
 -- ヘルパー関数
 -------------------------------------------------
 
--- ソーター (変更なし)
 local function directory_first_sorter(a, b)
   if a.type == "directory" and b.type ~= "directory" then return true
   elseif a.type ~= "directory" and b.type == "directory" then return false
   else return a.name < b.name end
 end
 
--- (build_fs_hierarchy 関数は変更なし、ただし内部の M.load_children 呼び出しに備える)
-local function build_fs_hierarchy(root_path, aggregated_files, aggregated_dirs)
+-- ▼▼▼ 修正: build_fs_hierarchy を Eager/Lazy 両対応にする ▼▼▼
+local function build_fs_hierarchy(root_path, aggregated_files, aggregated_dirs, is_eager)
     local log = uep_log.get()
-    log.trace("build_fs_hierarchy called for root: %s", root_path)
+    log.trace("build_fs_hierarchy called for root: %s (Eager: %s)", root_path, tostring(is_eager))
     
     local nodes = {}
     local direct_children_map = {} 
@@ -64,7 +61,6 @@ local function build_fs_hierarchy(root_path, aggregated_files, aggregated_dirs)
     process_paths(aggregated_dirs, "directory")
     process_paths(aggregated_files, "file")
 
-    -- マップからノードリストを構築
     for name, node_type in pairs(direct_children_map) do
         local child_path = fs.joinpath(root_path, name)
         local has_children = (node_type == "directory" and grand_children_exist[name])
@@ -75,112 +71,114 @@ local function build_fs_hierarchy(root_path, aggregated_files, aggregated_dirs)
             path = child_path,
             type = node_type,
             children = has_children and {} or nil,
-            loaded = not has_children, -- デフォルト (子がいなければ loaded=true)
+            loaded = not has_children, 
             extra = {
                 uep_type = "fs",
-                -- [!] M.load_children が子をロードするために、
-                -- [!] aggregated_files/dirs を引き継ぐことが重要
                 child_paths = { files = aggregated_files, dirs = aggregated_dirs }
             }
         }
-
-        -- ▼▼▼ M.expanded_nodes をチェックして再帰的に展開 ▼▼▼
-        if has_children and M.expanded_nodes[child_path] then
-            log.trace("Node '%s' was previously expanded, loading children recursively.", name)
-            -- このノードは展開済みとしてマーク
+        
+        -- [!] is_eager または M.expanded_nodes[child_path] の場合に再帰
+        if has_children and (is_eager or M.expanded_nodes[child_path]) then
+            log.trace("Node '%s' is being expanded (Eager: %s, Cached: %s).", name, tostring(is_eager), tostring(M.expanded_nodes[child_path]))
             node_data.loaded = true
-            -- M.load_children を再帰的に呼び出し、子ノードを取得
-            node_data.children = M.load_children(node_data)
+            -- [!] M.load_children ではなく、自分自身 (build_fs_hierarchy) を Eager で再帰呼び出し
+            node_data.children = build_fs_hierarchy(child_path, aggregated_files, aggregated_dirs, is_eager)
         end
-        -- ▲▲▲
-
         table.insert(nodes, node_data)
     end
-
     table.sort(nodes, directory_first_sorter)
     log.trace("build_fs_hierarchy created %d direct children for: %s", #nodes, root_path)
     return nodes
 end
+-- ▲▲▲
 
--- (build_top_level_nodes 関数も M.expanded_nodes をチェックするように修正)
+-- (build_top_level_nodes 関数は変更なし)
+-- (M.expanded_nodes[game_node.id] をチェックするロジックも含む)
 local function build_top_level_nodes(required_components_map, filtered_modules_meta, game_name, engine_name, project_root, engine_root)
     local top_nodes = {}
     local log = uep_log.get()
     
-    -- 1. Gameカテゴリノードの準備
     local game_node = {
-        id = "category_Game", 
-        name = game_name,
-        path = project_root, 
-        type = "directory",
-        children = {}, 
-        loaded = false, -- [!] デフォルトは false
+        id = "category_Game", name = game_name, path = project_root, type = "directory",
+        children = {}, loaded = false,
         extra = {
             uep_type = "category",
-            -- [!] "重い" aggregated_files ではなく、"軽い" マップを渡す
-            child_context = { 
-                type = "GameRoot", 
-                root = project_root, 
-                engine_root = engine_root, 
-                game_name = game_name, 
-                engine_name = engine_name,
-                -- [!] この2つを M.load_children に渡す
-                required_components_map = required_components_map,
-                filtered_modules_meta = filtered_modules_meta
-            }
+            child_context = { type = "GameRoot", root = project_root, engine_root = engine_root, game_name = game_name, engine_name = engine_name, required_components_map = required_components_map, filtered_modules_meta = filtered_modules_meta }
         }
     }
-    
-    -- ▼▼▼ Gameノードの展開状態をチェック ▼▼▼
     if M.expanded_nodes[game_node.id] then
         log.trace("Node 'Game' was previously expanded, loading children recursively.")
         game_node.loaded = true
-        game_node.children = M.load_children(game_node) -- 子を即時ロード
+        game_node.children = M.load_children(game_node)
     end
     table.insert(top_nodes, game_node)
-    -- ▲▲▲
 
-    -- 2. Engineカテゴリノードの準備
     local engine_node = {
-        id = "category_Engine", 
-        name = "Engine", 
-        path = engine_root, 
-        type = "directory",
-        children = {}, 
-        loaded = false, -- [!] デフォルトは false
+        id = "category_Engine", name = "Engine", path = engine_root, type = "directory",
+        children = {}, loaded = false,
         extra = {
             uep_type = "category",
-            child_context = { 
-                type = "EngineRoot", 
-                root = engine_root, 
-                game_name = game_name, 
-                engine_name = engine_name,
-                required_components_map = required_components_map,
-                filtered_modules_meta = filtered_modules_meta
-            }
+            child_context = { type = "EngineRoot", root = engine_root, game_name = game_name, engine_name = engine_name, required_components_map = required_components_map, filtered_modules_meta = filtered_modules_meta }
         }
     }
-    
-    -- ▼▼▼ Engineノードの展開状態をチェック ▼▼▼
     if M.expanded_nodes[engine_node.id] then
         log.trace("Node 'Engine' was previously expanded, loading children recursively.")
         engine_node.loaded = true
-        engine_node.children = M.load_children(engine_node) -- 子を即時ロード
+        engine_node.children = M.load_children(engine_node)
     end
     table.insert(top_nodes, engine_node)
-    -- ▲▲▲
 
     table.sort(top_nodes, directory_first_sorter)
     return top_nodes
 end
 
+-- ▼▼▼ 修正: Eagerロードを実行する 'build_module_nodes' ▼▼▼
+local function build_module_nodes(filtered_modules_meta)
+    local log = uep_log.get()
+    local top_nodes = {}
+    
+    for mod_name, mod_meta in pairs(filtered_modules_meta) do
+        -- 1. このモジュールの .module.json をロード (Eager)
+        local mod_cache_data = module_cache.load(mod_meta)
+        local source_files = {}
+        local source_dirs = {}
+        if mod_cache_data then
+            if mod_cache_data.files and mod_cache_data.files.source then
+                vim.list_extend(source_files, mod_cache_data.files.source)
+            end
+            if mod_cache_data.directories and mod_cache_data.directories.source then
+                vim.list_extend(source_dirs, mod_cache_data.directories.source)
+            end
+        end
+
+        -- 2. build_fs_hierarchy を Eager モードで呼び出し、完全なツリーを構築
+        local children_nodes = build_fs_hierarchy(mod_meta.module_root, source_files, source_dirs, true) -- [!] true = Eager
+
+        local node_data = {
+            id = "module_root_" .. mod_name,
+            name = mod_name,
+            path = mod_meta.module_root,
+            type = "directory",
+            children = children_nodes,
+            loaded = true, -- [!] Eagerロードしたので loaded = true
+            extra = {
+                uep_type = "module_root",
+                mod_meta = mod_meta 
+            }
+        }
+        table.insert(top_nodes, node_data)
+    end
+    
+    table.sort(top_nodes, directory_first_sorter)
+    return top_nodes
+end
+-- ▲▲▲
+
 -------------------------------------------------
 -- プロバイダー公開関数 (修正版)
 -------------------------------------------------
 
----
--- [New] ツリー状態リセットAPI
----
 function M.clear_tree_state()
     local log = uep_log.get()
     log.debug("Tree Provider: Clearing expanded node state.")
@@ -237,34 +235,65 @@ function M.build_tree_model(opts)
   local step3_load_time = os.clock()
   log.debug("Tree Provider: STEP 1-3 (Load Cache) took %.4f seconds", step3_load_time - start_time)
   
-  -- ( ... STEP 4: モジュールのフィルタリング (高速) ... )
+  -- ▼▼▼ 修正: STEP 4 のロジックを修正 ▼▼▼
   local target_module_names = {}
   local requested_scope = (opts.scope and opts.scope:lower()) or "runtime"
   local deps_flag = opts.deps_flag or "--deep-deps"
   log.info("Tree Provider: Filtering modules for scope='%s', deps_flag='%s'", requested_scope, deps_flag)
+  
   local seed_modules = {}
-  if requested_scope == "game" then for n, m in pairs(all_modules_map) do if m.owner_name == game_name then seed_modules[n] = true end end
-  elseif requested_scope == "engine" then for n, m in pairs(all_modules_map) do if m.owner_name == engine_name then seed_modules[n] = true end end
-  elseif requested_scope == "runtime" then for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
-  elseif requested_scope == "developer" then for n, m in pairs(all_modules_map) do if m.type == "Runtime" or m.type == "Developer" then seed_modules[n] = true end end
-  elseif requested_scope == "editor" then for n, m in pairs(all_modules_map) do if m.type and m.type ~= "Program" then local ct = m.type:match("^%s*(.-)%s*$"):lower(); if ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly" then seed_modules[n] = true end end end
-  elseif requested_scope == "full" then for n,_ in pairs(all_modules_map) do seed_modules[n] = true end
-  else requested_scope = "runtime"; for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
-  end
-  if deps_flag == "--no-deps" or requested_scope == "full" then target_module_names = seed_modules
+  if opts.target_module then
+    log.info("Tree Provider: Building tree for single target module: %s", opts.target_module)
+    if all_modules_map[opts.target_module] then
+        seed_modules[opts.target_module] = true
+    else
+        log.warn("Tree Provider: Target module '%s' not found in map.", opts.target_module)
+        return {{ id = "_message_", name = "Module not found: " .. opts.target_module, type = "message" }}
+    end
   else
-      local deps_key = (deps_flag == "--deep-deps") and "deep_dependencies" or "shallow_dependencies"; local modules_to_process = vim.tbl_keys(seed_modules); local processed = {}
-      while #modules_to_process > 0 do
-          local current_name = table.remove(modules_to_process); if not processed[current_name] then processed[current_name] = true; target_module_names[current_name] = true
-              local current_meta = all_modules_map[current_name]; if current_meta and current_meta[deps_key] then
-                  for _, dep_name in ipairs(current_meta[deps_key]) do if not processed[dep_name] then local dep_meta = all_modules_map[dep_name]; if dep_meta then
-                      local should_add = false; if requested_scope == "game" then should_add = (dep_meta.owner_name == game_name) elseif requested_scope == "engine" then should_add = (dep_meta.owner_name == engine_name) elseif requested_scope == "runtime" then should_add = (dep_meta.type == "Runtime") elseif requested_scope == "developer" then should_add = (dep_meta.type == "Runtime" or dep_meta.type == "Developer") elseif requested_scope == "editor" then if dep_meta.type and dep_meta.type ~= "Program" then local ct = dep_meta.type:match("^%s*(.-)%s*$"):lower(); should_add = ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly" end end
-                      if should_add then table.insert(modules_to_process, dep_name) end
-                  end end end
-              end
-          end
-      end
+    log.info("Tree Provider: Building tree for scope: %s", requested_scope)
+    if requested_scope == "game" then for n, m in pairs(all_modules_map) do if m.owner_name == game_name then seed_modules[n] = true end end
+    elseif requested_scope == "engine" then for n, m in pairs(all_modules_map) do if m.owner_name == engine_name then seed_modules[n] = true end end
+    elseif requested_scope == "runtime" then for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
+    elseif requested_scope == "developer" then for n, m in pairs(all_modules_map) do if m.type == "Runtime" or m.type == "Developer" then seed_modules[n] = true end end
+    elseif requested_scope == "editor" then for n, m in pairs(all_modules_map) do if m.type and m.type ~= "Program" then local ct = m.type:match("^%s*(.-)%s*$"):lower(); if ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly" then seed_modules[n] = true end end end
+    elseif requested_scope == "full" then for n,_ in pairs(all_modules_map) do seed_modules[n] = true end
+    else requested_scope = "runtime"; for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
   end
+  end
+  
+  -- [!] :UEP module_tree の場合は deps_flag を無視する
+  if deps_flag == "--no-deps" or opts.target_module then
+    target_module_names = seed_modules
+  else
+    local deps_key = (deps_flag == "--deep-deps") and "deep_dependencies" or "shallow_dependencies"
+    local modules_to_process = vim.tbl_keys(seed_modules)
+    local processed = {}
+    while #modules_to_process > 0 do
+        local current_name = table.remove(modules_to_process)
+        if not processed[current_name] then 
+            processed[current_name] = true
+            target_module_names[current_name] = true
+            local current_meta = all_modules_map[current_name]
+            if current_meta and current_meta[deps_key] then
+                for _, dep_name in ipairs(current_meta[deps_key]) do 
+                    if not processed[dep_name] then 
+                        local dep_meta = all_modules_map[dep_name]
+                        if dep_meta then
+                            -- [!] :UEP tree の場合はスコープでフィルタリング
+                            local should_add = false
+                            if requested_scope == "game" then should_add = (dep_meta.owner_name == game_name) elseif requested_scope == "engine" then should_add = (dep_meta.owner_name == engine_name) elseif requested_scope == "runtime" then should_add = (dep_meta.type == "Runtime") elseif requested_scope == "developer" then should_add = (dep_meta.type == "Runtime" or dep_meta.type == "Developer") elseif requested_scope == "editor" then if dep_meta.type and dep_meta.type ~= "Program" then local ct = dep_meta.type:match("^%s*(.-)%s*$"):lower(); should_add = ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly" end end
+                            
+                            if should_add then table.insert(modules_to_process, dep_name) end
+                        end 
+                    end 
+                end
+            end
+        end
+    end
+  end
+  -- ▲▲▲ 修正完了 ▲▲▲
+      
   local filtered_modules_meta = {}; for name, _ in pairs(target_module_names) do if all_modules_map[name] then filtered_modules_meta[name] = all_modules_map[name] end end
   local step4_filter_time = os.clock(); log.debug("Tree Provider: STEP 4 (Filtering) took %.4f seconds (%d modules)", step4_filter_time - step3_load_time, vim.tbl_count(filtered_modules_meta))
 
@@ -274,12 +303,23 @@ function M.build_tree_model(opts)
 
   -- [!] STEP 6 (.module.json の全読み込み) は削除
 
-  -- STEP 7: トップレベルノードを構築 (ステートフル版)
+  -- ▼▼▼ 修正: STEP 7 を分岐させる ▼▼▼
   local hierarchy_build_start_time = os.clock()
-  -- [!] "重い" components_with_files の代わりに、"軽い" マップを渡す
-  local top_level_nodes = build_top_level_nodes(required_components_map, filtered_modules_meta, game_name, engine_name, project_root, engine_root)
+  local top_level_nodes
+  
+  if opts.target_module then
+      -- :UEP module_tree の場合
+      log.debug("Tree Provider: Building module-only tree (Eagerly).")
+      top_level_nodes = build_module_nodes(filtered_modules_meta)
+  else
+      -- :UEP tree の場合
+      log.debug("Tree Provider: Building standard Game/Engine tree (Lazily).")
+      top_level_nodes = build_top_level_nodes(required_components_map, filtered_modules_meta, game_name, engine_name, project_root, engine_root)
+  end
+  
   local step7_hierarchy_time = os.clock()
-  log.debug("Tree Provider: STEP 7 (Top Level Build) took %.4f seconds", step7_hierarchy_time - hierarchy_build_start_time)
+  log.debug("Tree Provider: STEP 7 (Tree Build) took %.4f seconds", step7_hierarchy_time - hierarchy_build_start_time)
+  -- ▲▲▲ 修正完了 ▲▲▲
 
   if not next(top_level_nodes) then
     return {{ id = "_message_", name = "No components/files to display for current scope/deps.", type = "message" }}
@@ -300,13 +340,11 @@ end
 
 
 ---
--- [修正] M.load_children (重いデータ読み込みをここに集約)
+-- [修正] M.load_children (uep_type == "module_root" を削除)
 function M.load_children(node)
-    -- ▼▼▼ 展開状態を保存する ▼▼▼
     if node and node.id then
         M.expanded_nodes[node.id] = true
     end
-    -- ▲▲▲
     
     local log = uep_log.get() 
     log.debug("Tree Provider: load_children called for node: %s (Type: %s)", node.name, node.extra and node.extra.uep_type or "fs")
@@ -314,25 +352,24 @@ function M.load_children(node)
 
     if not node or not node.extra then
         log.warn("load_children: Node extra data missing.")
-        return {} -- 空のリストを返す
+        return {}
     end
 
     local children = {}
     local uep_type = node.extra.uep_type
     
     if uep_type == "category" or uep_type == "Game" or uep_type == "Engine" or uep_type == "Plugin" then
+        -- 1. "Game", "Engine" カテゴリが展開された場合
         local context = node.extra.child_context
         if context then
             -- A. "Game" または "Engine" カテゴリの場合
-            -- [!] build_tree_model から渡された "軽い" マップを取得
             local required_components_map = context.required_components_map
             local filtered_modules_meta = context.filtered_modules_meta
             local owner_name_to_match = (context.type == "GameRoot") and context.game_name or context.engine_name
-            
             local child_files = {} 
             local child_dirs = {}
             
-            -- ▼▼▼ .module.json の読み込みと疑似モジュールのロードをここで行う ▼▼▼
+            -- .module.json の読み込みと疑似モジュールのロードをここで行う
             local pseudo_module_files = {}
             if context.type == "GameRoot" then
               pseudo_module_files._GameShaders = { root=fs.joinpath(context.root, "Shaders"), files={}, dirs={} }
@@ -359,7 +396,6 @@ function M.load_children(node)
                     local root_file = component.uproject_path or component.uplugin_path
                     if root_file then table.insert(child_files, root_file) end
 
-                    -- このコンポーネントに属する、フィルタリング済みのモジュールを探す
                     local relevant_modules = {}
                     for _, mtype in ipairs({"runtime_modules", "developer_modules", "editor_modules", "programs_modules"}) do 
                       if component[mtype] then 
@@ -371,13 +407,11 @@ function M.load_children(node)
                       end 
                     end
                     
-                    -- [!] .module.json をここで初めてロードする
                     for mod_name, mod_meta in pairs(relevant_modules) do
                         local mod_cache_data = module_cache.load(mod_meta)
                         if mod_cache_data then
                             if mod_cache_data.files then 
                               for cat, files in pairs(mod_cache_data.files) do 
-                                -- [!] "source" カテゴリのファイルだけをツリーに追加
                                 if files and #files > 0 and cat == "source" then 
                                   vim.list_extend(child_files, files) 
                                 end 
@@ -385,7 +419,6 @@ function M.load_children(node)
                             end
                             if mod_cache_data.directories then 
                               for cat, dirs in pairs(mod_cache_data.directories) do 
-                                -- [!] "source" カテゴリのディレクトリだけをツリーに追加
                                 if dirs and #dirs > 0 and cat == "source" then 
                                   vim.list_extend(child_dirs, dirs) 
                                 end 
@@ -395,15 +428,17 @@ function M.load_children(node)
                     end
                 end
             end
-            -- ▲▲▲ 修正完了 ▲▲▲
-
-            children = build_fs_hierarchy(node.path, child_files, child_dirs)
+            children = build_fs_hierarchy(node.path, child_files, child_dirs, false) -- [!] Eager = false
             
         elseif node.extra.child_paths then
              -- B. "Plugins" ノード (または古い "MyProject" ノード) が展開された場合
-             children = build_fs_hierarchy(node.path, node.extra.child_paths.files, node.extra.child_paths.dirs)
+             children = build_fs_hierarchy(node.path, node.extra.child_paths.files, node.extra.child_paths.dirs, false) -- [!] Eager = false
         end
         
+    -- ▼▼▼ 修正: "module_root" タイプは Eagerロードされたので、ここでは何もしない ▼▼▼
+    -- elseif uep_type == "module_root" then
+    -- ▲▲▲
+            
     elseif uep_type == "fs" then
         -- 2. "fs" (ファイルシステム上のディレクトリ) が展開された場合
         if node.extra.child_paths then

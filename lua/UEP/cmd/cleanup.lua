@@ -1,4 +1,4 @@
--- From: C:\Users\taku3\Documents\git\UEP.nvim\lua\UEP\cmd\cleanup.lua
+-- From: lua\UEP\cmd\cleanup.lua
 -- lua/UEP/cmd/cleanup.lua (モジュールキャッシュ対応版)
 
 local core_utils = require("UEP.cmd.core.utils")

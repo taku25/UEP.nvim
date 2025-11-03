@@ -1,4 +1,4 @@
--- From: C:\Users\taku3\Documents\git\UEP.nvim\lua\UEP\cmd\purge.lua
+-- From: lua\UEP\cmd\purge.lua
 -- lua/UEP/cmd/purge.lua (モジュールキャッシュ対応版)
 
 local core_utils = require("UEP.cmd.core.utils")
