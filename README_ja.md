@@ -26,7 +26,7 @@
   * **強力なファイル検索**:
       * ファイルを即座に見つけるための柔軟な`:UEP files`コマンドを提供します。
       * スコープ（**Game**, **Engine**）でファイルをフィルタリングできます。
-      * モジュールの依存関係（**--no-deps** または **--all-deps**）を検索に含めることが可能です。
+      * モジュールの依存関係（**--no-deps** または **--deep-deps**）を検索に含めることが可能です。
       * モジュールや`Programs`ディレクトリに特化した検索コマンドを提供します。
       * 指定されたスコープ内の全てのクラスまたは構造体を即座に検索します（:UEP classes, :UEP structs）。"
   * **インテリジェントなコードナビゲーション**:
@@ -144,7 +144,7 @@ opts = {
 :UEP refresh [Game|Engine]
 
 " 日常的に使うソースや設定ファイルを検索するためのUIを開きます。
-:UEP files[!] [Game|Engine] [--all-deps]
+:UEP files[!] [Game|Engine] [--deep-deps]
 
 " 特定のモジュールに属するファイルを検索します。
 :UEP module_files[!] [ModuleName]
@@ -180,10 +180,10 @@ opts = {
 :UEP find_parents[!] [ClassName]
 
 " C++クラスを検索します（'!'でキャッシュを強制更新）。
-:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP classes[!] [Game|Engine|Editor] [--no-deps|--deep-deps]
 
 " C++構造体を検索します（'!'でキャッシュを強制更新）。
-:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP structs[!] [Game|Engine|Editor] [--no-deps|--deep-deps]
 
 " プロジェクト全体の論理ツリーを表示します (neo-tree-unl.nvim が必要)。
 :UEP tree
@@ -215,9 +215,9 @@ opts = {
       * `!`なし: 既存のキャッシュデータからファイルを選択します
       * `!`あり: キャッシュを削除して新しいキャッシュを作成してからファイルを選択します
       * `[Game|Engine]` (デフォルト `Game`): 検索対象とするモジュールのスコープです。
-      * `[--no-deps|--all-deps]` (デフォルト `--no-deps`):
+      * `[--no-deps|--deep-deps]` (デフォルト `--no-deps`):
           * `--no-deps`: 指定されたスコープのモジュール内のみを検索します。
-          * `--all-deps`: 依存関係にある全てのモジュールを検索対象に含めます（`deep_dependencies`を使用）。
+          * `--deep-deps`: 依存関係にある全てのモジュールを検索対象に含めます（`deep_dependencies`を使用）。
   * **`:UEP module_files[!]`**:
       * `!`なし: 既存のキャッシュを使って指定されたモジュールのファイルを検索します。
       * `!`あり: 検索前に、指定されたモジュールのファイルキャッシュのみを軽量に更新します。
@@ -257,11 +257,11 @@ opts = {
   * **`:UEP find_parents[!] [ClassName]`**: 指定したクラスの継承チェーンを表示します。
       * `!`なし: `[ClassName]`引数が指定されていればそれを使用し、なければカーソル下の単語を使用します。
       * `!`あり: 引数を無視し、常にプロジェクト全体のクラスから起点となるクラスを選択するためのピッカーUIを開きます。
-  * **`:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]`**: C++クラスの定義を選択し、ジャンプするためのピッカーを開きます。
-      * フラグ: `[!]`、`[Game|Engine|Editor]`、および`[--no-deps|--all-deps]` フラグは、`:UEP files` コマンドと同様に、キャッシュの再生成とスコープのフィルタリングを制御します。
+  * **`:UEP classes[!] [Game|Engine|Editor] [--no-deps|--deep-deps]`**: C++クラスの定義を選択し、ジャンプするためのピッカーを開きます。
+      * フラグ: `[!]`、`[Game|Engine|Editor]`、および`[--no-deps|--deep-deps]` フラグは、`:UEP files` コマンドと同様に、キャッシュの再生成とスコープのフィルタリングを制御します。
       * スコープ: `[Game|Engine|Editor]` がベーススコープです。デフォルトは\*\*`Editor`\*\*で、全てのコンポーネントをスキャンし（Fullスキャンと同等）、最も豊富なEditor/Runtimeシンボルセットを提供します。
-  * **`:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]`**: C++構造体の定義を選択し、ジャンプするためのピッカーを開きます。
-      * フラグ: `[!]`、`[Game|Engine|Editor]`、および`[--no-deps|--all-deps]` フラグは、`:UEP files` コマンドと同様に、キャッシュの再生成とスコープのフィルタリングを制御します。
+  * **`:UEP structs[!] [Game|Engine|Editor] [--no-deps|--deep-deps]`**: C++構造体の定義を選択し、ジャンプするためのピッカーを開きます。
+      * フラグ: `[!]`、`[Game|Engine|Editor]`、および`[--no-deps|--deep-deps]` フラグは、`:UEP files` コマンドと同様に、キャッシュの再生成とスコープのフィルタリングを制御します。
       * スコープ: `[Game|Engine|Editor]` がベーススコープです。デフォルトは\*\*`Editor`\*\*で、全てのコンポーネントをスキャンし（Fullスキャンと同等）、最も豊富なEditor/Runtimeシンボルセットを提供します。
   * **`:UEP purge [ComponentName]`**:
       * 指定されたGame、Engine、またはPluginコンポーネントの**ファイルキャッシュ** (`*.files.json`) のみを削除します。

@@ -1,4 +1,4 @@
--- lua/UEP/cmd/core/utils.lua (pairs ループ修正版 - 完全版)
+-- lua/UEP/cmd/core/utils.lua (カテゴリ分類を Programs 優先に戻す)
 
 local unl_finder = require("UNL.finder")
 local project_cache = require("UEP.cache.project")
@@ -8,20 +8,33 @@ local uep_log = require("UEP.logger")
 
 local M = {}
 
--- (categorize_path は変更なし)
+-- ▼▼▼ 修正箇所 (ご指摘の通り、Programs を Source より先に戻します) ▼▼▼
 M.categorize_path = function(path)
-  if path:find("/Programs/", 1, true) or path:match("/Programs$") then return "programs" end
+  -- 1. 最も具体的なものを先に (uproject/uplugin)
   if path:match("%.uproject$") then return "uproject" end
   if path:match("%.uplugin$") then return "uplugin" end
+
+  -- 3. Source 以外の主要フォルダ (Programs を Source より先に)
+  if path:find("/Programs/", 1, true) or path:match("/Programs$") then return "programs" end
+  
+  -- 2. "Source" 
+  if path:find("/Source/", 1, true) or path:match("/Source$") then return "source" end
+  if path:find("/Plugins/", 1, true) then return "source" end -- Plugin の Source も source 扱い
+
+  -- 3. (続き)
   if path:find("/Shaders/", 1, true) or path:match("/Shaders$") then return "shader" end
   if path:find("/Config/", 1, true) or path:match("/Config$") then return "config" end
-  if path:find("/Source/", 1, true) or path:match("/Source$") then return "source" end
   if path:find("/Content/", 1, true) or path:match("/Content$") then return "content" end
-  if path:find("/Plugins/", 1, true) then return "source" end -- Plugin の Source も source 扱い
+  
+  -- 4. その他
   return "other"
 end
+-- ▲▲▲ 修正完了 ▲▲▲
 
--- ▼▼▼ get_project_maps を修正 ▼▼▼
+
+-- (get_project_maps, create_relative_path, find_module_for_path は変更ありません)
+-- (念のため、ファイル全体を以下に記載します)
+
 M.get_project_maps = function(start_path, on_complete)
   local log = uep_log.get()
   log.debug("get_project_maps called...")
@@ -49,7 +62,6 @@ M.get_project_maps = function(start_path, on_complete)
   local programs_modules_map = {}
   local game_name, engine_name
 
-  -- ★★★ 修正箇所: ループ変数の使い方を修正 ★★★
   local module_types_info = {
       { key = "runtime_modules", map = runtime_modules_map, type_val = "Runtime" },
       { key = "developer_modules", map = developer_modules_map, type_val = "Developer" },
@@ -64,20 +76,16 @@ M.get_project_maps = function(start_path, on_complete)
       if p_cache.type == "Game" then game_name = comp_name end
       if p_cache.type == "Engine" then engine_name = comp_name end
 
-      -- 各モジュールタイプからメタデータを集約
-      for _, type_info in ipairs(module_types_info) do -- ★ ipairs を使い、変数名を type_info に変更
-          local cache_key = type_info.key         -- ★ type_info.key を使う
-          local target_map = type_info.map        -- ★ type_info.map を使う
-          local default_type = type_info.type_val -- ★ type_info.type_val を使う
+      for _, type_info in ipairs(module_types_info) do 
+          local cache_key = type_info.key
+          local target_map = type_info.map
+          local default_type = type_info.type_val
 
           if p_cache[cache_key] then
               for mod_name, mod_data in pairs(p_cache[cache_key]) do
-                  -- all_modules_map に type 情報を追加して格納
-                  mod_data.type = mod_data.type or default_type -- ★ default_type を使う
+                  mod_data.type = mod_data.type or default_type
                   all_modules_map[mod_name] = mod_data
-                  -- タイプ別マップにも格納
-                  target_map[mod_name] = mod_data -- ★ target_map (マップそのもの) に代入
-                  -- 逆引きマップを作成
+                  target_map[mod_name] = mod_data
                   module_to_component_name[mod_name] = comp_name
               end
           end
@@ -86,13 +94,11 @@ M.get_project_maps = function(start_path, on_complete)
         log.warn("get_project_maps: Failed to load project cache for component '%s'", comp_name)
     end
   end
-  -- ★★★ 修正ここまで ★★★
 
   local end_time = os.clock()
   log.debug("get_project_maps finished in %.4f seconds. Found %d modules across %d components.",
             end_time - start_time, vim.tbl_count(all_modules_map), vim.tbl_count(all_components_map))
 
-  -- engine_root の取得を試みる
   local engine_root = nil
   if project_registry_info.engine_association then
       local engine_info = projects_cache.get_engine_info(project_registry_info.engine_association)
@@ -101,7 +107,7 @@ M.get_project_maps = function(start_path, on_complete)
 
   on_complete(true, {
     project_root = project_root,
-    engine_root = engine_root, -- nil の可能性あり
+    engine_root = engine_root,
     all_modules_map = all_modules_map,
     module_to_component_name = module_to_component_name,
     all_components_map = all_components_map,
@@ -114,10 +120,8 @@ M.get_project_maps = function(start_path, on_complete)
     engine_component_name = engine_name,
   })
 end
--- ▲▲▲ get_project_maps 修正ここまで ▲▲▲
 
 
--- (create_relative_path は変更なし)
 M.create_relative_path = function(file_path, base_path)
   if not file_path or not base_path then return file_path end
   local norm_file = file_path:gsub("\\", "/")
@@ -136,7 +140,6 @@ M.create_relative_path = function(file_path, base_path)
   return file_path
 end
 
--- (find_module_for_path は変更なし)
 M.find_module_for_path = function(file_path, all_modules_map)
   if not file_path or not all_modules_map then return nil end
   local normalized_path = unl_path.normalize(file_path)

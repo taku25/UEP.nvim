@@ -27,7 +27,7 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
       * Provides a flexible `:UEP files` command to find your most-used source and config files instantly.
       * Offers specialized commands for targeted searches within a single module (`:UEP module_files`) or across all `Programs` directories (`:UEP program_files`).
       * Allows filtering files by scope (**Game**, **Engine**).
-      * Supports including module dependencies in the search (**--no-deps** or **--all-deps**).
+      * Supports including module dependencies in the search (**--no-deps** or **--deep-deps**).
       * Instantly search for all classes or structs within the specified scope (:UEP classes, :UEP structs)."
   * **Intelligent Code Navigation**:
       * The `:UEP find_derived` command instantly finds all child classes that inherit from a specified base class.
@@ -144,7 +144,7 @@ All commands start with `:UEP`.
 :UEP refresh [Game|Engine]
 
 " Open a UI to search for commonly-used source and config files.
-:UEP files[!] [Game|Engine] [--all-deps]
+:UEP files[!] [Game|Engine] [--deep-deps]
 
 " Search for files belonging to a specific module.
 :UEP module_files[!] [ModuleName]
@@ -180,10 +180,10 @@ All commands start with `:UEP`.
 :UEP find_parents[!] [ClassName]
 
 " Search for C++ classes (use '!' to refresh cache).
-:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP classes[!] [Game|Engine|Editor] [--no-deps|--deep-deps]
 
 " Search for C++ structs (use '!' to refresh cache).
-:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP structs[!] [Game|Engine|Editor] [--no-deps|--deep-deps]
 
 " Display the logical tree for the entire project (requires neo-tree-unl.nvim).
 :UEP tree
@@ -215,9 +215,9 @@ All commands start with `:UEP`.
       * Without `!`: Selects files from the existing cache data.
       * With `!`: Deletes the cache and creates a new one before selecting files.
       * `[Game|Engine]` (default `Game`): The scope of modules to search.
-      * `[--no-deps|--all-deps]` (default `--no-deps`):
+      * `[--no-deps|--deep-deps]` (default `--no-deps`):
           * `--no-deps`: Searches only within the modules of the specified scope.
-          * `--all-deps`: Includes all dependent modules in the search (`deep_dependencies`).
+          * `--deep-deps`: Includes all dependent modules in the search (`deep_dependencies`).
   * **`:UEP module_files[!]`**:
       * Without `!`: Searches for files in the specified module using the existing cache.
       * With `!`: Performs a lightweight update of the file cache for only the specified module before searching.
@@ -257,11 +257,11 @@ All commands start with `:UEP`.
   * **`:UEP find_parents[!] [ClassName]`**: Displays the inheritance chain for a specified class.
       * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor.
       * With `!`: Ignores arguments and opens a picker UI to select the starting class.
-  * **`:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]`**: Opens a picker to select and jump to the definition of a C++ class.
-      * Flags: The `[!]`, `[Game|Engine|Editor]`, and `[--no-deps|--all-deps]` flags control cache regeneration and scope filtering in the same way as the `:UEP files` command.
+  * **`:UEP classes[!] [Game|Engine|Editor] [--no-deps|--deep-deps]`**: Opens a picker to select and jump to the definition of a C++ class.
+      * Flags: The `[!]`, `[Game|Engine|Editor]`, and `[--no-deps|--deep-deps]` flags control cache regeneration and scope filtering in the same way as the `:UEP files` command.
       * Scope: `[Game|Engine|Editor]` is the base scope. The default is **`Editor`**, which scans all components (equivalent to a Full scan) to provide the richest set of Editor/Runtime symbols.
-  * **`:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]`**: Opens a picker to select and jump to the definition of a C++ struct.
-      * Flags: The `[!]`, `[Game|Engine|Editor]`, and `[--no-deps|--all-deps]` flags control cache regeneration and scope filtering in the same way as the `:UEP files` command.
+  * **`:UEP structs[!] [Game|Engine|Editor] [--no-deps|--deep-deps]`**: Opens a picker to select and jump to the definition of a C++ struct.
+      * Flags: The `[!]`, `[Game|Engine|Editor]`, and `[--no-deps|--deep-deps]` flags control cache regeneration and scope filtering in the same way as the `:UEP files` command.
       * Scope: `[Game|Engine|Editor]` is the base scope. The default is **`Editor`**, which scans all components (equivalent to a Full scan) to provide the richest set of Editor/Runtime symbols.
   * **`:UEP purge [ComponentName]`**:
       * Deletes only the **file cache** (`*.files.json`) for the specified Game, Engine, or Plugin component.

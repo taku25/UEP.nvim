@@ -21,7 +21,7 @@ local M = {
     level = "info",
     echo = { level = "warn" },
     notify = { level = "error", prefix = "[UEP]" },
-    file = { level = "trace", enable = true, max_kb = 512, rotate = 3, filename = "uep.log" },
+    file = { level = "info", enable = true, max_kb = 512, rotate = 3, filename = "uep.log" },
     perf = { enabled = false, patterns = { "^refresh" }, level = "trace" },
   },
 

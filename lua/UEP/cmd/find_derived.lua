@@ -11,8 +11,8 @@ local M = {}
 ---
 -- 指定された基底クラスの派生クラスを検索し、結果をPickerで表示するヘルパー関数
 -- @param base_class_name string 基底クラスの名前
-local function find_and_show_derived(base_class_name)
-  derived_core.get_derived_classes(base_class_name, function(derived_classes)
+local function find_and_show_derived(base_class_name, opts)
+  derived_core.get_derived_classes(base_class_name, opts, function(derived_classes)
     if not derived_classes or #derived_classes == 0 then
       local msg = "No derived classes found for: " .. base_class_name
       log.get().info(msg)
@@ -60,7 +60,7 @@ function M.execute(opts)
         on_submit = function(selected_class)
           if selected_class and selected_class.class_name then
             -- 選択されたクラスを元に、派生クラス検索を実行
-            find_and_show_derived(selected_class.class_name)
+            find_and_show_derived(selected_class.class_name, opts)
           end
         end,
       })
@@ -74,7 +74,7 @@ function M.execute(opts)
 
   if target_class_name and target_class_name ~= "" then
     -- クラス名が特定できたので、派生クラス検索を実行
-    find_and_show_derived(target_class_name)
+    find_and_show_derived(target_class_name, opts)
   else
     -- クラス名が特定できず、bangもない場合はユーザーに通知
     local msg = "No class name specified. Use ':UEP find_derived!' to pick from a list."

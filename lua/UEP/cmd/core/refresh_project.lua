@@ -65,8 +65,7 @@ local function parse_single_component(component, module_type_map, on_done)
     on_done(true, { meta = {}, mtimes = {} })
     return
   end
-
-  local fd_cmd = { "fd", "--absolute-path", "--type", "f", "Build.cs" }
+  local fd_cmd = { "fd", "--absolute-path", "--type", "f", "--regex", "\\.[Bb]uild\\.cs$" }
   for _, spath in ipairs(search_paths) do
     -- 検索パスが存在するか確認してから追加
     if vim.fn.isdirectory(spath) == 1 then

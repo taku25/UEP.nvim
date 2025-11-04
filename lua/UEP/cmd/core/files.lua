@@ -1,4 +1,4 @@
--- lua/UEP/cmd/core/files.lua (構文エラー再々修正版 - 完全版)
+-- lua/UEP/cmd/core/files.lua (依存関係ロジック + 疑似モジュールロジック 修正版)
 
 local module_cache = require("UEP.cache.module")
 local uep_log = require("UEP.logger")
@@ -32,30 +32,49 @@ function M.get_files(opts, on_complete)
     -- STEP 2: 対象となるモジュールをフィルタリング
     local target_module_names = {}
     local seed_modules = {}
+    
     -- 2a: スコープに基づいて起点モジュールを決定
-    -- (if/elseif ブロック - 変更なし)
--- 2a: スコープに基づいて起点モジュールを決定
     if requested_scope == "game" then
-        for n, m in pairs(all_modules_map) do if m.owner_name == game_name then seed_modules[n] = true end end
+      for n, m in pairs(all_modules_map) do 
+        if m.owner_name == game_name and m.location == "in_source" then 
+          seed_modules[n] = true 
+        end 
+      end
     elseif requested_scope == "engine" then
-        for n, m in pairs(all_modules_map) do if m.owner_name == engine_name then seed_modules[n] = true end end
+      for n, m in pairs(all_modules_map) do
+        if m.owner_name == engine_name then
+          seed_modules[n] = true
+        end
+      end
     elseif requested_scope == "runtime" then
-        for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
+      for n, m in pairs(all_modules_map) do
+        if m.type == "Runtime" then
+          seed_modules[n] = true
+        end
+      end
     elseif requested_scope == "developer" then
-        for n, m in pairs(all_modules_map) do if m.type == "Runtime" or m.type == "Developer" then seed_modules[n] = true end end
+      for n, m in pairs(all_modules_map) do
+        if m.type == "Runtime" or m.type == "Developer" then
+          seed_modules[n] = true
+        end
+      end
     elseif requested_scope == "editor" then
       for n, m in pairs(all_modules_map) do
         if m.type and m.type ~= "Program" then
           local ct = m.type:match("^%s*(.-)%s*$"):lower()
           if ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly" then
             seed_modules[n] = true
-          end -- <<< 内側の if を閉じる end
-        end -- <<< ★★★ ここに end が必要でした ★★★ (if m.type... を閉じる end)
-      end -- <<< for ループを閉じる end
-    elseif requested_scope == "full" then
-      for n,_ in pairs(all_modules_map) do
-        seed_modules[n] = true
+          end
+        end
       end
+    
+    elseif requested_scope == "full" then
+      for n, m in pairs(all_modules_map) do
+        if m.type ~= "Program" then -- ★ "Program" タイプのモジュールを除外
+          seed_modules[n] = true
+        end
+      end
+
     else -- Unknown scope defaults to runtime
       requested_scope = "runtime"
       for n, m in pairs(all_modules_map) do
@@ -65,48 +84,55 @@ function M.get_files(opts, on_complete)
       end
     end -- <<< if/elseif ブロック全体を閉じる end
 
-    -- ▼▼▼ 2b: 依存関係フラグに基づく依存モジュール追加 (end の位置を最終確認) ▼▼▼
-    if deps_flag == "--no-deps" or requested_scope == "full" then
-      target_module_names = seed_modules
+    -- ▼▼▼ 修正: STEP 2b を丸ごと置き換え ▼▼▼
+    
+    -- 2b: 依存関係フラグに基づき、*プリ計算済みのリスト* を使ってモジュールを追加
+    
+    target_module_names = seed_modules -- 常に起点モジュールは含む
+    
+    if deps_flag == "--no-deps" then
+        log.debug("Deps: --no-deps. Using seed modules only.")
+        -- 何も追加しない
+    
     else
-      local deps_key = (deps_flag == "--deep-deps") and "deep_dependencies" or "shallow_dependencies"
-      local modules_to_process = vim.tbl_keys(seed_modules)
-      local processed = {}
+        -- shallow または deep のキーを決定
+        local deps_key = (deps_flag == "--deep-deps") and "deep_dependencies" or "shallow_dependencies"
+        log.debug("Deps: %s. Using key: %s", deps_flag, deps_key)
+        
+        for mod_name, _ in pairs(seed_modules) do
+            local mod_meta = all_modules_map[mod_name]
+            if mod_meta and mod_meta[deps_key] then
+                for _, dep_name in ipairs(mod_meta[deps_key]) do
+                    local dep_meta = all_modules_map[dep_name]
+                    if dep_meta then
+                        
+                        -- スコープに基づき、追加すべき依存モジュールか判定
+                        local should_add = false
 
-      while #modules_to_process > 0 do                       --[[ WHILE Start ]]
-        local current_name = table.remove(modules_to_process)
-        if not processed[current_name] then                --[[ IF 1 Start ]]
-          processed[current_name] = true
-          target_module_names[current_name] = true
-          local current_meta = all_modules_map[current_name]
-          if current_meta and current_meta[deps_key] then --[[ IF 2 Start ]]
-            for _, dep_name in ipairs(current_meta[deps_key]) do --[[ FOR Start ]]
-              if not processed[dep_name] then         --[[ IF 3 Start ]]
-                local dep_meta = all_modules_map[dep_name]
-                if dep_meta then                    --[[ IF 4 Start ]]
-                  local should_add = false
-                  --[[ IF 5 Start (Scope Check) ]]
-                  if requested_scope == "game" then should_add = (dep_meta.owner_name == game_name)
-                  elseif requested_scope == "engine" then should_add = (dep_meta.owner_name == engine_name)
-                  elseif requested_scope == "runtime" then should_add = (dep_meta.type == "Runtime")
-                  elseif requested_scope == "developer" then should_add = (dep_meta.type == "Runtime" or dep_meta.type == "Developer")
-                  elseif requested_scope == "editor" then
-                    if dep_meta.type and dep_meta.type ~= "Program" then --[[ IF 6 Start ]]
-                      local ct = dep_meta.type:match("^%s*(.-)%s*$"):lower()
-                      should_add = ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly"
-                    end                                --[[ IF 6 End ]]
-                  end                                    --[[ IF 5 End (Scope Check) ]]
-                  if should_add then                     --[[ IF 7 Start ]]
-                    table.insert(modules_to_process, dep_name)
-                  end                                    --[[ IF 7 End ]]
-                end                                        --[[ IF 4 End ]]
-              end                                            --[[ IF 3 End ]]
-            end                                                --[[ FOR End ]]
-          end                                                    --[[ IF 2 End ]]
-        end                                                        --[[ IF 1 End ]]
-      end                                                            --[[ WHILE End ]]
-    end -- <<< if deps_flag ... else の end
-    -- ▲▲▲ 修正ここまで ▲▲▲
+                        -- requested_scope が "game", "engine", "editor", "full" の場合、
+                        -- 依存モジュールのタイプを寛容にチェックする (Program 以外はほぼ許可)
+                        if requested_scope == "game" or requested_scope == "engine" or requested_scope == "editor" or requested_scope == "full" then
+                            if dep_meta.type and dep_meta.type ~= "Program" then
+                                -- "runtime", "developer", "editor", "uncookedonly" などをすべて許可
+                                should_add = true
+                            end
+                        
+                        -- requested_scope が "runtime", "developer" の場合は、厳格にチェック
+                        elseif requested_scope == "runtime" then 
+                            should_add = (dep_meta.type == "Runtime")
+                        elseif requested_scope == "developer" then 
+                            should_add = (dep_meta.type == "Runtime" or dep_meta.type == "Developer")
+                        end
+                        
+                        if should_add then
+                            target_module_names[dep_name] = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- ▲▲▲ STEP 2b 置き換え完了 ▲▲▲
 
     local filtered_module_count = vim.tbl_count(target_module_names)
     log.debug("core_files.get_files: Filtered down to %d modules for scope=%s, deps=%s", filtered_module_count, requested_scope, deps_flag)
@@ -118,61 +144,99 @@ function M.get_files(opts, on_complete)
     -- STEP 3: 対象モジュールのキャッシュをロードしてファイルを集約
     local merged_files_with_context = {}
     local modules_processed = 0
-    -- (for ループ - 変更なし)
+    
     for mod_name, _ in pairs(target_module_names) do
       local mod_meta = all_modules_map[mod_name]
-      if mod_meta then
+      
+      -- ★ 念のため、ここで "Program" モジュールが紛れ込んでいないか再チェック
+      if mod_meta and mod_meta.type ~= "Program" then
         local mod_cache_data = module_cache.load(mod_meta)
         if mod_cache_data and mod_cache_data.files then
+          
           for category, files in pairs(mod_cache_data.files) do
-            for _, file_path in ipairs(files) do
-              table.insert(merged_files_with_context, {
-                file_path = file_path, module_name = mod_name, module_root = mod_meta.module_root, category = category
-              })
+            if category ~= "programs" then -- ★ "programs" カテゴリをスキップ
+              for _, file_path in ipairs(files) do
+                table.insert(merged_files_with_context, {
+                  file_path = file_path, module_name = mod_name, module_root = mod_meta.module_root, category = category
+                })
+              end
             end
           end
+
         elseif mod_cache_data == nil then
           log.warn("core_files.get_files: Module cache not found for '%s'. Run :UEP refresh!", mod_name)
         end
         modules_processed = modules_processed + 1
       else
-        log.warn("core_files.get_files: Module meta not found for '%s' during aggregation.", mod_name)
-      end
-    end
-
-    -- STEP 4: Full スコープの場合、疑似モジュールのファイルも追加
-    -- (if ブロック - 変更なし)
-    if requested_scope == "full" and maps.project_root and maps.engine_root then
-      local pseudo_module_files = {
-        _EngineShaders = { root=fs.joinpath(maps.engine_root, "Engine", "Shaders") },
-        _EngineConfig  = { root=fs.joinpath(maps.engine_root, "Engine", "Config") },
-        _GameShaders   = { root=fs.joinpath(maps.project_root, "Shaders") },
-        _GameConfig    = { root=fs.joinpath(maps.project_root, "Config") },
-      }
-      for pseudo_name, data in pairs(pseudo_module_files) do
-        local pseudo_meta = { name = pseudo_name, module_root = data.root }
-        local pseudo_cache = module_cache.load(pseudo_meta)
-        if pseudo_cache and pseudo_cache.files then
-          for category, files in pairs(pseudo_cache.files) do
-            for _, file_path in ipairs(files) do
-              table.insert(merged_files_with_context, {
-                file_path = file_path, module_name = pseudo_name, module_root = data.root, category = category
-              })
-            end
-          end
+        if mod_meta and mod_meta.type == "Program" then
+           log.trace("core_files.get_files: Skipping Program module: %s", mod_name)
+        else
+           log.warn("core_files.get_files: Module meta not found for '%s' during aggregation.", mod_name)
         end
       end
     end
 
+    -- ▼▼▼ 修正: STEP 4 を "deps_flag" を考慮するよう修正 ▼▼▼
+    
+    -- STEP 4: スコープとDepsフラグに応じて、疑似モジュール(Config/Shaders)を追加
+    
+    -- 1. このスコープで Game / Engine の疑似モジュールを追加すべきか判定
+    local add_game_pseudos = false
+    local add_engine_pseudos = false
+
+    if deps_flag ~= "--no-deps" then
+        -- --no-deps 以外の場合、スコープに応じて疑似モジュールを追加
+        if requested_scope == "game" then
+            add_game_pseudos = true
+        elseif requested_scope == "engine" then
+            add_engine_pseudos = true
+        elseif requested_scope == "runtime" or requested_scope == "developer" or requested_scope == "editor" or requested_scope == "full" then
+            add_game_pseudos = true
+            add_engine_pseudos = true
+        end
+    end
+
+    local pseudo_module_files = {}
+    if add_engine_pseudos and maps.engine_root then
+        pseudo_module_files._EngineShaders = { root=fs.joinpath(maps.engine_root, "Engine", "Shaders") }
+        pseudo_module_files._EngineConfig  = { root=fs.joinpath(maps.engine_root, "Engine", "Config") }
+    end
+    if add_game_pseudos and maps.project_root then
+        pseudo_module_files._GameShaders   = { root=fs.joinpath(maps.project_root, "Shaders") }
+        pseudo_module_files._GameConfig    = { root=fs.joinpath(maps.project_root, "Config") }
+    end
+
+    -- 2. 登録された疑似モジュールのキャッシュを読み込み、ファイルを追加
+    if next(pseudo_module_files) then
+        for pseudo_name, data in pairs(pseudo_module_files) do
+            local pseudo_meta = { name = pseudo_name, module_root = data.root }
+            local pseudo_cache = module_cache.load(pseudo_meta)
+            
+            if pseudo_cache and pseudo_cache.files then
+                for category, files in pairs(pseudo_cache.files) do
+                    if category ~= "programs" then -- ★ "programs" カテゴリは除外
+                        for _, file_path in ipairs(files) do
+                            table.insert(merged_files_with_context, {
+                                file_path = file_path, module_name = pseudo_name, module_root = data.root, category = category
+                            })
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- ▲▲▲ 修正完了 ▲▲▲
+
     local end_time = os.clock()
-    log.info("core_files.get_files finished in %.4f seconds. Found %d files from %d modules (+ pseudo if Full).",
-      end_time - start_time, #merged_files_with_context, modules_processed)
+    log.info("core_files.get_files finished in %.4f seconds. Found %d files from %d modules (+ pseudo if %s).",
+      end_time - start_time, #merged_files_with_context, modules_processed, deps_flag)
 
     on_complete(true, merged_files_with_context)
 
   end) -- line 154?: コールバック関数の終わり
 end -- M.get_files の終わり
 
+-- (get_files_for_module は変更なし)
 function M.get_files_for_module(module_name, on_complete)
     local log = uep_log.get()
     log.debug("core_files.get_files_for_module called for '%s'", module_name)
@@ -214,6 +278,5 @@ function M.get_files_for_module(module_name, on_complete)
         on_complete(true, { files = module_files, module_meta = mod_meta })
     end)
 end
--- M.get_files_for_single_module = function(...) end
 
 return M
