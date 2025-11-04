@@ -1,4 +1,4 @@
--- lua/UEP/cmd/core/refresh_project.lua (完全版 - :t:r:r 修正 + all_components_map 渡し)
+-- lua/UEP/cmd/core/refresh_project.lua (完全版 - :t:r:r 修正 + all_components_map 渡し + スコープ外キャッシュロード修正)
 
 local unl_finder = require("UNL.finder")
 local unl_path = require("UNL.path")
@@ -293,11 +293,19 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         log.debug("resolve_and_save_all: Resolved dependencies for %d modules (by name).", vim.tbl_count(full_dependency_map))
 
         -- 3. 構造キャッシュ保存ループ
-        progress:stage_define("save_components", #components_to_process)
-        progress:stage_update("save_components", 0, "Saving component caches...")
+        progress:stage_define("save_components", #all_components) -- [!] プログレスの最大値を all_components に変更
+        progress:stage_update("save_components", 0, "Saving/Loading component caches...") -- [!] メッセージ変更
         local result_data = { all_data = {}, changed_components = {}, full_component_list = all_components }
 
+        -- [!] 処理済みコンポーネントを追跡するマップ
+        local processed_components = {}
+        local current_progress_count = 0
+
+        -- ループ 1: components_to_process (スコープ内のコンポーネント) を処理・保存
         for i, component in ipairs(components_to_process) do
+          current_progress_count = current_progress_count + 1 -- [!] カウンタをインクリメント
+          processed_components[component.name] = true -- [!] 処理済みフラグ
+
           local component_raw_modules = raw_modules_by_component[component.name] or {}
           local runtime_modules, developer_modules, editor_modules, programs_modules = {}, {}, {}, {}
 
@@ -357,8 +365,26 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
             table.insert(result_data.changed_components, new_data)
           end
           result_data.all_data[component.name] = has_changed and new_data or old_data
-          progress:stage_update("save_components", i)
+          progress:stage_update("save_components", current_progress_count, ("Processed: %s [%d/%d]"):format(component.display_name, current_progress_count, #all_components)) -- [!] プログレス更新
         end
+
+        -- ▼▼▼ 【修正箇所】 ▼▼▼
+        -- ループ 2: スコープ外のコンポーネントのキャッシュをロード
+        for i, component in ipairs(all_components) do
+            if not processed_components[component.name] then
+                current_progress_count = current_progress_count + 1
+                local cache_filename = component.name .. ".project.json"
+                local old_data = project_cache.load(cache_filename)
+                if old_data then
+                    result_data.all_data[component.name] = old_data
+                    progress:stage_update("save_components", current_progress_count, ("Loaded cache: %s [%d/%d]"):format(component.display_name, current_progress_count, #all_components))
+                else
+                    log.warn("resolve_and_save_all: Cache missing for out-of-scope component '%s'. This component's modules will be ignored.", component.display_name)
+                    progress:stage_update("save_components", current_progress_count, ("Cache missing: %s [%d/%d]"):format(component.display_name, current_progress_count, #all_components))
+                end
+            end
+        end
+        -- ▲▲▲ 【修正完了】 ▲▲▲
 
         -- ▼▼▼ モジュールキャッシュ更新対象決定 (キーをパスに変更) ▼▼▼
         local all_modules_meta_map_by_path = {}
