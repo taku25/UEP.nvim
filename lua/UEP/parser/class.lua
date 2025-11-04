@@ -1,203 +1,271 @@
--- lua/UEP/parser/class.lua (ロガー取得タイミング修正版)
+-- lua/UEP/parser/class.lua (tbl_deep_extend を for ループに置換)
 
--- ▼▼▼【修正点 1/3】ここで .get() を呼び出さない ▼▼▼
 local uep_logger_module = require("UEP.logger")
+local fs = require("vim.fs")
+
 local M = {}
 
 ----------------------------------------------------------------------
--- 解析関数 (get_file_hash, strip_comments は変更なし)
+-- 解析関数 (変更なし)
 ----------------------------------------------------------------------
-local function get_file_hash(file_path)
-  local file, err = io.open(file_path, "rb")
-  if not file then return nil end
-  local content = file:read("*a")
-  file:close()
+
+local MAX_HASH_FILE_SIZE = 5 * 1024 * 1024 -- 5MB limit
+
+local function get_file_hash(file_path, file_size)
+  local log = uep_logger_module.get()
+
+  if file_size > MAX_HASH_FILE_SIZE then
+      log.trace("get_file_hash: File %s is larger than %dMB. Skipping hash, forcing re-parse.", vim.fn.fnamemodify(file_path, ":t"), MAX_HASH_FILE_SIZE / 1024 / 1024)
+      return nil
+  end
+
+  if file_size > (1024 * 1024) then
+    log.debug("get_file_hash: Hashing file > 1MB in main thread: %s (Size: %.2f MB)", vim.fn.fnamemodify(file_path, ":t"), file_size / 1024 / 1024)
+  end
+
+  local read_ok, lines = pcall(vim.fn.readfile, file_path)
+  if not read_ok or not lines then
+    log.warn("get_file_hash: Could not read file: %s", file_path)
+    return nil
+  end
+  
+  local content = table.concat(lines, "\n")
   return vim.fn.sha256(content)
 end
 
-local function strip_comments(text)
-  text = text:gsub("/%*.-%*/", "")
-  text = text:gsub("//[^\n]*", "")
-  return text
-end
+----------------------------------------------------------------------
+-- 非同期実行関数 (Job/Worker 版)
+----------------------------------------------------------------------
 
-local function parse_single_header_with_user_logic(file_path)
-  -- ▼▼▼【修正点 2/3】関数内で .get() を呼び出す ▼▼▼
-  local uep_log = uep_logger_module.get()
-
-  local read_ok, lines = pcall(vim.fn.readfile, file_path)
-  if not read_ok then
-    uep_log.warn("Could not read file for parsing: %s", file_path)
-    return nil
-  end
-
-  local final_classes = {} -- ★注意: 名前はclassesだがstructも入れる
-  local i = 1
-  while i <= #lines do
-    local line_content = lines[i]
-    local is_uclass = line_content:find("UCLASS")
-    local is_uinterface = line_content:find("UINTERFACE")
-    local is_ustruct = line_content:find("USTRUCT") -- [!] USTRUCTを検出
-    local is_declare_class = line_content:find("DECLARE_CLASS")
-
-    -- [!] UCLASS, UINTERFACE, USTRUCT をまとめて処理する
-    if is_uclass or is_uinterface or is_ustruct then
-      local macro_type = is_uclass and "UCLASS" or (is_uinterface and "UINTERFACE" or "USTRUCT")
-      local keyword_to_find = (macro_type == "USTRUCT") and "struct" or "class" -- [!] structを探す
-      local body_macro_pattern = "_BODY" -- UCLASS/UINTERFACE/USTRUCT 共通
-
-      local block_lines = {}
-      local j = i
-      while j <= #lines do
-        table.insert(block_lines, lines[j])
-        -- [!] USTRUCT() の場合、 GENERATED_BODY() or GENERATED_USTRUCT_BODY() で終わる
-        if lines[j]:find(body_macro_pattern) then
-          break
-        end
-        j = j + 1
-      end
-
-      if j <= #lines then
-        local block_text = table.concat(block_lines, "\n")
-        local cleaned_text = strip_comments(block_text)
-        local flattened_text = cleaned_text:gsub("[\n\r]", " "):gsub("%s+", " ")
-
-        -- [!] パターンを USTRUCT と struct にも対応させる
-        -- 例: USTRUCT(...) struct FMyStruct : public FBaseStruct
-        -- 例: UCLASS(...) class AMyActor : public AActor
-        local vim_pattern
-        if keyword_to_find == "struct" then
-          -- struct FMyStruct : public FBaseStruct
-          -- struct FMyStruct (継承なし)
-          vim_pattern = [[.\{-}\(USTRUCT\)\s*(.\{-})\s*struct\s\+\(\w\+_API\s\+\)\?\(\w\+\)\s*\(:\s*\(public\|protected\|private\)\s*\(\w\+\)\)\?]]
-        else -- class
-          -- class AMyActor : public AActor
-          vim_pattern = [[.\{-}\(UCLASS\|UINTERFACE\)\s*(.\{-})\s*class\s\+\(\w\+_API\s\+\)\?\(\w\+\)\s*:\s*\(public\|protected\|private\)\s*\(\w\+\)]]
-        end
-
-        local result = vim.fn.matchlist(flattened_text, vim_pattern)
-
-        if result and #result > 0 and result[4] and result[4] ~= "" then
-          local symbol_name = result[4] -- クラス名 or 構造体名
-          local parent_symbol -- 親クラス or 親構造体 (structの場合は省略可能)
-          if keyword_to_find == "struct" then
-             parent_symbol = result[7] and result[7] ~= "" and result[7] or nil -- グループ7が親
-          else -- class
-             parent_symbol = result[6] and result[6] ~= "" and result[6] or nil -- グループ6が親
-          end
-
-          local is_interface = (macro_type == "UINTERFACE") or (parent_symbol == "UInterface")
-
-          table.insert(final_classes, {
-            class_name = symbol_name,
-            base_class = parent_symbol or (is_interface and nil or ((keyword_to_find == "class") and "UObject" or nil)), -- [!] structは親がなければnil
-            is_final = false, -- TODO: finalキーワードを検出する？
-            is_interface = is_interface,
-            symbol_type = keyword_to_find, -- [!] 'class' か 'struct' かを記録
-          })
-        end
-        i = j + 1
-      else
-        i = i + 1
-      end
-
-    elseif is_declare_class then
-      -- --- 【ロジック2: UObject用】修正済みの後方探索ロジック ---
-      for k = i - 1, 1, -1 do
-        local prev_line = lines[k]
-        local cleaned_prev_line = strip_comments(prev_line)
-
-        if cleaned_prev_line:match("^%s*class") then
-          -- UCLASS/UINTERFACEを除いた、class定義に特化した正規表現
-          local vim_pattern = [[class\s\+\(\w\+_API\s\+\)\?\(\w\+\)\s*:\s*\(public\|protected\|private\)\s*\(\w\+\)]]
-          local result = vim.fn.matchlist(cleaned_prev_line, vim_pattern)
-
-          if result and #result > 0 and result[1] and result[1] ~= "" then
-            local class_name = result[3]
-            local parent_class = result[5] and result[5] ~= "" and result[5] or nil
-            table.insert(final_classes, {
-              class_name = class_name,
-              base_class = parent_class,
-              is_final = false,
-              is_interface = false,
-              symbol_type = "class"
-            })
-            found_class_def = true
-            break -- class定義を見つけたら後方探索を終了
-          end
-        end
-      end
-      i = i + 1
-    else
-      i = i + 1
+-- (get_worker_script_path, get_cpu_count は変更なし)
+local function get_worker_script_path()
+    local log = uep_logger_module.get()
+    local this_file_path = debug.getinfo(1, "S").source
+    if not this_file_path or this_file_path:sub(1, 1) ~= "@" then
+        log.error("Could not determine worker script path from debug info.")
+        return nil
     end
-  end
-
-  if #final_classes > 0 then
-    return final_classes
-  else
-    return nil
-  end
+    this_file_path = this_file_path:sub(2)
+    local plugin_root = this_file_path:match("(.+)[/\\]lua[/\\]UEP[/\\]parser[/\\]class.lua$")
+    if not plugin_root then
+        log.error("Could not deduce plugin root from path: %s", this_file_path)
+        return nil
+    end
+    local worker_path = fs.joinpath(plugin_root, "scripts", "parse_headers_worker.lua")
+    if vim.fn.filereadable(worker_path) == 0 then
+        log.error("Worker script not found at: %s (Deduced Root: %s)", worker_path, plugin_root)
+        return nil
+    end
+    return worker_path
+end
+local function get_cpu_count()
+    local cpus = vim.loop.cpu_info()
+    return (cpus and #cpus > 0) and #cpus or 4
 end
 
-----------------------------------------------------------------------
--- 非同期実行関数 (APIシグネチャ変更)
-----------------------------------------------------------------------
+
 function M.parse_headers_async(existing_header_details, header_files, progress, on_complete)
-  -- ▼▼▼【修正点 3/3】ここでも関数内で .get() を呼び出す ▼▼▼
   local uep_log = uep_logger_module.get()
-  
-  local new_details = {}
+  local start_time = os.clock()
+
+  local new_details = {} 
   existing_header_details = existing_header_details or {}
+  
+  local files_to_parse = {} 
+  local mtimes_map = {}
+  local hashes_map = {}
 
   local total_header_file = #header_files
-  local co = coroutine.create(function()
-    progress:stage_define("header_analysis_detail", total_header_file)
-    for i, file_path in ipairs(header_files) do
-      progress:stage_update("header_analysis_detail", i, ("Parsing: %s (%d/%d)..."):format(vim.fn.fnamemodify(file_path, ":t"), i, total_header_file))
-      
-      -- ▼▼▼ ハイブリッドキャッシュ検証ロジック (変更なし) ▼▼▼
-      local existing_entry = existing_header_details[file_path]
-      local current_mtime = vim.fn.getftime(file_path)
+  uep_log.debug("parse_headers_async (Worker Mode): Starting check for %d files.", total_header_file)
+  progress:stage_define("header_analysis_detail", total_header_file)
 
-      -- 1. mtimeが同じなら、ファイルは変更なしとみなし、再利用（高速パス）
-      if existing_entry and existing_entry.mtime and existing_entry.mtime == current_mtime then
-        new_details[file_path] = existing_entry
-      else
-        -- 2. mtimeが違う場合、ハッシュを計算して本当に内容が変わったか確認
-        local current_hash = get_file_hash(file_path)
-        -- 2a. ハッシュが同じなら、mtimeだけ更新して再利用
-        if existing_entry and existing_entry.file_hash and existing_entry.file_hash == current_hash then
-          new_details[file_path] = existing_entry
-          new_details[file_path].mtime = current_mtime -- mtimeだけ更新
-        else
-          -- 2b. ハッシュが違うなら、本当に変更があったので再パース
-          local classes = parse_single_header_with_user_logic(file_path)
-          if classes ~= nil then
-            new_details[file_path] = { file_hash = current_hash, mtime = current_mtime, classes = classes }
-          end
-        end
-      end
-      -- ▲▲▲ ここまで ▲▲▲
-
-      if i % 100 == 0 then coroutine.yield() end
+  -- STEP 1: キャッシュ検証 (変更なし)
+  for i, file_path in ipairs(header_files) do
+    if i % 500 == 0 then
+        progress:stage_update("header_analysis_detail", i, ("Checking cache: %s (%d/%d)..."):format(vim.fn.fnamemodify(file_path, ":t"), i, total_header_file))
     end
-    on_complete(true, new_details)
-  end)
-  local function resume_handler()
-    local status = coroutine.status(co)
-    if status ~= "dead" then
-      local ok, err = coroutine.resume(co)
-      if not ok then
-        -- ★この uep_log が、今度は「本物」のロガーになる
-        uep_log.error("Error during header parsing coroutine: %s", tostring(err))
-        on_complete(false, nil)
-        return
+    
+    local stat = vim.loop.fs_stat(file_path)
+    
+    if not stat then
+        uep_log.trace("File not readable (stat failed), skipping: %s", file_path)
+        goto continue_loop
+    end
+    
+    local file_size = stat.size
+    local current_mtime = stat.mtime.sec
+
+    local existing_entry = existing_header_details[file_path]
+
+    if existing_entry and existing_entry.mtime and existing_entry.mtime == current_mtime then
+      new_details[file_path] = existing_entry
+    else
+      local current_hash = get_file_hash(file_path, file_size) 
+      
+      if existing_entry and existing_entry.file_hash and current_hash and existing_entry.file_hash == current_hash then
+        new_details[file_path] = existing_entry
+        new_details[file_path].mtime = current_mtime
+      else
+        table.insert(files_to_parse, file_path)
+        mtimes_map[file_path] = current_mtime
+        hashes_map[file_path] = current_hash
       end
-      vim.defer_fn(resume_handler, 1)
+    end
+    ::continue_loop::
+  end
+  
+  local files_to_parse_count = #files_to_parse
+  local files_from_cache_count = total_header_file - files_to_parse_count
+  
+  uep_log.info("Cache check complete. %d files from cache, %d files require parsing.", files_from_cache_count, files_to_parse_count)
+
+  -- STEP 2: パース対象がなければ、ここで終了 (変更なし)
+  if files_to_parse_count == 0 then
+    progress:stage_update("header_analysis_detail", total_header_file, "All headers up-to-date.")
+    on_complete(true, new_details)
+    return
+  end
+
+  -- STEP 3: ワーカーの準備 (変更なし)
+  local worker_script_path = get_worker_script_path()
+  if not worker_script_path then
+    uep_log.error("Could not find worker script. Aborting parallel parse.")
+    return on_complete(false, "Worker script path not found.")
+  end
+  
+  local nvim_cmd = {
+      vim.v.progpath,
+      "--headless",
+      "--clean",
+      "-c", ("luafile %s"):format(worker_script_path)
+  }
+  
+  local max_workers = math.min(get_cpu_count(), 16)
+  local total_jobs = math.min(max_workers, files_to_parse_count)
+  
+  local chunks = {}
+  for i = 1, total_jobs do chunks[i] = {} end
+  for i, file_path in ipairs(files_to_parse) do
+      table.insert(chunks[(i % total_jobs) + 1], file_path)
+  end
+
+  uep_log.info("Starting %d parallel workers to parse %d files...", total_jobs, files_to_parse_count)
+  
+  local jobs_completed = 0
+  local merged_worker_results = {}
+  local job_stderr_logs = {}
+  local all_jobs_started = true
+
+  -- STEP 4: ジョブの起動 (on_stdout は変更なし)
+  for i = 1, total_jobs do
+    local chunk_files = chunks[i]
+    
+    if #chunk_files == 0 then
+        uep_log.warn("Worker job #%d was assigned 0 files. Skipping.", i)
+        jobs_completed = jobs_completed + 1
+    else
+        local payload = {
+          files = chunk_files,
+          mtimes = mtimes_map,
+        }
+        local payload_json = vim.json.encode(payload)
+        
+        local job_stderr = {}
+        
+        local job_id = vim.fn.jobstart(nvim_cmd, {
+          rpc = false,
+          
+          on_stdout = function(job_id_cb, data, _)
+            if not data then return end
+            for _, line in ipairs(data) do
+                if line and line ~= "" then
+                    local ok_line, worker_result = pcall(vim.json.decode, line)
+                    if ok_line and type(worker_result) == "table" then
+                        for file_path, result_data in pairs(worker_result) do
+                            local hash_to_save = hashes_map[file_path]
+                            local mtime_to_save = mtimes_map[file_path]
+                            
+                            merged_worker_results[file_path] = {
+                                classes = result_data.classes,
+                                file_hash = hash_to_save,
+                                mtime = mtime_to_save
+                            }
+                        end
+                    else
+                        uep_log.warn("Worker (job_id %s): Failed to decode JSON line: %s", job_id_cb, line)
+                    end
+                end
+            end
+          end,
+
+          on_stderr = function(_, data, _)
+            if data then vim.list_extend(job_stderr, data) end
+          end,
+
+          on_exit = function(id, code, _)
+            uep_log.debug("Worker job %d finished with code %d.", id, code)
+            
+            local stderr_output = table.concat(job_stderr, "\n")
+            
+            if code ~= 0 then
+              table.insert(job_stderr_logs, ("Worker %d failed (code %d):\n%s"):format(id, code, stderr_output))
+            else
+              if stderr_output ~= "" then
+                 uep_log.warn("Worker %d exited with code 0 but reported to stderr:\n%s", id, stderr_output)
+              end
+            end
+            
+            jobs_completed = jobs_completed + 1
+            
+            local processed_so_far = files_from_cache_count + math.floor(files_to_parse_count * (jobs_completed / total_jobs))
+            progress:stage_update("header_analysis_detail", processed_so_far, ("Parsing: %d/%d files... (%d/%d workers)"):format(processed_so_far, total_header_file, jobs_completed, total_jobs))
+
+            -- ▼▼▼ STEP 5: 修正箇所 (tbl_deep_extend -> for ループ) ▼▼▼
+            if jobs_completed == total_jobs then
+              local end_job_time = os.clock()
+              uep_log.info("All %d workers finished in %.4f seconds.", total_jobs, end_job_time - start_time)
+              
+              if #job_stderr_logs > 0 then
+                uep_log.error("Some workers failed:\n%s", table.concat(job_stderr_logs, "\n\n"))
+              end
+              
+              local worker_results_count = vim.tbl_count(merged_worker_results)
+              uep_log.info("Total results from workers: %d", worker_results_count)
+
+              -- [!] `vim.tbl_deep_extend` を `for` ループに置き換え
+              uep_log.debug("Manually merging %d worker results into new_details map...", worker_results_count)
+              for file_path, data in pairs(merged_worker_results) do
+                  new_details[file_path] = data
+              end
+              
+              local final_total_count = vim.tbl_count(new_details)
+              -- [!] このログが 54421 になるはず！
+              uep_log.info("Header parsing complete. Total symbols (files in map): %d", final_total_count) 
+              progress:stage_update("header_analysis_detail", total_header_file, "Header analysis complete.")
+              
+              on_complete(true, new_details)
+            end
+            -- ▲▲▲ 修正完了 ▲▲▲
+          end,
+        })
+        
+        if job_id <= 0 then
+            uep_log.error("Failed to start worker job #%d.", i)
+            jobs_completed = jobs_completed + 1
+            all_jobs_started = false
+        else
+            uep_log.debug("Started worker job %d (PID: %s) for %d files.", i, vim.fn.jobpid(job_id), #chunk_files)
+            vim.fn.chansend(job_id, payload_json)
+            vim.fn.chanclose(job_id, "stdin")
+        end
     end
   end
-  resume_handler()
+
+  if not all_jobs_started and jobs_completed == total_jobs then
+      uep_log.error("Failed to start ANY worker jobs.")
+      on_complete(false, "Failed to start any worker jobs.")
+  end
 end
+
 
 return M
