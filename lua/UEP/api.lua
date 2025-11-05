@@ -21,6 +21,7 @@ local cmd_add_include = require("UEP.cmd.add_include")
 local cmd_goto_definition = require("UEP.cmd.goto_definition")
 local cmd_classes = require("UEP.cmd.classes")
 local cmd_structs = require("UEP.cmd.structs")
+local cmd_enums = require("UEP.cmd.enums")
 
 local M = {}
 
@@ -122,4 +123,9 @@ end
 function M.structs(opts)
   cmd_structs.execute(opts or {})
 end
+
+function M.enums(opts)
+  cmd_enums.execute(opts or {})
+end
+
 return M

@@ -167,6 +167,16 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "deps_flag", required = false },
       },
     },
+
+    enums = {
+      handler = uep_api.enums,
+      bang = true,
+      desc = "Find and jump to an enum definition. Scope/Deps flags available.",
+      args = {
+        { name = "scope", required = false },
+        { name = "deps_flag", required = false },
+      },
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)

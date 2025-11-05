@@ -213,4 +213,71 @@ function M.get_worker_script_path(script_name)
   return worker_path
 end
 
+---
+-- シンボル定義ファイルを開き、定義行へジャンプする (先行宣言をスキップ)
+-- @param target_file_path string 開くファイルのフルパス
+-- @param symbol_name string ジャンプ対象のシンボル名 (クラス/構造体/Enum)
+function M.open_file_and_jump(target_file_path, symbol_name)
+  local log = uep_log.get()
+  log.info("Attempting to jump to definition in: %s for symbol: %s", target_file_path, symbol_name)
+
+  local ok, err = pcall(vim.cmd.edit, vim.fn.fnameescape(target_file_path))
+  if not ok then
+    return log.error("Failed to open file '%s': %s", target_file_path, tostring(err))
+  end
+
+  local file_content = vim.fn.readfile(target_file_path)
+  if vim.v.shell_error ~= 0 then
+      log.warn("Could not read file content for jumping: %s", target_file_path)
+      vim.fn.cursor(1, 0)
+      vim.cmd("normal! zz")
+      return
+  end
+
+  local line_number = 1
+  local found_definition = false
+
+  -- インデントと単語境界に対応したパターン
+  local pattern_prefix = [[\.\{-}]] -- インデント(任意文字の最短一致)に対応
+  
+  local search_pattern_class  = pattern_prefix .. [[class\s\+\(.\{-}_API\s\+\)\?\<]] .. symbol_name .. [[\>]]
+  local search_pattern_struct = pattern_prefix .. [[struct\s\+\(.\{-}_API\s\+\)\?\<]] .. symbol_name .. [[\>]]
+  local search_pattern_enum   = pattern_prefix .. [[enum\s\+\(class\s\+\)\?\<]] .. symbol_name .. [[\>]]
+
+  for i, line in ipairs(file_content) do
+    local class_match  = vim.fn.match(line, search_pattern_class)
+    local struct_match = vim.fn.match(line, search_pattern_struct)
+    local enum_match   = vim.fn.match(line, search_pattern_enum)
+
+    if class_match >= 0 or struct_match >= 0 or enum_match >= 0 then
+      local trimmed_line = line:match("^%s*(.-)%s*$") 
+      if trimmed_line:match(";%s*(//.*)?$") or trimmed_line:match(";%s*(/%*.*%*/)?%s*$") then
+         log.debug("Skipping potential forward declaration on line %d: %s", i, line)
+      else
+         line_number = i
+         found_definition = true
+         log.debug("Definition likely found on line %d: %s", i, line)
+         break -- Stop searching
+      end
+    end
+  end
+
+  if not found_definition then
+      log.warn("Could not find exact definition line for '%s' in %s. Jumping to first occurrence or line 1.", symbol_name, target_file_path)
+      for i, line in ipairs(file_content) do
+          local class_match  = vim.fn.match(line, search_pattern_class)
+          local struct_match = vim.fn.match(line, search_pattern_struct)
+          local enum_match   = vim.fn.match(line, search_pattern_enum)
+          if class_match >= 0 or struct_match >= 0 or enum_match >= 0 then
+              line_number = i
+              break
+          end
+      end
+  end
+
+  vim.fn.cursor(line_number, 0)
+  vim.cmd("normal! zz")
+end
+-- ▲▲▲ [新規追加] ここまで ▲▲▲
+
 return M
