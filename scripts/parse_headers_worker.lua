@@ -3,7 +3,6 @@
 local json_decode = vim.json.decode
 local json_encode = vim.json.encode
 local matchlist = vim.fn.matchlist
-local v_stderr
 
 ----------------------------------------------------------------------
 -- 1. ワーカー内パーサー (io.lines() ベース)
@@ -17,7 +16,7 @@ end
 
 -- ▼▼▼ [修正] UCLASS/USTRUCT ブロックをパースするヘルパー関数 ▼▼▼
 -- (入力が `block_lines` (テーブル) から `block_text` (文字列) に変更)
-local function process_block(block_text, keyword_to_find, macro_type)
+local function process_class_struct_block(block_text, keyword_to_find, macro_type)
     local cleaned_text = strip_comments(block_text)
     local flattened_text = cleaned_text:gsub("[\n\r]", " "):gsub("%s+", " ")
 
@@ -47,11 +46,32 @@ local function process_block(block_text, keyword_to_find, macro_type)
     end
     return nil
 end
+
+local function process_enum_block(block_text, macro_type)
+  local cleaned_text = strip_comments(block_text)
+  local flattened_text = cleaned_text:gsub("[\n\r]", " "):gsub("%s+", " ")
+
+  -- 修正済みパターン
+  local vim_pattern = [[\v(UENUM)\s*\(.*\)\s*enum\s+(class\s+)?(\w+)]]
+  local result = vim.fn.matchlist(flattened_text, vim_pattern)
+
+  if result and #result > 0 and result[4] and result[4] ~= "" then
+    local symbol_name = result[4]
+    return {
+      class_name = symbol_name,
+      base_class = nil,
+      is_final = true,
+      is_interface = false,
+      symbol_type = "enum"
+    }
+  end
+  return nil
+end
 -- ▲▲▲ ヘルパー関数ここまで ▲▲▲
 
 -- ▼▼▼ [修正] パース関数 (入力が file_path から content_lines (テーブル) に変更) ▼▼▼
 local function parse_header_from_lines(content_lines)
-  local final_classes = {}
+  local final_symbols = {}
   local state = "SCANNING"
   local block_lines = {}
   local macro_type = nil
@@ -62,36 +82,48 @@ local function parse_header_from_lines(content_lines)
         local is_uclass = line:find("UCLASS")
         local is_uinterface = line:find("UINTERFACE")
         local is_ustruct = line:find("USTRUCT")
+        local is_uenum = line:find("UENUM")
 
         if is_uclass or is_uinterface or is_ustruct then
-          state = "BLOCK_HUNTING"
+          state = "HUNTING_BODY_MACRO"
           block_lines = { line }
           macro_type = is_uclass and "UCLASS" or (is_uinterface and "UINTERFACE" or "USTRUCT")
           keyword_to_find = (macro_type == "USTRUCT") and "struct" or "class"
           
           if line:find("_BODY") then
-              -- [!] process_block には文字列を渡す
-              local symbol_info = process_block(table.concat(block_lines, "\n"), keyword_to_find, macro_type)
-              if symbol_info then table.insert(final_classes, symbol_info) end
-              state = "SCANNING"
-              block_lines = {}
+            local symbol_info = process_class_struct_block(table.concat(block_lines, "\n"), keyword_to_find, macro_type)
+            if symbol_info then table.insert(final_symbols, symbol_info) end
+            state = "SCANNING"
+            block_lines = {}
           end
+        elseif is_uenum then
+          state = "HUNTING_ENUM_END"
+          block_lines = { line }
+          macro_type = "UENUM"
         end
-    elseif state == "BLOCK_HUNTING" then
+    elseif state == "HUNTING_BODY_MACRO" then
         table.insert(block_lines, line)
         
         if line:find("_BODY") then
-            -- [!] process_block には文字列を渡す
-            local symbol_info = process_block(table.concat(block_lines, "\n"), keyword_to_find, macro_type)
-            if symbol_info then table.insert(final_classes, symbol_info) end
+          local symbol_info = process_class_struct_block(table.concat(block_lines, "\n"), keyword_to_find, macro_type)
+          if symbol_info then table.insert(final_symbols, symbol_info) end
+          state = "SCANNING"
+          block_lines = {}
+        end
+    elseif state == "HUNTING_ENUM_END" then
+        table.insert(block_lines, line)
+        
+        if line:find("};") then 
+            local symbol_info = process_enum_block(table.concat(block_lines, "\n"), macro_type)
+            if symbol_info then table.insert(final_symbols, symbol_info) end
             state = "SCANNING"
             block_lines = {}
         end
     end
   end
 
-  if #final_classes > 0 then
-    return final_classes
+  if #final_symbols > 0 then
+    return final_symbols
   else
     return nil
   end
@@ -103,19 +135,18 @@ end
 -- 2. ワーカー・メインロジック (ハッシュ計算あり)
 ----------------------------------------------------------------------
 local function main()
-  v_stderr = io.open(vim.api.nvim_eval("v:stderr"), "w")
   
   -- ▼▼▼ [修正] ペイロードは {path, mtime, old_hash} のリスト ▼▼▼
   local raw_payload = io.read("*a")
   if not raw_payload or raw_payload == "" then
-    v_stderr:write("[Worker] Error: Did not receive any payload from stdin.\n")
+    io.stderr:write("[Worker] Error: Did not receive any payload from stdin.\n")
     vim.cmd("cquit!")
     return
   end
   
   local ok, files_data_list = pcall(json_decode, raw_payload)
   if not ok or type(files_data_list) ~= "table" then
-    v_stderr:write("[Worker] Error: Failed to decode JSON payload or payload is not a list.\n")
+    io.stderr:write("[Worker] Error: Failed to decode JSON payload or payload is not a list.\n")
     vim.cmd("cquit!")
     return
   end
@@ -126,14 +157,14 @@ local function main()
     local old_hash = file_data.old_hash
     
     if not current_mtime then
-        v_stderr:write(("[Worker] Warning: Missing mtime for %s. Skipping.\n"):format(file_path))
+        io.stderr:write(("[Worker] Warning: Missing mtime for %s. Skipping.\n"):format(file_path))
         goto continue_loop
     end
 
     -- STEP 1: ファイル読み込み (ワーカー内で同期的I/O)
     local read_ok, lines = pcall(vim.fn.readfile, file_path)
     if not read_ok or not lines then
-      v_stderr:write(("[Worker] Error: Could not read file %s\n"):format(file_path))
+      io.stderr:write(("[Worker] Error: Could not read file %s\n"):format(file_path))
       goto continue_loop
     end
     
@@ -171,7 +202,7 @@ local function main()
     if output_ok then
         io.write(json_line .. "\n")
     else
-        v_stderr:write(("[Worker] Error: Failed to encode JSON line for %s\n"):format(file_path))
+        io.stderr:write(("[Worker] Error: Failed to encode JSON line for %s\n"):format(file_path))
     end
     
     -- 50ファイルごと、または最後/最初 に flush
@@ -182,8 +213,8 @@ local function main()
     ::continue_loop::
   end
   -- ▲▲▲ メインロジック修正完了 ▲▲▲
-  
-  v_stderr:close()
+   pcall(io.stdout.flush) 
+
   vim.cmd("qall!")
 end
 
