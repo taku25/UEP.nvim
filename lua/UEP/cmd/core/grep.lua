@@ -82,7 +82,7 @@ function M.start_live_grep(opts)
       title = opts.title,
       initial_query = opts.initial_query or "",
       transform_display = transform_display_func,
-      include_extensions = conf.files_extensions,
+      include_extensions = opts.include_extensions or conf.files_extensions,
       exclude_directories = conf.excludes_directory,
       devicons_enabled = true,
       on_submit = function(selection)

@@ -177,6 +177,14 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "deps_flag", required = false },
       },
     },
+    config_grep = {
+      handler = uep_api.config_grep,
+      bang = true,
+      desc = "Live grep .ini files. Scope: Game|Engine|Full.",
+      args = {
+        { name = "scope", required = false },
+      },
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)

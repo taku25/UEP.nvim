@@ -22,6 +22,7 @@ local cmd_goto_definition = require("UEP.cmd.goto_definition")
 local cmd_classes = require("UEP.cmd.classes")
 local cmd_structs = require("UEP.cmd.structs")
 local cmd_enums = require("UEP.cmd.enums")
+local cmd_config_grep = require("UEP.cmd.config_grep") -- [!] 追加
 
 local M = {}
 
@@ -128,4 +129,7 @@ function M.enums(opts)
   cmd_enums.execute(opts or {})
 end
 
+function M.config_grep(opts)
+  cmd_config_grep.execute(opts or {})
+end
 return M
