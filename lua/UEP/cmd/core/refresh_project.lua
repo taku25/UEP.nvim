@@ -1,9 +1,9 @@
--- lua/UEP/cmd/core/refresh_project.lua (完全版 - :t:r:r 修正 + all_components_map 渡し + スコープ外キャッシュロード修正)
+-- lua/UEP/cmd/core/refresh_project.lua (最適化版: mtime差分更新 + vim.schedule非同期ループ)
 
 local unl_finder = require("UNL.finder")
 local unl_path = require("UNL.path")
 local fs = require("vim.fs")
-local unl_analyzer = require("UNL.analyzer.build_cs")
+local unl_analyzer = require("UNL.analyzer.build_cs") -- [!] 逐次版ではこちらが require する
 local uep_graph = require("UEP.graph")
 local uep_log = require("UEP.logger")
 local project_cache = require("UEP.cache.project")
@@ -43,11 +43,21 @@ local function parse_project_or_plugin_file(path)
   return type_map
 end
 
--- ▼▼▼ parse_single_component (":t:r:r" 修正版) ▼▼▼
-local function parse_single_component(component, module_type_map, on_done)
+-- ▼▼▼ [修正] 最適化版 parse_single_component ▼▼▼
+---
+-- 1コンポーネントの Build.cs を非同期で検索・パースする
+-- mtime を比較し、変更がないファイルはパースをスキップする
+-- vim.schedule を使い、メインスレッドをブロックしない
+--
+-- @param component table
+-- @param module_type_map table
+-- @param old_component_data table|nil 前回のキャッシュデータ
+-- @param on_done function(ok, { meta = {}, mtimes = {} })
+local function parse_single_component(component, module_type_map, old_component_data, on_done)
   local log = uep_log.get()
   local search_paths = {}
 
+  -- 1. 検索パスの決定 (変更なし)
   if component.type == "Engine" then
     table.insert(search_paths, fs.joinpath(component.root_path, "Engine", "Source", "Runtime"))
     table.insert(search_paths, fs.joinpath(component.root_path, "Engine", "Source", "Developer"))
@@ -67,14 +77,13 @@ local function parse_single_component(component, module_type_map, on_done)
   end
   local fd_cmd = { "fd", "--absolute-path", "--type", "f", "--regex", "\\.[Bb]uild\\.cs$" }
   for _, spath in ipairs(search_paths) do
-    -- 検索パスが存在するか確認してから追加
     if vim.fn.isdirectory(spath) == 1 then
         table.insert(fd_cmd, "--search-path")
         table.insert(fd_cmd, spath)
     end
   end
-  log.trace("parse_single_component: Executing fd command for '%s': %s", component.display_name, vim.inspect(fd_cmd))
-
+  
+  -- 2. fd で Build.cs を非同期検索 (変更なし)
   local build_cs_files = {}
   local fd_stderr = {}
   vim.fn.jobstart(fd_cmd, {
@@ -86,39 +95,75 @@ local function parse_single_component(component, module_type_map, on_done)
     on_stderr = function(_, data)
       if data then for _, line in ipairs(data) do if line ~= "" then table.insert(fd_stderr, line) end end end
     end,
-    on_exit = function(_, code)
+    on_exit = function(_, code) -- [!] fd 完了時のコールバック
       log.trace("parse_single_component: fd command for '%s' finished with code %d. Found %d Build.cs files.",
                 component.display_name, code, #build_cs_files)
       if code ~= 0 then
          log.error("fd command failed for '%s': %s", component.display_name, table.concat(fd_stderr, "\n"))
+         -- fdが失敗しても、空の結果で on_done を呼び、処理は続行する
       end
 
-      local modules_meta = {}
-      local source_mtimes = {}
-      if #build_cs_files > 0 then
-        for i, raw_path in ipairs(build_cs_files) do
-          local build_cs_path = unl_path.normalize(raw_path)
-          log.trace("parse_single_component: Processing Build.cs [%d/%d] for '%s': %s",
-                    i, #build_cs_files, component.display_name, build_cs_path)
-
-          if vim.fn.filereadable(build_cs_path) == 0 then
-              goto continue
+      local modules_meta = {} -- このコンポーネントの全モジュールメタデータ
+      local source_mtimes = {} -- このコンポーネントの全 .cs の mtime
+      
+      -- 3. [新規] 古いキャッシュからモジュールマップを作成 (mtime比較用)
+      local old_modules_by_path_map = {}
+      if old_component_data then
+        for _, mtype in ipairs({"runtime_modules", "developer_modules", "editor_modules", "programs_modules"}) do
+          if old_component_data[mtype] then
+            for mod_name, mod_data in pairs(old_component_data[mtype]) do
+              if mod_data.path then
+                old_modules_by_path_map[mod_data.path] = mod_data
+              end
+            end
           end
+        end
+      end
+      
+      -- 4. [新規] vim.schedule を使った非同期ループ
+      local i = 1
+      local parse_loop
+      parse_loop = function()
+        -- a. ベースケース: 全ファイルの処理が完了
+        if i > #build_cs_files then
+          log.debug("Async parse loop for '%s' complete.", component.display_name)
+          on_done(true, { meta = modules_meta, mtimes = source_mtimes })
+          return
+        end
+        
+        -- b. 1ファイル取得
+        local raw_path = build_cs_files[i]
+        local build_cs_path = unl_path.normalize(raw_path)
+        
+        -- c. mtime 比較
+        local current_mtime = vim.fn.getftime(build_cs_path)
+        local old_mtime = (old_component_data and old_component_data.source_mtimes) and old_component_data.source_mtimes[build_cs_path] or -1
+        local old_module_meta = old_modules_by_path_map[build_cs_path]
 
-          source_mtimes[build_cs_path] = vim.fn.getftime(build_cs_path)
+        if current_mtime == -1 then -- ファイルが読めない
+          log.warn("Could not get mtime for %s. Skipping.", build_cs_path)
+        
+        elseif current_mtime == old_mtime and old_module_meta then
+          -- [最適化 1] mtime が同じ ＝ スキップ
+          -- 古いデータをそのままコピー
+          modules_meta[old_module_meta.name] = old_module_meta
+          source_mtimes[build_cs_path] = current_mtime
           
-          -- ★★★ モジュール名取得を ":t:r:r" に修正 ★★★
-          local module_name = vim.fn.fnamemodify(build_cs_path, ":t:r:r")
+        else
+          -- [変更あり] mtime が異なる、または新規ファイル ＝ パース実行
+          log.trace("Parsing changed file: %s", build_cs_path)
           
-          local module_root = vim.fn.fnamemodify(build_cs_path, ":h")
-          local location = build_cs_path:find("/Plugins/", 1, true) and "in_plugins" or "in_source"
-
+          -- [!] parse は同期的だが、1ファイルだけなので高速
           local parse_ok, dependencies = pcall(unl_analyzer.parse, build_cs_path)
           if not parse_ok then
-              log.error("parse_single_component: Failed to parse Build.cs '%s': %s", build_cs_path, tostring(dependencies))
+              log.error("Failed to parse Build.cs '%s': %s", build_cs_path, tostring(dependencies))
               dependencies = {}
           end
-
+          
+          -- (型決定ロジック - 変更なし)
+          local module_name = vim.fn.fnamemodify(build_cs_path, ":t:r:r")
+          local module_root = vim.fn.fnamemodify(build_cs_path, ":h")
+          local location = build_cs_path:find("/Plugins/", 1, true) and "in_plugins" or "in_source"
           local mod_type = module_type_map[module_name]
           local type_source = "None"
           if mod_type then type_source = "Plugin/Project File"
@@ -131,24 +176,29 @@ local function parse_single_component(component, module_type_map, on_done)
             elseif component.type == "Game" and location == "in_source" then mod_type = "Runtime"; type_source = "Path (Game Source)" end
           end
           if not mod_type then mod_type = "Runtime"; type_source = "Default (Runtime)" end
-
-          log.trace("Module Type Determination: Name=%s, Type=%s, Source=%s (Path: %s)",
-                   module_name, mod_type, type_source, build_cs_path)
-
+          
+          -- 新しいメタデータを保存
           modules_meta[module_name] = {
             name = module_name, path = build_cs_path, module_root = module_root,
             category = component.type, location = location, dependencies = dependencies,
             owner_name = component.owner_name,
             type = mod_type,
           }
-          ::continue::
+          source_mtimes[build_cs_path] = current_mtime
         end
+        
+        -- d. [最適化 2] 次のファイルの処理をスケジュール
+        i = i + 1
+        vim.schedule(parse_loop)
       end
-      on_done(true, { meta = modules_meta, mtimes = source_mtimes })
+      
+      -- 5. [新規] 非同期ループの開始
+      log.debug("Starting async parse loop for %d files in '%s'...", #build_cs_files, component.display_name)
+      parse_loop() -- i = 1 で開始
     end,
   })
 end
--- ▲▲▲ parse_single_component 修正ここまで ▲▲▲
+-- ▲▲▲ 最適化版 parse_single_component 完了 ▲▲▲
 
 -------------------------------------------------
 -- メインAPI
@@ -168,7 +218,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
   local engine_name = get_name_from_root(engine_root)
   local uproject_mtime = vim.fn.getftime(uproject_path)
 
-  -- .uplugin 検索
+  -- .uplugin 検索 (変更なし)
   local plugin_search_paths = {
     fs.joinpath(game_root, "Plugins"),
     fs.joinpath(engine_root, "Engine", "Plugins"),
@@ -194,12 +244,12 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
     on_stderr = function(_, data)
       if data then for _, line in ipairs(data) do if line ~= "" then table.insert(uplugin_fd_stderr, line) end end end
     end,
-    on_exit = function(_, uplugin_code)
+    on_exit = function(_, uplugin_code) -- .uplugin 検索の on_exit コールバック
       if uplugin_code ~= 0 then
          log.error("fd command failed for uplugins: %s", table.concat(uplugin_fd_stderr, "\n"))
       end
 
-      -- .uproject/.uplugin を先に解析
+      -- .uproject/.uplugin を先に解析 (変更なし)
       log.info("Found %d .uplugin files. Parsing project and plugin definitions...", #all_uplugin_files)
       local module_type_map = {}
       local uproject_types = parse_project_or_plugin_file(uproject_path)
@@ -210,50 +260,61 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       end
       log.info("Finished parsing. Found type definitions for %d modules.", vim.tbl_count(module_type_map))
 
-      -- all_components リスト作成
+      -- all_components リスト作成 (変更なし)
       local all_components = {}
       table.insert(all_components, { name = game_name, display_name = vim.fn.fnamemodify(game_root, ":t"), type = "Game", root_path = game_root, owner_name = game_name })
       table.insert(all_components, { name = engine_name, display_name = "Engine", type = "Engine", root_path = engine_root, owner_name = engine_name })
       for _, uplugin_path in ipairs(all_uplugin_files) do
         local plugin_root = vim.fn.fnamemodify(uplugin_path, ":h")
         local owner_name = uplugin_path:find(engine_root, 1, true) and engine_name or game_name
-        -- ★ .uplugin パスもコンポーネント情報に含める
         table.insert(all_components, {
             name = get_name_from_root(plugin_root),
             display_name = vim.fn.fnamemodify(uplugin_path, ":t:r"),
             type = "Plugin",
             root_path = plugin_root,
             owner_name = owner_name,
-            uplugin_path = uplugin_path -- ★ 追加
+            uplugin_path = uplugin_path
         })
       end
 
-      -- スコープに基づいて処理対象コンポーネントを決定
+      -- スコープに基づいて処理対象コンポーネントを決定 (変更なし)
       local components_to_process = {}
       if refresh_opts.scope == "Game" then components_to_process = vim.tbl_filter(function(c) return c.owner_name == game_name end, all_components)
       elseif refresh_opts.scope == "Engine" then components_to_process = vim.tbl_filter(function(c) return c.owner_name == engine_name end, all_components)
       else components_to_process = all_components end
 
-      -- Build.cs パースループ開始
+      -- ▼▼▼ [修正] Build.cs パースループ開始 (逐次版) ▼▼▼
       progress:stage_define("parse_components", #all_components)
-      progress:stage_update("parse_components", 0, "PASS 1: Parsing all Build.cs files...")
+      progress:stage_update("parse_components", 0, "PASS 1: Parsing all Build.cs files (non-blocking)...")
       local raw_modules_by_component = {}
       local source_mtimes_by_component = {}
       local current_index = 0
-      local resolve_and_save_all
+      local resolve_and_save_all -- 最終コールバックを先に宣言
 
+      -- 逐次処理用の `parse_next` 関数
       local function parse_next()
         current_index = current_index + 1
+        -- 1. 全コンポーネントが完了したら、最終処理へ
         if current_index > #all_components then
           resolve_and_save_all()
           return
         end
+        
+        -- 2. 次のコンポーネントを処理
         local component = all_components[current_index]
-        parse_single_component(component, module_type_map, function(ok, result)
+        
+        -- [!] 古いキャッシュをここでロード
+        local cache_filename = component.name .. ".project.json"
+        local old_data = project_cache.load(cache_filename)
+        
+        -- [!] `old_data` を `parse_single_component` に渡す
+        parse_single_component(component, module_type_map, old_data, function(ok, result)
           if ok then
             raw_modules_by_component[component.name] = result.meta
             source_mtimes_by_component[component.name] = result.mtimes
             progress:stage_update("parse_components", current_index, ("Parsed: %s [%d/%d]"):format(component.display_name, current_index, #all_components))
+            
+            -- 3. 処理が終わったら、次のコンポーネントを処理するために自分を呼び出す
             vim.schedule(parse_next)
           else
             log.error("Failed to parse component '%s'. Aborting refresh.", component.display_name)
@@ -262,15 +323,14 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         end)
       end
 
-      -- 依存関係解決と保存
+      -- 依存関係解決と保存 (最終コールバック)
       resolve_and_save_all = function()
         progress:stage_update("parse_components", #all_components, "PASS 1 Complete. Aggregating modules...")
-
-        -- 1. Parse 結果を集約 (キーはモジュール名)
+        
+        -- 1. Parse 結果を集約 (変更なし)
         local all_modules_meta_raw = {}
         for _, component_modules in pairs(raw_modules_by_component) do
           for module_name, module_data in pairs(component_modules) do
-            -- ★ 衝突スキップロジック (Engine優先)
             if not all_modules_meta_raw[module_name] or module_name == "Engine" then
                 all_modules_meta_raw[module_name] = module_data
             else
@@ -280,7 +340,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         end
         log.debug("resolve_and_save_all: Aggregated %d raw modules (by name, pre-deps).", vim.tbl_count(all_modules_meta_raw))
 
-        -- 2. 依存関係解決 (キーはモジュール名)
+        -- 2. 依存関係解決 (変更なし)
         progress:stage_define("resolve_deps", 1)
         progress:stage_update("resolve_deps", 0, "PASS 2: Resolving all dependencies...")
         local resolve_ok, full_dependency_map_or_err = pcall(uep_graph.resolve_all_dependencies, all_modules_meta_raw)
@@ -293,18 +353,17 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         log.debug("resolve_and_save_all: Resolved dependencies for %d modules (by name).", vim.tbl_count(full_dependency_map))
 
         -- 3. 構造キャッシュ保存ループ
-        progress:stage_define("save_components", #all_components) -- [!] プログレスの最大値を all_components に変更
-        progress:stage_update("save_components", 0, "Saving/Loading component caches...") -- [!] メッセージ変更
+        progress:stage_define("save_components", #all_components)
+        progress:stage_update("save_components", 0, "Saving/Loading component caches...")
         local result_data = { all_data = {}, changed_components = {}, full_component_list = all_components }
 
-        -- [!] 処理済みコンポーネントを追跡するマップ
         local processed_components = {}
         local current_progress_count = 0
 
         -- ループ 1: components_to_process (スコープ内のコンポーネント) を処理・保存
         for i, component in ipairs(components_to_process) do
-          current_progress_count = current_progress_count + 1 -- [!] カウンタをインクリメント
-          processed_components[component.name] = true -- [!] 処理済みフラグ
+          current_progress_count = current_progress_count + 1
+          processed_components[component.name] = true
 
           local component_raw_modules = raw_modules_by_component[component.name] or {}
           local runtime_modules, developer_modules, editor_modules, programs_modules = {}, {}, {}, {}
@@ -314,7 +373,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
               local mod_meta = full_dependency_map[module_name]
               local mod_type = mod_meta.type
               if mod_type then
-                local clean_type_lower = mod_type:match("^%s*(.-)%s*$"):lower()
+                local clean_type_lower = mod_meta.type:match("^%s*(.-)%s*$"):lower()
                 if clean_type_lower == "program" then programs_modules[module_name] = mod_meta
                 elseif clean_type_lower == "developer" then developer_modules[module_name] = mod_meta
                 elseif clean_type_lower:find("editor", 1, true) or clean_type_lower == "uncookedonly" then editor_modules[module_name] = mod_meta
@@ -328,13 +387,12 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
           local source_mtimes = source_mtimes_by_component[component.name] or {}
           source_mtimes[uproject_path] = uproject_mtime
           
-          -- ★ .uplugin パスもキャッシュに保存
           local uplugin_path = component.type == "Plugin" and component.uplugin_path or nil
 
           local new_data = {
             name = component.name, display_name = component.display_name, type = component.type,
             root_path = component.root_path, owner_name = component.owner_name,
-            uplugin_path = uplugin_path, -- ★ 追加
+            uplugin_path = uplugin_path,
             generation = new_generation, source_mtimes = source_mtimes,
             runtime_modules = runtime_modules, developer_modules = developer_modules,
             editor_modules = editor_modules, programs_modules = programs_modules,
@@ -343,21 +401,15 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
           local cache_filename = component.name .. ".project.json"
           local old_data = project_cache.load(cache_filename)
           local has_changed = false
+          
+          -- ▼▼▼ [修正] 古い mtime チェック (cache_is_stale) を削除 ▼▼▼
+          -- `parse_single_component` が差分更新したので、`generation` の比較だけで十分
           if refresh_opts.force then has_changed = true; log.info("Forced update for component: %s", component.display_name)
           elseif not old_data then has_changed = true
-          elseif refresh_opts.bang then has_changed = (old_data.generation ~= new_generation)
-          else
-            local cache_is_stale = false
-            if old_data.source_mtimes then
-              for path, old_mtime in pairs(old_data.source_mtimes) do
-                local current_mtime = vim.fn.getftime(path)
-                if (vim.fn.filereadable(path) == 0) or (current_mtime == -1) or (current_mtime > old_mtime) then
-                  cache_is_stale = true; break
-                end
-              end
-            else cache_is_stale = true end
-            if cache_is_stale then has_changed = (old_data.generation ~= new_generation) end
+          elseif old_data.generation ~= new_generation then
+            has_changed = true
           end
+          -- ▲▲▲ 修正完了 ▲▲▲
 
           if has_changed then
             log.info("Updating project cache for component: %s (gen: %s)", component.display_name, new_generation:sub(1,8))
@@ -365,11 +417,10 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
             table.insert(result_data.changed_components, new_data)
           end
           result_data.all_data[component.name] = has_changed and new_data or old_data
-          progress:stage_update("save_components", current_progress_count, ("Processed: %s [%d/%d]"):format(component.display_name, current_progress_count, #all_components)) -- [!] プログレス更新
+          progress:stage_update("save_components", current_progress_count, ("Processed: %s [%d/%d]"):format(component.display_name, current_progress_count, #all_components))
         end
 
-        -- ▼▼▼ 【修正箇所】 ▼▼▼
-        -- ループ 2: スコープ外のコンポーネントのキャッシュをロード
+        -- ループ 2: スコープ外のコンポーネントのキャッシュをロード (変更なし)
         for i, component in ipairs(all_components) do
             if not processed_components[component.name] then
                 current_progress_count = current_progress_count + 1
@@ -384,24 +435,18 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
                 end
             end
         end
-        -- ▲▲▲ 【修正完了】 ▲▲▲
 
-        -- ▼▼▼ モジュールキャッシュ更新対象決定 (キーをパスに変更) ▼▼▼
+        -- モジュールキャッシュ更新対象決定 (変更なし)
         local all_modules_meta_map_by_path = {}
         log.debug("resolve_and_save_all: Aggregating all modules by path for module cache scan...")
-        local modules_missing_root = 0
         for comp_name, component_data in pairs(result_data.all_data) do
             for _, type_key in ipairs({"runtime_modules", "developer_modules", "editor_modules", "programs_modules"}) do
                 if component_data[type_key] then
                     for mod_name, mod_data in pairs(component_data[type_key]) do
                         if mod_data and mod_data.module_root then
-                            -- ★ キーを module_root に変更
                             if not all_modules_meta_map_by_path[mod_data.module_root] then
                                 all_modules_meta_map_by_path[mod_data.module_root] = mod_data
                             end
-                        else
-                            log.warn("Module '%s' (comp %s) missing module_root.", mod_name, comp_name)
-                            modules_missing_root = modules_missing_root + 1
                         end
                     end
                 end
@@ -409,20 +454,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         end
         log.debug("resolve_and_save_all: Aggregated %d unique modules by path.", vim.tbl_count(all_modules_meta_map_by_path))
 
-        -- ★ Engine チェックログ (パスキーマップ用)
-        local engine_meta_found = false
-        for path, meta in pairs(all_modules_meta_map_by_path) do
-            if meta.name == "Engine" and meta.module_root:find("Runtime/Engine$") then
-                log.debug("resolve_and_save_all: FINAL CHECK - 'Engine' module FOUND in all_modules_meta_map_by_path at path: %s", path)
-                engine_meta_found = true
-                break
-            end
-        end
-        if not engine_meta_found then
-            log.error("resolve_and_save_all: FINAL CHECK - CRITICAL - 'Engine' module MISSING from all_modules_meta_map_by_path!")
-        end
-        
-        local modules_to_scan_meta = {} -- キーは module_root パス
+        local modules_to_scan_meta = {}
         if refresh_opts.bang or refresh_opts.force then
           log.info("Bang(!) or --force specified. All modules in scope '%s' will be scanned.", refresh_opts.scope or "Full")
           if refresh_opts.scope == "Full" or not refresh_opts.scope then
@@ -454,18 +486,17 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
             end
           end
         end
-        -- ▲▲▲ モジュールキャッシュ更新対象決定 (キーをパスに変更) ▲▲▲
-
+        
         local modules_to_scan_count = vim.tbl_count(modules_to_scan_meta)
         log.debug("resolve_and_save_all: Determined %d modules to scan.", modules_to_scan_count)
         
-        -- ▼▼▼ モジュールキャッシュスキャン実行 (★ all_components_map を渡す) ▼▼▼
+        -- モジュールキャッシュスキャン実行 (変更なし)
         if modules_to_scan_count > 0 or (refresh_opts.bang or refresh_opts.force) then
           log.info("Starting file scan for %d module(s) (and component roots)...", modules_to_scan_count)
           refresh_modules_core.create_module_caches_for(
             modules_to_scan_meta,
             all_modules_meta_map_by_path,
-            result_data.all_data, -- ★★★ 全コンポーネントマップを渡す
+            result_data.all_data,
             progress,
             game_root, engine_root,
             function(files_ok)
@@ -480,7 +511,10 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
 
       end -- resolve_and_save_all 終わり
 
-      parse_next() -- 最初の呼び出し
+      -- [!] 逐次処理の最初の呼び出し
+      parse_next()
+      -- ▲▲▲ 変更完了 ▲▲▲
+
     end, -- .uplugin 検索 on_exit 終わり
   }) -- .uplugin 検索 jobstart 終わり
 end -- M.update_project_structure 終わり

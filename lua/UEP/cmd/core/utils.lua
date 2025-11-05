@@ -158,23 +158,31 @@ end
 
 
 -- プラグインのルートディレクトリをキャッシュする変数
-local plugin_root_cache = nil
+local plugin_root_cache = {}
 
 ---
--- UEP.nvimプラグインのルートディレクトリを探して返す
+-- UEP.nvimやUNL.nvimなど、指定されたプラグインのルートディレクトリを探して返す
 -- vim.api.nvim_list_runtime_paths() を使用する
--- @param plugin_name string プラグインのディレクトリ名 (例: "UEP.nvim")
+-- @param plugin_name string プラグインのディレクトリ名 (例: "UEP.nvim" or "UNL.nvim")
 -- @return string|nil
 function M.find_plugin_root(plugin_name)
-  if plugin_root_cache then return plugin_root_cache end
+  if not plugin_name or plugin_name == "" then
+    uep_log.get().error("find_plugin_root: plugin_name was nil or empty.")
+    return nil
+  end
 
-  -- プラグインのディレクトリ名を指定 (通常はリポジトリ名)
-  plugin_name = plugin_name or "UEP.nvim" 
+  -- [変更] テーブルからプラグイン名で検索
+  if plugin_root_cache[plugin_name] then 
+    return plugin_root_cache[plugin_name] 
+  end
   
   for _, path in ipairs(vim.api.nvim_list_runtime_paths()) do
     -- [/\\] は / または \ にマッチ, $ は末尾
-    if path:match("[/\\]" .. plugin_name .. "$") then
-      plugin_root_cache = path -- 見つけたらキャッシュ
+    -- [!] `plugin_name` に含まれる可能性のある `.` をエスケープ
+    local search_pattern = "[/\\]" .. plugin_name:gsub("%.", "%.") .. "$"
+    if path:match(search_pattern) then
+      -- [変更] テーブルにプラグイン名で保存
+      plugin_root_cache[plugin_name] = path 
       return path
     end
   end
@@ -189,10 +197,10 @@ end
 -- @return string|nil
 function M.get_worker_script_path(script_name)
   local log = uep_log.get()
-  -- ご提案の関数を呼び出し
+  -- [!] "UEP.nvim" をハードコード (ワーカーはUEP.nvimのscripts/にあるため)
   local root = M.find_plugin_root("UEP.nvim") 
   if not root then
-    log.error("get_worker_script_path: Cannot find plugin root.")
+    log.error("get_worker_script_path: Cannot find UEP.nvim plugin root.")
     return nil
   end
 
