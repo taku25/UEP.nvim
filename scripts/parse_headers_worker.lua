@@ -1,4 +1,4 @@
--- scripts/parse_headers_worker.lua (ハッシュ計算削除 + Regex修正版)
+-- scripts/parse_headers_worker.lua (ハッシュ計算ロジックを追加)
 
 local json_decode = vim.json.decode
 local json_encode = vim.json.encode
@@ -15,24 +15,18 @@ local function strip_comments(text)
   return text
 end
 
--- [!] get_hash_from_lines 関数を削除
-
--- ▼▼▼ UCLASS/USTRUCT ブロックをパースするヘルパー関数 ▼▼▼
-local function process_block(block_lines, keyword_to_find, macro_type)
-    local block_text = table.concat(block_lines, "\n")
+-- ▼▼▼ [修正] UCLASS/USTRUCT ブロックをパースするヘルパー関数 ▼▼▼
+-- (入力が `block_lines` (テーブル) から `block_text` (文字列) に変更)
+local function process_block(block_text, keyword_to_find, macro_type)
     local cleaned_text = strip_comments(block_text)
     local flattened_text = cleaned_text:gsub("[\n\r]", " "):gsub("%s+", " ")
 
     local vim_pattern
     if keyword_to_find == "struct" then
-    -- struct FMyStruct : public FBaseStruct
-    -- struct FMyStruct (継承なし)
       vim_pattern = [[.\{-}\(USTRUCT\)\s*(.\{-})\s*struct\s\+\(\w\+_API\s\+\)\?\(\w\+\)\s*\(:\s*\(public\|protected\|private\)\s*\(\w\+\)\)\?]]
     else -- class
-      -- class AMyActor : public AActor
-    vim_pattern = [[.\{-}\(UCLASS\|UINTERFACE\)\s*(.\{-})\s*class\s\+\(\w\+_API\s\+\)\?\(\w\+\)\s*:\s*\(public\|protected\|private\)\s*\(\w\+\)]]
+      vim_pattern = [[.\{-}\(UCLASS\|UINTERFACE\)\s*(.\{-})\s*class\s\+\(\w\+_API\s\+\)\?\(\w\+\)\s*:\s*\(public\|protected\|private\)\s*\(\w\+\)]]
     end
-    -- ▲▲▲ 修正完了 ▲▲▲
     
     local result = matchlist(flattened_text, vim_pattern)
 
@@ -55,25 +49,15 @@ local function process_block(block_lines, keyword_to_find, macro_type)
 end
 -- ▲▲▲ ヘルパー関数ここまで ▲▲▲
 
--- [!] out_hash 引数を削除
-local function parse_single_header_line_by_line(file_path)
-  local file, err = io.open(file_path, "r")
-  if not file then
-    v_stderr:write(("[Worker] Failed to open file: %s (%s)\n"):format(file_path, tostring(err)))
-    return nil -- classes
-  end
-
+-- ▼▼▼ [修正] パース関数 (入力が file_path から content_lines (テーブル) に変更) ▼▼▼
+local function parse_header_from_lines(content_lines)
   local final_classes = {}
-  -- [!] all_lines_for_hash テーブルを削除
-  
   local state = "SCANNING"
   local block_lines = {}
   local macro_type = nil
   local keyword_to_find = nil
   
-  for line in file:lines() do
-    -- [!] ハッシュ用の table.insert を削除
-
+  for _, line in ipairs(content_lines) do
     if state == "SCANNING" then
         local is_uclass = line:find("UCLASS")
         local is_uinterface = line:find("UINTERFACE")
@@ -86,7 +70,8 @@ local function parse_single_header_line_by_line(file_path)
           keyword_to_find = (macro_type == "USTRUCT") and "struct" or "class"
           
           if line:find("_BODY") then
-              local symbol_info = process_block(block_lines, keyword_to_find, macro_type)
+              -- [!] process_block には文字列を渡す
+              local symbol_info = process_block(table.concat(block_lines, "\n"), keyword_to_find, macro_type)
               if symbol_info then table.insert(final_classes, symbol_info) end
               state = "SCANNING"
               block_lines = {}
@@ -96,30 +81,31 @@ local function parse_single_header_line_by_line(file_path)
         table.insert(block_lines, line)
         
         if line:find("_BODY") then
-            local symbol_info = process_block(block_lines, keyword_to_find, macro_type)
+            -- [!] process_block には文字列を渡す
+            local symbol_info = process_block(table.concat(block_lines, "\n"), keyword_to_find, macro_type)
             if symbol_info then table.insert(final_classes, symbol_info) end
             state = "SCANNING"
             block_lines = {}
         end
     end
   end
-  file:close()
 
-  -- [!] ハッシュ計算 (out_hash[1] = ...) を削除
-  
   if #final_classes > 0 then
     return final_classes
   else
     return nil
   end
 end
+-- ▲▲▲ パース関数修正完了 ▲▲▲
 
 
 ----------------------------------------------------------------------
--- 2. ワーカー・メインロジック (ハッシュ計算なし)
+-- 2. ワーカー・メインロジック (ハッシュ計算あり)
 ----------------------------------------------------------------------
 local function main()
   v_stderr = io.open(vim.api.nvim_eval("v:stderr"), "w")
+  
+  -- ▼▼▼ [修正] ペイロードは {path, mtime, old_hash} のリスト ▼▼▼
   local raw_payload = io.read("*a")
   if not raw_payload or raw_payload == "" then
     v_stderr:write("[Worker] Error: Did not receive any payload from stdin.\n")
@@ -127,42 +113,75 @@ local function main()
     return
   end
   
-  local ok, payload = pcall(json_decode, raw_payload)
-  if not ok or not payload or not payload.files then
-    v_stderr:write("[Worker] Error: Failed to decode JSON payload or payload is invalid.\n")
+  local ok, files_data_list = pcall(json_decode, raw_payload)
+  if not ok or type(files_data_list) ~= "table" then
+    v_stderr:write("[Worker] Error: Failed to decode JSON payload or payload is not a list.\n")
     vim.cmd("cquit!")
     return
   end
 
-  local files_to_parse = payload.files
-  local mtimes_map = payload.mtimes
-  -- [!] hashes_map は使わない
-  
-  for i, file_path in ipairs(files_to_parse) do
-    local current_mtime = mtimes_map[file_path]
+  for i, file_data in ipairs(files_data_list) do
+    local file_path = file_data.path
+    local current_mtime = file_data.mtime
+    local old_hash = file_data.old_hash
     
     if not current_mtime then
         v_stderr:write(("[Worker] Warning: Missing mtime for %s. Skipping.\n"):format(file_path))
-    else
-        local classes = parse_single_header_line_by_line(file_path)
-        
-        -- [!] 結果には classes のみ含める
-        local result_for_file = {
-            [file_path] = { classes = classes } -- mtime や hash は含めない
-        }
-        
-        local output_ok, json_line = pcall(json_encode, result_for_file)
-        if output_ok then
-            io.write(json_line .. "\n")
-        else
-            v_stderr:write(("[Worker] Error: Failed to encode JSON line for %s\n"):format(file_path))
-        end
+        goto continue_loop
+    end
+
+    -- STEP 1: ファイル読み込み (ワーカー内で同期的I/O)
+    local read_ok, lines = pcall(vim.fn.readfile, file_path)
+    if not read_ok or not lines then
+      v_stderr:write(("[Worker] Error: Could not read file %s\n"):format(file_path))
+      goto continue_loop
     end
     
-    if i % 50 == 0 or i == #files_to_parse or i == 1 then
+    -- STEP 2: ハッシュ計算
+    local content = table.concat(lines, "\n")
+    local new_hash = vim.fn.sha256(content)
+    
+    local result_for_file -- メインスレッドに返すJSONオブジェクト
+
+    -- STEP 3: ハッシュ比較
+    if old_hash and old_hash == new_hash then
+        -- [!] ハッシュが一致した場合
+        result_for_file = {
+            path = file_path,
+            status = "cache_hit",
+            mtime = current_mtime -- mtime を返す (メインスレッドがキャッシュ更新に使う)
+        }
+    else
+        -- [!] ハッシュが不一致、または old_hash がない (新規) 場合
+        local classes = parse_header_from_lines(lines) -- 読み込んだ lines をパース
+        
+        result_for_file = {
+            path = file_path,
+            status = "parsed",
+            mtime = current_mtime,
+            data = {
+                classes = classes,
+                new_hash = new_hash
+            }
+        }
+    end
+    
+    -- STEP 4: 結果を JSON Line として stdout に書き込む
+    local output_ok, json_line = pcall(json_encode, result_for_file)
+    if output_ok then
+        io.write(json_line .. "\n")
+    else
+        v_stderr:write(("[Worker] Error: Failed to encode JSON line for %s\n"):format(file_path))
+    end
+    
+    -- 50ファイルごと、または最後/最初 に flush
+    if i % 50 == 0 or i == #files_data_list or i == 1 then
         io.stdout:flush()
     end
+    
+    ::continue_loop::
   end
+  -- ▲▲▲ メインロジック修正完了 ▲▲▲
   
   v_stderr:close()
   vim.cmd("qall!")
