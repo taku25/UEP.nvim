@@ -33,9 +33,9 @@ UIをブロックすることなく、非常に高速でインテリジェント
   ゲームとエンジンモジュールの情報をバックグラウンドでスキャンし、キャッシュ
   します。複数のプロジェクトでエンジンキャッシュを共有することも可能です。
 - 強力なファイル検索:
-  モジュールのスコープ（Game/Engine）や依存関係を指定して、プロジェクト内の
-  ファイルを瞬時に検索できます。モジュールやProgramsファイルに特化した検索
-  コマンドも利用可能です。
+  モジュールのスコープ（Game/Engine/Runtime/Editor/Full）や依存関係
+  （shallow/deep）を指定して、プロジェクト内のファイルを瞬時に検索できます。
+  モジュール、Programs、Configファイルに特化した検索コマンドも利用可能です。
 - UI抽象化レイヤー:
   Telescope, fzf-lua, またはNeovim標準UIを、環境に応じて自動で選択・使用
   します。
@@ -43,7 +43,7 @@ UIをブロックすることなく、非常に高速でインテリジェント
   `neo-tree`のようなファイラープラグインと簡単に連携できます。
 
 ==============================================================================
-2. 使い方                                                      *UEP-usage*
+2. 使い方                                                     *UEP-usage*
 
 *UEP.nvim* のコマンドはすべて `:UEP` から始まります。
 
@@ -52,66 +52,51 @@ UIをブロックすることなく、非常に高速でインテリジェント
 
 :UEP refresh [Game|Engine]
   プロジェクトのキャッシュを更新します。
-
-:UEP files[!] [Game|Engine] [--no-deps|--all-deps]
+:UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
   日常的に使うソースや設定ファイルをUIで検索します。
-
 :UEP module_files[!] [ModuleName]
   指定したモジュールに属するファイルを検索します。
-
 :UEP program_files
   Programsディレクトリ内のファイルを検索します。
-
-:UEP grep [Game|Engine]
+:UEP grep [Game|Engine|Runtime|Editor|Full]
   プロジェクトまたはエンジン全体からLiveGrepします。
-
 :UEP module_grep [ModuleName]
   特定のモジュール内をLiveGrepします。
-
 :UEP program_grep
   Programsディレクトリ内のファイルをLiveGrepします。
-
+:UEP config_grep [Game|Engine|Full]
+  .ini 設定ファイル内をLiveGrepします。
 :UEP open_file [Path]
   プロジェクトキャッシュを検索して、インクルードファイルを開きます。
-
 :UEP add_include[!] [ClassName]
   クラスの#includeディレクティブを検索し、挿入します。
-
-:UEP find_derived [ClassName]
+:UEP find_derived[!] [ClassName]
   指定した基底クラスの全ての派生クラスを検索します。
-
-:UEP find_parents [ClassName]
+:UEP find_parents[!] [ClassName]
   指定したクラスの継承チェーンを検索します。
-
-:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
   指定したスコープ内のC++クラスを検索します。
-
-:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
   指定したスコープ内のC++構造体を検索します。
-
+:UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+  指定したスコープ内のC++ Enum（列挙型）を検索します。
 :UEP purge [ComponentName]
   特定のコンポーネントのファイルキャッシュのみを削除します。
-
 :UEP cleanup
   現在のプロジェクトの全ての構造キャッシュとファイルキャッシュを削除します。
-
-:UEP tree [--no-deps|--all-deps]
+:UEP tree [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
   プロジェクト全体の論理ツリーを表示します。(neo-tree-unl.nvim が必要)
-
-:UEP module_tree [ModuleName] [--no-deps|--all-deps]
+:UEP module_tree [ModuleName] [--no-deps|--shallow-deps|--deep-deps]
   特定のモジュールにフォーカスした論理ツリーを表示します。(neo-tree-unl.nvim が必要)
-
 :UEP cd
   既知のプロジェクト一覧から移動先を選択します。
-
 :UEP delete
   既知のプロジェクト一覧からプロジェクトを削除します。
-
 :UEP goto_definition[!] [ClassName]
   先行宣言をスキップして、クラスや構造体の実際の定義ファイルにジャンプします。
 
 ------------------------------------------------------------------------------
-コマンド詳細                                         *UEP-commands-detail*
+コマンド詳細                                           *UEP-commands-detail*
 
 :UEP refresh [Game|Engine]
     現在のプロジェクトをスキャンし、モジュールとファイルのキャッシュを更新しま
@@ -122,18 +107,17 @@ UIをブロックすることなく、非常に高速でインテリジェント
                 のスキャンが自動的に実行されます。
       - `Engine`: 関連するエンジンのモジュールのみをスキャンします。
 
-:UEP files[!] [Game|Engine] [--no-deps|--all-deps]
+:UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     キャッシュされた情報に基づいて、ファイル検索UIを開きます。
     - `[!](bang)`: (省略可)
       `!`を付けると、キャッシュを強制的に再生成してからUIを開きます。
-      これは `:UEP refresh` を実行してから `:UEP files` を実行する
-      ショートカットです。
-    - `[Game|Engine]`: (省略可、デフォルト: `Game`)
+    - `[Game|...|Full]`: (省略可、デフォルト: `runtime`)
       検索のベースとなるモジュールのスコープを指定します。
-    - `[--no-deps|--all-deps]`: (省略可、デフォルト: `--no-deps`)
+    - `[--no-deps|...]`: (省略可、デフォルト: `--deep-deps`)
       - `--no-deps`: ベーススコープのモジュールのみを検索対象とします。
-      - `--all-deps`: ベーススコープのモジュールが依存する全てのモジュール
-                      （推移的依存関係を含む）を検索対象とします。
+      - `--shallow-deps`: 直接の依存関係にあるモジュールを検索対象に含めます。
+      - `--deep-deps`: ベーススコープのモジュールが依存する全てのモジュール
+                       （推移的依存関係を含む）を検索対象とします。
 
 :UEP module_files[!] [ModuleName]
     特定のモジュールに属するファイル一覧を表示します。
@@ -148,20 +132,29 @@ UIをブロックすることなく、非常に高速でインテリジェント
     プロジェクトとエンジンに関連する全てのProgramsディレクトリ
     （例: UnrealBuildTool, AutomationTool）内のファイルを検索します。
 
-:UEP grep [Game|Engine]
+:UEP grep [Game|Engine|Runtime|Editor|Full]
     プロジェクトとエンジンのソースコード全体からLiveGrepします (rgが必須)。
-    - [Game|Engine]: (省略可、デフォルト: Game)
-    - Game: あなたのプロジェクトのソースファイルとプラグインのみを検索します。
-    - Engine: 関連付けられたエンジンのソースコードも検索に含めます。
+    - `[Game|...|Full]`: (省略可、デフォルト: `runtime`)
+      - `Game`: あなたのプロジェクトのソースファイルとプラグインのみを検索します。
+      - `Engine`: 関連付けられたエンジンのソースコード**のみ**を検索します。
+      - `Full` / `Runtime` / `Editor` / `Developer`: プロジェクトとエンジン
+        の両方を検索します。
 
 :UEP module_grep [ModuleName]
     特定のモジュールのディレクトリ内に限定してLiveGrepします。
-    - [ModuleName]: (省略可) 省略した場合、モジュールを選択するUIが開きます。
+    - `[ModuleName]`: (省略可) 省略した場合、モジュールを選択するUIが開きます。
 
 :UEP program_grep
     プロジェクトとエンジンに関連する全てのProgramsディレクトリ内のファイルを
     LiveGrepします。ビルドツールや自動化スクリプトのコードを調査する際に
     便利です。
+
+:UEP config_grep [Game|Engine|Full]
+    `.ini` 設定ファイル内をLiveGrepします。
+    - `[Game|Engine|Full]`: (省略可、デフォルト: `runtime` で `Full` と同様)
+      - `Game`: プロジェクトの `Config/` ディレクトリのみを検索します。
+      - `Engine`: エンジンの `Config/` ディレクトリのみを検索します。
+      - `Full` / `Runtime` / etc.: プロジェクトとエンジンの両方を検索します。
 
 :UEP open_file [Path]
     インクルードパスに基づいてファイルを検索し、開きます。
@@ -195,47 +188,60 @@ UIをブロックすることなく、非常に高速でインテリジェント
     （`*.project.json`）および**全て**のファイルキャッシュ（`*.files.json`）を
     永久に削除します（プラグインやリンクされたエンジンも含む）。
     このコマンドはプログレスバーを表示しながら非同期で実行され、実行には確認が
-    必要です。実行後、キャッシュを再構築するために**必ず** |UEP refresh| を
+    必要です。実行後、キャッシュを再構築するために**必ず** |:UEP refresh| を
     実行してください。
 
-:UEP find_derived [ClassName]
+:UEP find_derived[!] [ClassName]
     指定した基底クラスを継承する全てのクラスを検索します。
-    - [ClassName]: (省略可) 省略した場合、プロジェクト全体のクラスから基底
-    クラスを選択するUIが開きます。
+    - `[!](bang)`: (省略可) `!`を付けると、引数を無視し、基底クラスを
+      選択するピッカーUIを開きます。
+    - `[ClassName]`: (省略可) 省略した場合、カーソル下の単語 (`<cword>`)
+      が使用されます。
 
-:UEP find_parents [ClassName]
+:UEP find_parents[!] [ClassName]
     指定したクラスから `UObject` に至るまでの継承チェーンを表示します。
-    - [ClassName]: (省略可) 省略した場合、起点となるクラスを選択するUIが
-    開きます。
+    - `[!](bang)`: (省略可) `!`を付けると、引数を無視し、起点となるクラス
+      を選択するピッカーUIを開きます。
+    - `[ClassName]`: (省略可) 省略した場合、カーソル下の単語 (`<cword>`)
+      が使用されます。
 
-:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     C++クラスの定義を選択し、ジャンプするためのピッカーを表示します。
     - **使い方**: |:UEP files| と同様に動作し、スコープと依存関係の深さに
       基づいて、既知のシンボルリストをフィルタリングします。
-    - **`[Game|Engine|Editor]`**: (省略可、デフォルト: `Editor`) 検索のベース
+    - `[Game|...|Full]`: (省略可、デフォルト: `runtime`) 検索のベース
       となるモジュールのスコープを指定します。
-        - `Editor`: 全てのコンポーネント（Game, Engine, Plugins）をスキャン
-          し、最も豊富なEditor/Runtimeシンボルセットを提供します。（Full
-          Scanと等価）。
-    - `[--no-deps|--all-deps]`: (省略可、デフォルト: `--no-deps`)
-        - `--no-deps`: 指定されたスコープのモジュールと、その浅い依存関係内のみを検索します。
-        - `--all-deps`: ベーススコープのモジュールが依存する全てのモジュール（深い依存関係）を検索対象に含めます。
+    - `[--no-deps|...]`: (省略可、デフォルト: `--deep-deps`)
+      - `--no-deps`: 指定されたスコープのモジュール内のみを検索します。
+      - `--shallow-deps`: 直接の依存関係にあるモジュールを含めます。
+      - `--deep-deps`: 依存関係にある全てのモジュールを検索対象に含めます。
 
-:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     C++構造体の定義を選択し、ジャンプするためのピッカーを表示します。
     - **使い方**: |:UEP classes| と全く同じ挙動をします。
+    - `[Game|...|Full]`: (省略可、デフォルト: `runtime`)
+    - `[--no-deps|...]`: (省略可、デフォルト: `--deep-deps`)
 
-:UEP tree [--no-deps|--all-deps]
+:UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+    C++ Enum（列挙型）の定義を選択し、ジャンプするためのピッカーを表示します。
+    - **使い方**: |:UEP classes| と全く同じ挙動をします。
+    - `[Game|...|Full]`: (省略可、デフォルト: `runtime`)
+    - `[--no-deps|...]`: (省略可、デフォルト: `--deep-deps`)
+
+:UEP tree [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     neo-treeで論理的なプロジェクトエクスプローラーを開きます。
     neo-tree-unl.nvim が必要です。ビューにはGame、Plugins、Engineの
     コンポーネントが含まれます。
-    - [--no-deps|--all-deps]: (省略可) ツリー内に表示される依存モジュール
-    を制御します。
+    - `[Game|...|Full]`: (省略可、デフォルト: `runtime`) スコープを制御します。
+    - `[--no-deps|...]`: (省略可、デフォルト: `--deep-deps`) 表示される
+      依存モジュールを制御します。
 
-:UEP module_tree [ModuleName] [--no-deps|--all-deps]
+:UEP module_tree [ModuleName] [--no-deps|--shallow-deps|--deep-deps]
     単一のモジュールまたはその依存関係にフォーカスした論理ツリーを開きます。
     neo-tree-unl.nvim が必要です。
-    - [ModuleName]: (省略可) 省略した場合、モジュールを選択するUIが開きます。
+    - `[ModuleName]`: (省略可) 省略した場合、モジュールを選択するUIが開きます。
+    - `[--no-deps|...]`: (省略可、デフォルト: `--deep-deps`) 依存関係の表示
+      を制御します。
 
 :UEP cd
     キャッシュされている既知のプロジェクト一覧をUIで表示し、選択したプロジェ
@@ -263,7 +269,7 @@ UIをブロックすることなく、非常に高速でインテリジェント
 行われます。
 
 ------------------------------------------------------------------------------
-セットアップ                                                   *UEP-setup*
+セットアップ                                                  *UEP-setup*
 
 `lazy.nvim`を使っている場合、`opts`キーに設定テーブルを渡します。`UEP.nvim`
 の `dependencies` に `UNL.nvim` を指定することが必須です。
@@ -314,7 +320,7 @@ UIをブロックすることなく、非常に高速でインテリジェント
 
   -- エンジンの自動検出が失敗する場合に、手動でパスを指定します
   -- 例: "C:/Program Files/Epic Games/UE_5.4"
-  engine_path = nil
+  engine_path = nil,
 
   -- UIバックエンドの設定 (UNL.nvimから継承)
   ui = {
@@ -351,8 +357,8 @@ APIモジュールを`require`する:
     ファイル検索UIを開きます。
     `opts`テーブル:
       - `has_bang` (boolean, optional): `true`でキャッシュを強制更新。
-      - `category` (string, optional): `"Game"`, `"Engine"`, `"All"`など。
-      - `deps_flag` (string, optional): `"--all-deps"`など。
+      - `scope` (string, optional): `"Game"`, `"Engine"`, `"runtime"`など。
+      - `deps_flag` (string, optional): `"--deep-deps"`, `"--shallow-deps"`など。
 
 *uep_api.module_files({opts})*
     モジュールファイル検索UIを開きます。
@@ -364,18 +370,22 @@ APIモジュールを`require`する:
     プログラムファイル検索UIを開きます。optsは現在使用されません。
 
 *uep_api.grep({opts})*
-    LiveGrepのUIを開きます。optsでcategory ("Game", "Engine") を指定
-    できます。
+    LiveGrepのUIを開きます。optsでscope ("Game", "Engine", "runtime"など)
+    を指定できます。
 
 *uep_api.module_grep({opts})*
-    特定モジュールのLiveGrep UIを開きます。optsでmodule_nameを指定できます。
+    特定モジュールのLiveGGrep UIを開きます。optsでmodule_nameを指定できます。
 
 *uep_api.program_grep({opts})*
     Programsディレクトリを対象としたLiveGrep UIを開きます。optsは現在使用
     されません。
 
+*uep_api.config_grep({opts})*
+    .iniファイル用のLiveGrep UIを開きます。
+    `opts`でscope ("Game", "Engine", "runtime"など) を指定できます。
+
 *uep_api.tree({opts})*
-    論理プロジェクトツリーを開きます。optsでdeps_flagを指定できます。
+    論理プロジェクトツリーを開きます。optsでscopeとdeps_flagを指定できます。
 
 *uep_api.module_tree({opts})*
     論理モジュールツリーを開きます。optsでmodule_nameとdeps_flagを

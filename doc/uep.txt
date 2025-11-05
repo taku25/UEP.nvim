@@ -20,11 +20,9 @@ CONTENTS                                                 *UEP-contents*
 
 *UEP.nvim* (Unreal Engine Project Explorer) is a Neovim plugin designed to
 understand and navigate the structure of Unreal Engine projects.
-
 By asynchronously parsing and caching the module and file information for the
 entire project, it provides an incredibly fast and intelligent file navigation
 experience without blocking the UI.
-
 It is a core plugin in the *Unreal Neovim Plugin Stack* and depends on the
 *UNL.nvim* library as its foundation.
 
@@ -34,8 +32,9 @@ Main Features:
   It also allows sharing of the engine cache across multiple projects.
 - Powerful File Search:
   Instantly search for files within your project by specifying the module
-  scope (Game/Engine) and dependency depth (shallow/deep). Specialized
-  commands are available for module-specific and Programs files.
+  scope (Game/Engine/Runtime/Editor/Full) and dependency depth (shallow/deep).
+  Specialized commands are available for module-specific, Programs, and
+  Config files.
 - UI Abstraction Layer:
   Automatically selects and uses the best available UI, such as Telescope,
   fzf-lua, or the native Neovim UI, depending on your environment.
@@ -52,61 +51,48 @@ Command List                                           *UEP-commands-list*
 
 :UEP refresh [Game|Engine]
     Updates the project cache.
-
-:UEP files[!] [Game|Engine] [--no-deps|--all-deps]
+:UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Searches for common source and config files using a UI.
-
 :UEP module_files[!] [ModuleName]
     Searches for files belonging to a specific module.
-
 :UEP program_files
     Searches for files within Programs directories.
-
-:UEP grep [Game|Engine]
+:UEP grep [Game|Engine|Runtime|Editor|Full]
     LiveGrep across the project or engine source code.
-
 :UEP module_grep [ModuleName]
     LiveGrep within a specific module.
-
 :UEP program_grep
     LiveGrep for files within Programs directories.
-
+:UEP config_grep [Game|Engine|Full]
+    LiveGrep for content within .ini configuration files.
 :UEP open_file [Path]
     Open an include file by searching the project cache.
-
 :UEP add_include[!] [ClassName]
     Finds and inserts the #include directive for a class.
-
-:UEP find_derived [ClassName]
+:UEP find_derived[!] [ClassName]
     Finds all derived classes of a specified base class.
-
-:UEP find_parents [ClassName]
+:UEP find_parents[!] [ClassName]
     Finds the inheritance chain for a specified class.
-
-:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Searches for C++ classes within the specified scope.
-
-:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Searches for C++ structs within the specified scope.
-
+:UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+    Searches for C++ enums within the specified scope.
 :UEP purge [ComponentName]
     Delete the file cache for a specified component (Game/Engine/Plugin).
-
 :UEP cleanup
     Delete ALL structural and file caches for the current project.
-
-:UEP tree [--no-deps|--all-deps]
-    Displays a logical tree of the entire project. (Requires neo-tree-unl.nvim)
-
-:UEP module_tree [ModuleName] [--no-deps|--all-deps]
-    Displays a logical tree focused on a specific module. (Requires neo-tree-unl.nvim)
-
+:UEP tree [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+    Displays a logical tree of the entire project.
+    (Requires neo-tree-unl.nvim)
+:UEP module_tree [ModuleName] [--no-deps|--shallow-deps|--deep-deps]
+    Displays a logical tree focused on a specific module.
+    (Requires neo-tree-unl.nvim)
 :UEP cd
     Selects a destination from a list of known projects to change to.
-
 :UEP delete
     Deletes a project from the list of known projects.
-
 :UEP goto_definition[!] [ClassName]
     Jumps to the actual class or struct definition file of a class, skipping forward declarations.
 
@@ -122,19 +108,18 @@ Command Details                                     *UEP-commands-detail*
                 will be scanned automatically first.
       - `Engine`: Scans only the modules of the associated engine.
 
-:UEP files[!] [Game|Engine] [--no-deps|--all-deps]
+:UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Opens a file search UI based on the cached information.
     - `[!](bang)`: (Optional)
       If `!` is added, it forces a regeneration of the cache before opening
-      the UI. This is a shortcut for running `:UEP refresh` followed by
-      `:UEP files`.
-    - `[Game|Engine]`: (Optional, default: `Game`)
+      the UI.
+    - `[Game|...|Full]`: (Optional, default: `runtime`)
       Specifies the base scope of modules for the search.
-    - `[--no-deps|--all-deps]`: (Optional, default: `--no-deps`)
+    - `[--no-deps|...]`: (Optional, default: `--deep-deps`)
       - `--no-deps`: Searches only within the modules of the base scope.
-      - `--all-deps`: Includes all modules that the base scope's modules
-                      depend on (including transitive dependencies) in the
-                      search.
+      - `--shallow-deps`: Includes direct dependencies in the search.
+      - `--deep-deps`: Includes all modules that the base scope's modules
+                       depend on (deep dependencies) in the search.
 
 :UEP module_files[!] [ModuleName]
     Displays a list of files belonging to a specific module.
@@ -149,27 +134,38 @@ Command Details                                     *UEP-commands-detail*
     Searches for files within all Programs directories related to the
     project and engine (e.g., UnrealBuildTool, AutomationTool).
 
-UEP grep [Game|Engine]
+:UEP grep [Game|Engine|Runtime|Editor|Full]
     Performs a live grep across project and engine source code (requires rg).
-    - [Game|Engine]: (Optional, default: Game)
-    - Game: Searches only your project's source files and plugins.
-    - Engine: Includes the associated engine's source code in the search.
+    - `[Game|...|Full]`: (Optional, default: `runtime`)
+      - `Game`: Searches only your project's source files and plugins.
+      - `Engine`: Searches *only* the associated engine's source code.
+      - `Full` / `Runtime` / `Editor` / `Developer`: Searches both project
+        and engine code.
 
 :UEP module_grep [ModuleName]
     Performs a live grep limited to the directory of a specific module.
-    - [ModuleName]: (Optional)
-    If omitted, a UI will open to select a module.
+    - `[ModuleName]`: (Optional)
+      If omitted, a UI will open to select a module.
 
 :UEP program_grep
     Performs a live grep for files within all `Programs` directories related to
     the project and engine. Useful for investigating the code of build tools
     and automation scripts.
 
+:UEP config_grep [Game|Engine|Full]
+    LiveGreps for content within `.ini` configuration files.
+    - `[Game|Engine|Full]`: (Optional, default: `runtime` which aliases to
+      `Full`).
+      - `Game`: Searches only your project's `Config/` directory.
+      - `Engine`: Searches only the engine's `Config/` directory.
+      - `Full` / `Runtime` / etc.: Searches both project and engine.
+
 :UEP open_file [Path]
     Finds and opens a file based on an include path.
     - `[Path]`: (Optional) The include path to search for. If omitted, the
       path will be extracted from the text on the current line (e.g., inside
-      `"..."` or `<...>` includes). The search intelligently checks:
+      `"..."` or `<...>` includes).
+    The search intelligently checks:
       1. Relative to the current file's directory.
       2. Relative to the current module's Public/Private directories.
       3. Within the current module's shallow and deep dependencies.
@@ -201,42 +197,57 @@ UEP grep [Game|Engine]
     This command runs asynchronously with a progress bar and requires confirmation.
     You **must** run |:UEP refresh| immediately afterwards to rebuild the cache.
 
-:UEP find_derived [ClassName]
+:UEP find_derived[!] [ClassName]
     Searches for all classes that inherit from a specified base class.
-    - [ClassName]: (Optional) If omitted, a UI will open to select a
-    base class from the entire project.
+    - `[!](bang)`: (Optional) If `!` is added, ignores arguments and opens a
+      picker UI to select a base class.
+    - `[ClassName]`: (Optional) If omitted, uses the word under the cursor
+      (`<cword>`).
 
-:UEP find_parents [ClassName]
+:UEP find_parents[!] [ClassName]
     Displays the inheritance chain from a specified class up to `UObject`.
-    - [ClassName]: (Optional) If omitted, a UI will open to select the
-    starting class.
+    - `[!](bang)`: (Optional) If `!` is added, ignores arguments and opens a
+      picker UI to select the starting class.
+    - `[ClassName]`: (Optional) If omitted, uses the word under the cursor
+      (`<cword>`).
 
-:UEP classes[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Displays a picker to select and jump to the definition of a C++ class.
     - **Usage**: Similar to |:UEP files|, this command filters the list of all
       known symbols by scope and dependency depth.
-    - **`[Game|Engine|Editor]`**: (Optional, default: `Editor`) Specifies the
+    - `[Game|...|Full]`: (Optional, default: `runtime`) Specifies the
       base scope of modules for the search.
-        - `Editor`: Scans all components (Game, Engine, Plugins), providing the richest
-          set of Editor/Runtime symbols. (Equivalent to Full Scan).
-    - `[--no-deps|--all-deps]`: (Optional, default: `--no-deps`)
-        - `--no-deps`: Searches only within the specified scope's modules and their shallow dependencies.
-        - `--all-deps`: Includes all modules that the base scope's modules depend on (deep dependencies).
+    - `[--no-deps|...]`: (Optional, default: `--deep-deps`)
+      - `--no-deps`: Searches only within the specified scope's modules.
+      - `--shallow-deps`: Includes direct dependencies.
+      - `--deep-deps`: Includes all dependencies (deep dependencies).
 
-:UEP structs[!] [Game|Engine|Editor] [--no-deps|--all-deps]
+:UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Displays a picker to select and jump to the definition of a C++ struct.
-    - **Usage**: Behaves identically to |:UEP cl
+    - **Usage**: Behaves identically to |:UEP classes|.
+    - `[Game|...|Full]`: (Optional, default: `runtime`)
+    - `[--no-deps|...]`: (Optional, default: `--deep-deps`)
 
-:UEP tree [--no-deps|--all-deps]
-    Opens a logical project explorer in neo-tree. Requires neo-tree-unl.nvim.
+:UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+    Displays a picker to select and jump to the definition of a C++ enum.
+    - **Usage**: Behaves identically to |:UEP classes|.
+    - `[Game|...|Full]`: (Optional, default: `runtime`)
+    - `[--no-deps|...]`: (Optional, default: `--deep-deps`)
+
+:UEP tree [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+    Opens a logical project explorer in neo-tree.
+    Requires neo-tree-unl.nvim.
     The view includes Game, Plugins, and Engine components.
-    - [--no-deps|--all-deps]: (Optional) Controls which dependent modules
-    are displayed within the tree.
+    - `[Game|...|Full]`: (Optional, default: `runtime`) Controls the scope.
+    - `[--no-deps|...]`: (Optional, default: `--deep-deps`) Controls which
+      dependent modules are displayed within the tree.
 
-:UEP module_tree [ModuleName] [--no-deps|--all-deps]
+:UEP module_tree [ModuleName] [--no-deps|--shallow-deps|--deep-deps]
     Opens a logical tree focused on a single module or its dependencies.
     Requires neo-tree-unl.nvim.
-    - [ModuleName]: (Optional) If omitted, a UI will open to select a module.
+    - `[ModuleName]`: (Optional) If omitted, a UI will open to select a module.
+    - `[--no-deps|...]`: (Optional, default: `--deep-deps`) Controls dependency
+      display.
 
 :UEP cd
     Displays a UI with a list of known cached projects and changes the current
@@ -327,7 +338,7 @@ configuration table.
     },
     progress = {
       enable = true,
-      mode = "auto", -- "auto", "fidget", "window", "notify"
+      mode = "auto", -- "auto", "fidget", "window","notify"
       prefer = { "fidget", "window", "notify" },
     },
   },
@@ -354,8 +365,8 @@ Require the API module:
     Opens the file search UI.
     `opts` table:
       - `has_bang` (boolean, optional): If `true`, forces cache refresh.
-      - `category` (string, optional): `"Game"`, `"Engine"`, `"All"`, etc.
-      - `deps_flag` (string, optional): `"--all-deps"`, etc.
+      - `scope` (string, optional): `"Game"`, `"Engine"`, `"runtime"`, etc.
+      - `deps_flag` (string, optional): `"--deep-deps"`, `"--shallow-deps"`, etc.
 
 *uep_api.module_files({opts})*
     Opens the module file search UI.
@@ -365,21 +376,27 @@ Require the API module:
       - `module_name` (string, optional): Directly specify the module name.
 
 *uep_api.grep({opts})*
-    Opens the live grep UI. opts can specify category ("Game", "Engine").
+    Opens the live grep UI.
+    `opts` can specify scope ("Game", "Engine", "runtime", etc.).
 
 *uep_api.module_grep({opts})*
-    Opens the live grep UI for a specific module. opts can specify module_name.
+    Opens the live grep UI for a specific module.
+    `opts` can specify module_name.
 
 *uep_api.program_grep({opts})*
-    Opens the live grep UI for `Programs` directories. opts is not currently
-    used.
+    Opens the live grep UI for `Programs` directories.
 
+*uep_api.config_grep({opts})*
+    Opens the live grep UI for `.ini` files.
+    `opts` can specify scope ("Game", "Engine", "runtime", etc.).
 
 *uep_api.tree({opts})*
-    Opens the logical project tree. opts can specify deps_flag.
+    Opens the logical project tree.
+    `opts` can specify scope and deps_flag.
 
 *uep_api.module_tree({opts})*
-    Opens the logical module tree. opts can specify module_name and deps_flag.
+    Opens the logical module tree.
+    `opts` can specify module_name and deps_flag.
 
 *uep_api.cd({opts})*
     Opens the project selection UI. opts is not currently used.
