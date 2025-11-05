@@ -1,12 +1,13 @@
--- lua/UEP/parser/class.lua (tbl_deep_extend を for ループに置換)
+-- lua/UEP/parser/class.lua (utils.lua の共通関数を使うよう修正)
 
 local uep_logger_module = require("UEP.logger")
 local fs = require("vim.fs")
+local core_utils = require("UEP.cmd.core.utils") -- [!] core_utils を require
 
 local M = {}
 
 ----------------------------------------------------------------------
--- 解析関数 (変更なし)
+-- 解析関数
 ----------------------------------------------------------------------
 
 local MAX_HASH_FILE_SIZE = 5 * 1024 * 1024 -- 5MB limit
@@ -23,6 +24,7 @@ local function get_file_hash(file_path, file_size)
     log.debug("get_file_hash: Hashing file > 1MB in main thread: %s (Size: %.2f MB)", vim.fn.fnamemodify(file_path, ":t"), file_size / 1024 / 1024)
   end
 
+  -- pcall で readfile のエラーをキャッチ
   local read_ok, lines = pcall(vim.fn.readfile, file_path)
   if not read_ok or not lines then
     log.warn("get_file_hash: Could not read file: %s", file_path)
@@ -37,27 +39,9 @@ end
 -- 非同期実行関数 (Job/Worker 版)
 ----------------------------------------------------------------------
 
--- (get_worker_script_path, get_cpu_count は変更なし)
-local function get_worker_script_path()
-    local log = uep_logger_module.get()
-    local this_file_path = debug.getinfo(1, "S").source
-    if not this_file_path or this_file_path:sub(1, 1) ~= "@" then
-        log.error("Could not determine worker script path from debug info.")
-        return nil
-    end
-    this_file_path = this_file_path:sub(2)
-    local plugin_root = this_file_path:match("(.+)[/\\]lua[/\\]UEP[/\\]parser[/\\]class.lua$")
-    if not plugin_root then
-        log.error("Could not deduce plugin root from path: %s", this_file_path)
-        return nil
-    end
-    local worker_path = fs.joinpath(plugin_root, "scripts", "parse_headers_worker.lua")
-    if vim.fn.filereadable(worker_path) == 0 then
-        log.error("Worker script not found at: %s (Deduced Root: %s)", worker_path, plugin_root)
-        return nil
-    end
-    return worker_path
-end
+-- [削除] get_worker_script_path() 関数は core_utils.lua に移動したため削除
+
+-- [既存] get_cpu_count
 local function get_cpu_count()
     local cpus = vim.loop.cpu_info()
     return (cpus and #cpus > 0) and #cpus or 4
@@ -79,7 +63,7 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
   uep_log.debug("parse_headers_async (Worker Mode): Starting check for %d files.", total_header_file)
   progress:stage_define("header_analysis_detail", total_header_file)
 
-  -- STEP 1: キャッシュ検証 (変更なし)
+  -- STEP 1: キャッシュ検証
   for i, file_path in ipairs(header_files) do
     if i % 500 == 0 then
         progress:stage_update("header_analysis_detail", i, ("Checking cache: %s (%d/%d)..."):format(vim.fn.fnamemodify(file_path, ":t"), i, total_header_file))
@@ -97,18 +81,22 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
 
     local existing_entry = existing_header_details[file_path]
 
+    -- 1. mtime が同じなら、即時OK
     if existing_entry and existing_entry.mtime and existing_entry.mtime == current_mtime then
       new_details[file_path] = existing_entry
     else
+      -- 2. mtime が違う場合、ハッシュを計算して比較
       local current_hash = get_file_hash(file_path, file_size) 
       
       if existing_entry and existing_entry.file_hash and current_hash and existing_entry.file_hash == current_hash then
+        -- ハッシュが同じなら、mtimeだけ更新してOK
         new_details[file_path] = existing_entry
         new_details[file_path].mtime = current_mtime
       else
+        -- mtimeもハッシュも違う (またはハッシュが取れない) なら、パース対象
         table.insert(files_to_parse, file_path)
         mtimes_map[file_path] = current_mtime
-        hashes_map[file_path] = current_hash
+        hashes_map[file_path] = current_hash -- nil の場合もある
       end
     end
     ::continue_loop::
@@ -119,20 +107,24 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
   
   uep_log.info("Cache check complete. %d files from cache, %d files require parsing.", files_from_cache_count, files_to_parse_count)
 
-  -- STEP 2: パース対象がなければ、ここで終了 (変更なし)
+  -- STEP 2: パース対象がなければ、ここで終了
   if files_to_parse_count == 0 then
     progress:stage_update("header_analysis_detail", total_header_file, "All headers up-to-date.")
     on_complete(true, new_details)
     return
   end
 
-  -- STEP 3: ワーカーの準備 (変更なし)
-  local worker_script_path = get_worker_script_path()
+  -- STEP 3: ワーカーの準備
+  -- ▼▼▼ [変更] 共通ヘルパー関数を呼び出す ▼▼▼
+  local worker_script_path = core_utils.get_worker_script_path("parse_headers_worker.lua")
+  -- ▲▲▲ 変更完了 ▲▲▲
+  
   if not worker_script_path then
     uep_log.error("Could not find worker script. Aborting parallel parse.")
     return on_complete(false, "Worker script path not found.")
   end
   
+  -- nvim コマンド
   local nvim_cmd = {
       vim.v.progpath,
       "--headless",
@@ -140,6 +132,7 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
       "-c", ("luafile %s"):format(worker_script_path)
   }
   
+  -- ワーカー数とチャンクの準備
   local max_workers = math.min(get_cpu_count(), 16)
   local total_jobs = math.min(max_workers, files_to_parse_count)
   
@@ -156,7 +149,7 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
   local job_stderr_logs = {}
   local all_jobs_started = true
 
-  -- STEP 4: ジョブの起動 (on_stdout は変更なし)
+  -- STEP 4: ジョブの起動
   for i = 1, total_jobs do
     local chunk_files = chunks[i]
     
@@ -164,6 +157,7 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
         uep_log.warn("Worker job #%d was assigned 0 files. Skipping.", i)
         jobs_completed = jobs_completed + 1
     else
+        -- ペイロード (ワーカーに渡すmtimesも含む)
         local payload = {
           files = chunk_files,
           mtimes = mtimes_map,
@@ -179,9 +173,12 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
             if not data then return end
             for _, line in ipairs(data) do
                 if line and line ~= "" then
+                    -- ワーカーからのJSON Lineをデコード
                     local ok_line, worker_result = pcall(vim.json.decode, line)
                     if ok_line and type(worker_result) == "table" then
+                        -- ワーカーは { [file_path] = { classes = ... } } という形式で返す
                         for file_path, result_data in pairs(worker_result) do
+                            -- メインスレッドが計算したハッシュとmtimeをマージ
                             local hash_to_save = hashes_map[file_path]
                             local mtime_to_save = mtimes_map[file_path]
                             
@@ -217,10 +214,11 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
             
             jobs_completed = jobs_completed + 1
             
+            -- プログレスバーの更新
             local processed_so_far = files_from_cache_count + math.floor(files_to_parse_count * (jobs_completed / total_jobs))
             progress:stage_update("header_analysis_detail", processed_so_far, ("Parsing: %d/%d files... (%d/%d workers)"):format(processed_so_far, total_header_file, jobs_completed, total_jobs))
 
-            -- ▼▼▼ STEP 5: 修正箇所 (tbl_deep_extend -> for ループ) ▼▼▼
+            -- STEP 5: 全ジョブ完了時の処理
             if jobs_completed == total_jobs then
               local end_job_time = os.clock()
               uep_log.info("All %d workers finished in %.4f seconds.", total_jobs, end_job_time - start_time)
@@ -232,20 +230,19 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
               local worker_results_count = vim.tbl_count(merged_worker_results)
               uep_log.info("Total results from workers: %d", worker_results_count)
 
-              -- [!] `vim.tbl_deep_extend` を `for` ループに置き換え
+              -- ワーカーの結果を `new_details` にマージ
               uep_log.debug("Manually merging %d worker results into new_details map...", worker_results_count)
               for file_path, data in pairs(merged_worker_results) do
                   new_details[file_path] = data
               end
               
               local final_total_count = vim.tbl_count(new_details)
-              -- [!] このログが 54421 になるはず！
               uep_log.info("Header parsing complete. Total symbols (files in map): %d", final_total_count) 
               progress:stage_update("header_analysis_detail", total_header_file, "Header analysis complete.")
               
+              -- 最終的な結果 (キャッシュ + ワーカー) をコールバックで返す
               on_complete(true, new_details)
             end
-            -- ▲▲▲ 修正完了 ▲▲▲
           end,
         })
         
@@ -255,12 +252,14 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
             all_jobs_started = false
         else
             uep_log.debug("Started worker job %d (PID: %s) for %d files.", i, vim.fn.jobpid(job_id), #chunk_files)
+            -- job開始後、stdinにペイロードを書き込む
             vim.fn.chansend(job_id, payload_json)
             vim.fn.chanclose(job_id, "stdin")
         end
     end
   end
 
+  -- もしすべてのジョブ起動に失敗していた場合
   if not all_jobs_started and jobs_completed == total_jobs then
       uep_log.error("Failed to start ANY worker jobs.")
       on_complete(false, "Failed to start any worker jobs.")

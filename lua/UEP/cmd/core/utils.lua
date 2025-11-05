@@ -5,6 +5,7 @@ local project_cache = require("UEP.cache.project")
 local projects_cache = require("UEP.cache.projects")
 local unl_path = require("UNL.path")
 local uep_log = require("UEP.logger")
+local fs = require("vim.fs")
 
 local M = {}
 
@@ -153,6 +154,55 @@ M.find_module_for_path = function(file_path, all_modules_map)
     end
   end
   return best_match
+end
+
+
+-- プラグインのルートディレクトリをキャッシュする変数
+local plugin_root_cache = nil
+
+---
+-- UEP.nvimプラグインのルートディレクトリを探して返す
+-- vim.api.nvim_list_runtime_paths() を使用する
+-- @param plugin_name string プラグインのディレクトリ名 (例: "UEP.nvim")
+-- @return string|nil
+function M.find_plugin_root(plugin_name)
+  if plugin_root_cache then return plugin_root_cache end
+
+  -- プラグインのディレクトリ名を指定 (通常はリポジトリ名)
+  plugin_name = plugin_name or "UEP.nvim" 
+  
+  for _, path in ipairs(vim.api.nvim_list_runtime_paths()) do
+    -- [/\\] は / または \ にマッチ, $ は末尾
+    if path:match("[/\\]" .. plugin_name .. "$") then
+      plugin_root_cache = path -- 見つけたらキャッシュ
+      return path
+    end
+  end
+  
+  uep_log.get().error("Could not find plugin root directory named '%s' in runtime paths.", plugin_name)
+  return nil
+end
+
+---
+-- ワーカー-スクリプトへのフルパスを返す汎用関数
+-- @param script_name string (例: "parse_headers_worker.lua")
+-- @return string|nil
+function M.get_worker_script_path(script_name)
+  local log = uep_log.get()
+  -- ご提案の関数を呼び出し
+  local root = M.find_plugin_root("UEP.nvim") 
+  if not root then
+    log.error("get_worker_script_path: Cannot find plugin root.")
+    return nil
+  end
+
+  local worker_path = fs.joinpath(root, "scripts", script_name)
+  if vim.fn.filereadable(worker_path) == 0 then
+    log.error("Worker script not found at: %s", worker_path)
+    return nil
+  end
+  
+  return worker_path
 end
 
 return M
