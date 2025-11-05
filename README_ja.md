@@ -25,10 +25,10 @@
       * `generation`ハッシュシステムにより、ファイルリストが常にモジュール構造と同期していることを保証します。
   * **強力なファイル検索**:
       * ファイルを即座に見つけるための柔軟な`:UEP files`コマンドを提供します。
-      * スコープ（**Game**, **Engine**）でファイルをフィルタリングできます。
-      * モジュールの依存関係（**--no-deps** または **--deep-deps**）を検索に含めることが可能です。
+      * スコープ（**Game**, **Engine**, **Runtime**, **Editor**, **Full**）でファイルをフィルタリングできます。
+      * モジュールの依存関係（**--no-deps**, **--shallow-deps**, **--deep-deps**）を検索に含めることが可能です。
       * モジュールや`Programs`ディレクトリに特化した検索コマンドを提供します。
-      * 指定されたスコープ内の全てのクラスまたは構造体を即座に検索します（:UEP classes, :UEP structs）。"
+      * 指定されたスコープ内の全てのクラス、構造体、またはEnum（列挙型）を即座に検索します（:UEP classes, :UEP structs, :UEP enums）。
   * **インテリジェントなコードナビゲーション**:
       * `:UEP find_derived` コマンドで、指定した基底クラスを継承する全ての子クラスを瞬時に発見します。
       * `:UEP find_parents` コマンドで、指定したクラスから`UObject`に至るまでの全継承チェーンを表示します。
@@ -36,9 +36,10 @@
       * `:UEP add_include` コマンドで、カーソル下のクラス名やリストから選択したクラスの `#include` ディレクティブを自動で挿入します。
   * **インテリジェントなコンテンツ検索 (Grep)**:
       * プロジェクトとエンジンのソースコード全体を横断して、ファイルの中身を高速に検索します (ripgrepが必須)。
-      * :UEP grep コマンドで、検索範囲をスコープ (Game (デフォルト), Engine) で指定できます。
+      * :UEP grep コマンドで、検索範囲をスコープ (Game, Engine, Runtimeなど) で指定できます。
       * :UEP module_grep コマンドで、特定のモジュール (<module_name>) 内に限定した、ノイズのない集中検索が可能です。
       * :UEP program_grep コマンドで、全ての`Programs`ディレクトリ内に限定した検索が可能です。
+      * :UEP config_grep コマンドで、.ini設定ファイル内に限定した検索が可能です。
   * **UI統合**:
       * `UNL.nvim`のUI抽象化レイヤーを活用し、[Telescope](https://github.com/nvim-telescope/telescope.nvim)や[fzf-lua](https://github.com/ibhagwan/fzf-lua)のようなUIフロントエンドを自動的に使用します。
       * UIプラグインがインストールされていない場合でも、NeovimネイティブのUIにフォールバックします。
@@ -144,7 +145,7 @@ opts = {
 :UEP refresh [Game|Engine]
 
 " 日常的に使うソースや設定ファイルを検索するためのUIを開きます。
-:UEP files[!] [Game|Engine] [--deep-deps]
+:UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
 
 " 特定のモジュールに属するファイルを検索します。
 :UEP module_files[!] [ModuleName]
@@ -153,13 +154,16 @@ opts = {
 :UEP program_files
 
 " プロジェクトまたはエンジンのソースコード全体からLiveGrepします。
-:UEP grep [Game|Engine]
+:UEP grep [Game|Engine|Runtime|Editor|Full]
 
 " 特定のモジュールに属するファイルをLiveGrepします。
 :UEP module_grep [ModuleName]
 
 " Programsディレクトリ内のファイルをLiveGrepします。
 :UEP program_grep
+
+" .ini 設定ファイル内をLiveGrepします。
+:UEP config_grep [Game|Engine|Full]
 
 " プロジェクトキャッシュを検索して、インクルードファイルを開きます。
 :UEP open_file [Path]
@@ -180,10 +184,13 @@ opts = {
 :UEP find_parents[!] [ClassName]
 
 " C++クラスを検索します（'!'でキャッシュを強制更新）。
-:UEP classes[!] [Game|Engine|Editor] [--no-deps|--deep-deps]
+:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
 
 " C++構造体を検索します（'!'でキャッシュを強制更新）。
-:UEP structs[!] [Game|Engine|Editor] [--no-deps|--deep-deps]
+:UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+
+" C++ Enum（列挙型）を検索します（'!'でキャッシュを強制更新）。
+:UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
 
 " プロジェクト全体の論理ツリーを表示します (neo-tree-unl.nvim が必要)。
 :UEP tree
@@ -202,6 +209,7 @@ opts = {
 ```
 
 ### コマンド詳細
+
   * **`:UEP refresh`**:
       * `Game` (デフォルト): 現在のゲームプロジェクトのモジュールのみをスキャンします。リンクされたエンジンのキャッシュがない場合は、先にエンジンが自動でスキャンされます。
       * `Engine`: リンクされたエンジンのモジュールのみをスキャンします。
@@ -214,9 +222,10 @@ opts = {
   * **`:UEP files[!]`**:
       * `!`なし: 既存のキャッシュデータからファイルを選択します
       * `!`あり: キャッシュを削除して新しいキャッシュを作成してからファイルを選択します
-      * `[Game|Engine]` (デフォルト `Game`): 検索対象とするモジュールのスコープです。
-      * `[--no-deps|--deep-deps]` (デフォルト `--no-deps`):
+      * `[Game|Engine|Runtime|Editor|Full]` (デフォルト `runtime`): 検索対象とするモジュールのスコープです。
+      * `[--no-deps|--shallow-deps|--deep-deps]` (デフォルト `--deep-deps`):
           * `--no-deps`: 指定されたスコープのモジュール内のみを検索します。
+          * `--shallow-deps`: 直接の依存関係にあるモジュールを含めます。
           * `--deep-deps`: 依存関係にある全てのモジュールを検索対象に含めます（`deep_dependencies`を使用）。
   * **`:UEP module_files[!]`**:
       * `!`なし: 既存のキャッシュを使って指定されたモジュールのファイルを検索します。
@@ -233,16 +242,20 @@ opts = {
       * 引数なしで実行すると、プロジェクト内の全モジュールを選択するためのピッカーUIが表示されます。
   * **`:UEP grep [Scope]`**
       * プロジェクトとエンジンのソースコード全体からLiveGrepします検索します (ripgrepが必須)。
-      * ScopeにはGame (デフォルト) または Engine を指定でき、検索範囲を限定します。
-      * Game: あなたのプロジェクトのソースファイルとプラグインのみを検索します。
-      * Engine: プロジェクトのコードに加え、関連付けられたエンジンのソースコードも同時に検索します。
+      * Scopeには `Game`, `Engine`, `Runtime` (デフォルト), `Editor`, `Full` を指定でき、検索範囲を限定します。
+      * `Game`: あなたのプロジェクトのソースファイルとプラグインのみを検索します。
+      * `Engine`: 関連付けられたエンジンのソースコード**のみ**を検索します。
+      * `Full` / `Runtime` / `Editor` / `Developer`: プロジェクトとエンジンの両方を検索します。
   * **`:UEP module_grep <ModuleName>`**;
-      * 指定された<ModuleName>のディレクトリ内に限定して、ファイルの中身を検索します。
-      * 特定の機能の実装を深く調査する際に、ノイズのない検索結果を得られます。 
+      * 指定された\<ModuleName\>のディレクトリ内に限定して、ファイルの中身を検索します。
+      * 特定の機能の実装を深く調査する際に、ノイズのない検索結果を得られます。
       * モジュールを指定しない場合はpickerでモジュールを選択します
   * **`:UEP program_grep`**:
       * プロジェクトとエンジンに関連する全ての`Programs`ディレクトリ内のファイルをLiveGrepします。
       * ビルドツールや自動化スクリプトのコードを調査する際に便利です。
+  * **`:UEP config_grep [Scope]`**:
+      * `Config`ディレクトリ（`.ini`ファイル）内をLiveGorpします。
+      * Scopeには `Game`, `Engine`, `Full` を指定できます (デフォルトは `runtime` で、`Full` と同様の動作になります)。
   * **`:UEP open_file [Path]`**:
       * 現在のカーソル位置の行からインクルードパスを自動で抽出するか、`[Path]`で指定されたパスに基づいて、プロジェクトキャッシュ内からファイルを検索して開きます。
       * **インテリジェントな階層的検索**を実行します（現在のファイルディレクトリ、現在のモジュールのPublic/Privateフォルダ、依存モジュールなど）
@@ -257,12 +270,18 @@ opts = {
   * **`:UEP find_parents[!] [ClassName]`**: 指定したクラスの継承チェーンを表示します。
       * `!`なし: `[ClassName]`引数が指定されていればそれを使用し、なければカーソル下の単語を使用します。
       * `!`あり: 引数を無視し、常にプロジェクト全体のクラスから起点となるクラスを選択するためのピッカーUIを開きます。
-  * **`:UEP classes[!] [Game|Engine|Editor] [--no-deps|--deep-deps]`**: C++クラスの定義を選択し、ジャンプするためのピッカーを開きます。
-      * フラグ: `[!]`、`[Game|Engine|Editor]`、および`[--no-deps|--deep-deps]` フラグは、`:UEP files` コマンドと同様に、キャッシュの再生成とスコープのフィルタリングを制御します。
-      * スコープ: `[Game|Engine|Editor]` がベーススコープです。デフォルトは\*\*`Editor`\*\*で、全てのコンポーネントをスキャンし（Fullスキャンと同等）、最も豊富なEditor/Runtimeシンボルセットを提供します。
-  * **`:UEP structs[!] [Game|Engine|Editor] [--no-deps|--deep-deps]`**: C++構造体の定義を選択し、ジャンプするためのピッカーを開きます。
-      * フラグ: `[!]`、`[Game|Engine|Editor]`、および`[--no-deps|--deep-deps]` フラグは、`:UEP files` コマンドと同様に、キャッシュの再生成とスコープのフィルタリングを制御します。
-      * スコープ: `[Game|Engine|Editor]` がベーススコープです。デフォルトは\*\*`Editor`\*\*で、全てのコンポーネントをスキャンし（Fullスキャンと同等）、最も豊富なEditor/Runtimeシンボルセットを提供します。
+  * **`:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: C++クラスの定義を選択し、ジャンプするためのピッカーを開きます。
+      * フラグ: キャッシュの再生成とスコープのフィルタリングを制御します。
+      * スコープ: デフォルトは\*\*`runtime`\*\*です。
+      * Deps: デフォルトは\*\*`--deep-deps`\*\*です。
+  * **`:UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: C++構造体の定義を選択し、ジャンプするためのピッカーを開きます。
+      * フラグ: キャッシュの再生成とスコープのフィルタリングを制御します。
+      * スコープ: デフォルトは\*\*`runtime`\*\*です。
+      * Deps: デフォルトは\*\*`--deep-deps`\*\*です。
+  * **`:UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: C++のEnum（列挙型）の定義を選択し、ジャンプするためのピッカーを開きます。
+      * フラグ: キャッシュの再生成とスコープのフィルタリングを制御します。
+      * スコープ: デフォルトは\*\*`runtime`\*\*です。
+      * Deps: デフォルトは\*\*`--deep-deps`\*\*です。
   * **`:UEP purge [ComponentName]`**:
       * 指定されたGame、Engine、またはPluginコンポーネントの**ファイルキャッシュ** (`*.files.json`) のみを削除します。
       * プロジェクトの依存関係構造を再解析することなく、ファイルのスキャンを強制的に再実行したい場合に便利です。
@@ -271,29 +290,32 @@ opts = {
       * このコマンドはプログレスバーを表示しながら非同期で実行され、実行にはユーザーの確認が必要です。
       * 実行後、プロジェクトの構造をゼロから再構築するために、**必ず** `:UEP refresh` を実行してください。
   * **`:UEP goto_definition[!] [ClassName]`**: 先行宣言をスキップして、クラスの実際の定義ファイルにジャンプします。
-      * `!`なし: `[ClassName]`引数が指定されていればそれを使用し、なければカーソル下の単語を使用します。現在のモジュールの依存関係（現在のコンポーネント -> 浅い依存 -> 深い依存）に基づいて**インテリジェントな階層的検索**を実行し、見つからなければLSPにフォールバックします。
+      * `!`なし: `[ClassName]`引数が指定されていればそれを使用し、なければカーソル下の単語を使用します。現在のモジュールの依存関係（現在のコンポーネント -\> 浅い依存 -\> 深い依存）に基づいて**インテリジェントな階層的検索**を実行し、見つからなければLSPにフォールバックします。
       * `!`あり: 引数やカーソル下の単語を無視し、常にプロジェクト全体のクラスを選択するためのピッカーUIを開きます。
 
 ## 🤖 API & 自動化 (Automation Examples)
 
 `UEP.api`モジュールを使用して、他のNeovim設定と連携させることができます。
 
-* **`uep_api.open_file({opts})`**
-    * インテリジェントな階層検索を使ってインクルードファイルを開きます。
-    * `opts`テーブル:
-        * `path` (string, optional): 検索対象のインクルードパス。省略した場合、現在の行から抽出されます。
+  * **`uep_api.open_file({opts})`**
 
-* **`uep_api.add_include({opts})`**
-    * プログラムで`#include`ディレクティブを検索・挿入します。
-    * `opts`テーブル:
-        * `has_bang` (boolean, optional): `true`でピッカーUIを強制的に開きます。
-        * `class_name` (string, optional): インクルードしたいクラス名。
+      * インテリジェントな階層検索を使ってインクルードファイルを開きます。
+      * `opts`テーブル:
+          * `path` (string, optional): 検索対象のインクルードパス。省略した場合、現在の行から抽出されます。
+
+  * **`uep_api.add_include({opts})`**
+
+      * プログラムで`#include`ディレクティブを検索・挿入します。
+      * `opts`テーブル:
+          * `has_bang` (boolean, optional): `true`でピッカーUIを強制的に開きます。
+          * `class_name` (string, optional): インクルードしたいクラス名。
 
 ### キーマップ作成例
 
 日常的なタスクを素早く実行するためのキーマップを作成します。
 
 #### インクルードファイルを開く (Open File)
+
 標準の`gf`コマンドをUEPのインテリジェントなファイル検索で強化します。
 
 ```lua
@@ -323,6 +345,7 @@ end, { desc = "UEP: プロジェクトファイル検索" })
 ```
 
 #### 定義へジャンプ (UEP)
+
 LSPのデフォルトジャンプを補完する、UEPのインテリジェントな定義ジャンプを使用します。
 
 ```lua
@@ -365,23 +388,24 @@ opts = {
 ```
 
 ## その他
+
 Unreal Engine 関連プラグイン:
 
-* [UEP.nvim](https://github.com/taku25/UEP.nvim)
-  * urpojectを解析してファイルナビゲートなどを簡単に行えるようになります
-* [UBT.nvim](https://github.com/taku25/UBT.nvim)
-  * BuildやGenerateClangDataBaseなどを非同期でNeovim上から使えるようになります
-* [UCM.nvim](https://github.com/taku25/UCM.nvim)
-  * クラスの追加や削除がNeovim上からできるようになります。
-* [ULG.nvim](https://github.com/taku25/ULG.nvim)
-  * UEのログやliveCoding,stat fpsなどnvim上からできるようになります
-* [USH.nvim](https://github.com/taku25/USH.nvim)
-  * ushellをnvimから対話的に操作できるようになります
-* [neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)
-  * IDEのようなプロジェクトエクスプローラーを表示できます。
-* [tree-sitter for Unreal Engine](https://github.com/taku25/tree-sitter-unreal-cpp)
-  * UCLASSなどを含めてtree-sitterの構文木を使ってハイライトができます。
-  
+  * [UEP.nvim](https://github.com/taku25/UEP.nvim)
+      * urpojectを解析してファイルナビゲートなどを簡単に行えるようになります
+  * [UBT.nvim](https://github.com/taku25/UBT.nvim)
+      * BuildやGenerateClangDataBaseなどを非同期でNeovim上から使えるようになります
+  * [UCM.nvim](https://github.com/taku25/UCM.nvim)
+      * クラスの追加や削除がNeovim上からできるようになります。
+  * [ULG.nvim](https://github.com/taku25/ULG.nvim)
+      * UEのログやliveCoding,stat fpsなどnvim上からできるようになります
+  * [USH.nvim](https://github.com/taku25/USH.nvim)
+      * ushellをnvimから対話的に操作できるようになります
+  * [neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)
+      * IDEのようなプロジェクトエクスプローラーを表示できます。
+  * [tree-sitter for Unreal Engine](https://github.com/taku25/tree-sitter-unreal-cpp)
+      * UCLASSなどを含めてtree-sitterの構文木を使ってハイライトができます。
+
 ## 📜 ライセンス (License)
 
 MIT License

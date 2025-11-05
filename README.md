@@ -26,9 +26,9 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
   * **Powerful File Searching**:
       * Provides a flexible `:UEP files` command to find your most-used source and config files instantly.
       * Offers specialized commands for targeted searches within a single module (`:UEP module_files`) or across all `Programs` directories (`:UEP program_files`).
-      * Allows filtering files by scope (**Game**, **Engine**).
-      * Supports including module dependencies in the search (**--no-deps** or **--deep-deps**).
-      * Instantly search for all classes or structs within the specified scope (:UEP classes, :UEP structs)."
+      * Allows filtering files by scope (**Game**, **Engine**, **Runtime**, **Editor**, **Full**).
+      * Supports including module dependencies in the search (**--no-deps**, **--shallow-deps**, **--deep-deps**).
+      * Instantly search for all classes, structs, or enums within the specified scope (:UEP classes, :UEP structs, :UEP enums).
   * **Intelligent Code Navigation**:
       * The `:UEP find_derived` command instantly finds all child classes that inherit from a specified base class.
       * The `:UEP find_parents` command displays the entire inheritance chain from a specified class up to `UObject`.
@@ -36,9 +36,10 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
       * Leverages the class inheritance data cached by `:UEP refresh` for high-speed navigation.
   * **Intelligent Content Searching (Grep)**:
       * Performs high-speed content searches across the entire project and engine source code (requires ripgrep).
-      * The `:UEP grep` command lets you specify the search scope (**Game** (default), **Engine**).
+      * The `:UEP grep` command lets you specify the search scope (**Game**, **Engine**, **Runtime**, **Editor**, **Full**).
       * The `:UEP module_grep` command enables focused, noise-free searches within a specific module (`<module_name>`).
       * The `:UEP program_grep` command allows for targeted searches within all `Programs` directories.
+      * The `:UEP config_grep` command for targeted searches within `.ini` configuration files.
   * **UI Integration**:
       * Leverages `UNL.nvim`'s UI abstraction layer to automatically use UI frontends like [Telescope](https://github.com/nvim-telescope/telescope.nvim) and [fzf-lua](https://github.com/ibhagwan/fzf-lua).
       * Falls back to the native Neovim UI if no UI plugin is installed.
@@ -144,7 +145,7 @@ All commands start with `:UEP`.
 :UEP refresh [Game|Engine]
 
 " Open a UI to search for commonly-used source and config files.
-:UEP files[!] [Game|Engine] [--deep-deps]
+:UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
 
 " Search for files belonging to a specific module.
 :UEP module_files[!] [ModuleName]
@@ -153,13 +154,16 @@ All commands start with `:UEP`.
 :UEP program_files
 
 " LiveGrep across the project or engine source code.
-:UEP grep [Game|Engine]
+:UEP grep [Game|Engine|Runtime|Editor|Full]
 
 " LiveGrep files belonging to a specific module.
 :UEP module_grep [ModuleName]
 
 " LiveGrep for files within Programs directories.
 :UEP program_grep
+
+" LiveGrep for content within .ini configuration files.
+:UEP config_grep [Game|Engine|Full]
 
 " Open an include file by searching the project cache.
 :UEP open_file [Path]
@@ -180,10 +184,13 @@ All commands start with `:UEP`.
 :UEP find_parents[!] [ClassName]
 
 " Search for C++ classes (use '!' to refresh cache).
-:UEP classes[!] [Game|Engine|Editor] [--no-deps|--deep-deps]
+:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
 
 " Search for C++ structs (use '!' to refresh cache).
-:UEP structs[!] [Game|Engine|Editor] [--no-deps|--deep-deps]
+:UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+
+" Search for C++ enums (use '!' to refresh cache).
+:UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
 
 " Display the logical tree for the entire project (requires neo-tree-unl.nvim).
 :UEP tree
@@ -202,6 +209,7 @@ All commands start with `:UEP`.
 ```
 
 ### Command Details
+
   * **`:UEP refresh`**:
       * `Game` (default): Scans only the modules of the current game project. If the linked engine is not cached, it will be scanned automatically first.
       * `Engine`: Scans only the modules of the linked engine.
@@ -214,10 +222,11 @@ All commands start with `:UEP`.
   * **`:UEP files[!]`**:
       * Without `!`: Selects files from the existing cache data.
       * With `!`: Deletes the cache and creates a new one before selecting files.
-      * `[Game|Engine]` (default `Game`): The scope of modules to search.
-      * `[--no-deps|--deep-deps]` (default `--no-deps`):
+      * `[Game|Engine|Runtime|Editor|Full]` (default `runtime`): The scope of modules to search.
+      * `[--no-deps|--shallow-deps|--deep-deps]` (default `--deep-deps`):
           * `--no-deps`: Searches only within the modules of the specified scope.
-          * `--deep-deps`: Includes all dependent modules in the search (`deep_dependencies`).
+          * `--shallow-deps`: Includes direct dependencies.
+          * `--deep-deps`: Includes all dependencies (`deep_dependencies`).
   * **`:UEP module_files[!]`**:
       * Without `!`: Searches for files in the specified module using the existing cache.
       * With `!`: Performs a lightweight update of the file cache for only the specified module before searching.
@@ -233,16 +242,20 @@ All commands start with `:UEP`.
       * If run without arguments, it displays a picker UI to select from all modules in the project.
   * **`:UEP grep [Scope]`**:
       * LiveGreps the entire project and engine source code (requires ripgrep).
-      * `Scope` can be `Game` (default) or `Engine` to limit the search area.
+      * `Scope` can be `Game`, `Engine`, `Runtime` (default), `Editor`, or `Full`.
       * `Game`: Searches only your project's source files and plugins.
-      * `Engine`: In addition to project code, also searches the associated engine source code.
-  * **`:UEP module_grep <ModuleName>`**:
+      * `Engine`: Searches *only* the associated engine source code.
+      * `Full` / `Runtime` / `Editor` / `Developer`: Searches both project and engine code.
+  * **`:UEP module_grep <ModuleName>`**;
       * Searches for content within the directory of the specified `<ModuleName>`.
       * Provides noise-free results when investigating the implementation of a specific feature.
       * If no module is specified, a picker will be shown to select a module.
   * **`:UEP program_grep`**:
       * Performs a live grep for files within all `Programs` directories related to the project and engine.
       * Useful for investigating the code of build tools and automation scripts.
+  * **`:UEP config_grep [Scope]`**:
+      * LiveGreps for content within `.ini` configuration files.
+      * `Scope` can be `Game`, `Engine`, or `Full` (default `runtime`, which aliases to `Full`).
   * **`:UEP open_file [Path]`**:
       * Finds and opens a file based on an include path, either extracted automatically from the text on the current line or explicitly provided by `[Path]`.
       * It performs an **intelligent hierarchical search** within the project cache (checking current file directory, module Public/Private folders, dependency modules, etc.).
@@ -257,21 +270,27 @@ All commands start with `:UEP`.
   * **`:UEP find_parents[!] [ClassName]`**: Displays the inheritance chain for a specified class.
       * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor.
       * With `!`: Ignores arguments and opens a picker UI to select the starting class.
-  * **`:UEP classes[!] [Game|Engine|Editor] [--no-deps|--deep-deps]`**: Opens a picker to select and jump to the definition of a C++ class.
-      * Flags: The `[!]`, `[Game|Engine|Editor]`, and `[--no-deps|--deep-deps]` flags control cache regeneration and scope filtering in the same way as the `:UEP files` command.
-      * Scope: `[Game|Engine|Editor]` is the base scope. The default is **`Editor`**, which scans all components (equivalent to a Full scan) to provide the richest set of Editor/Runtime symbols.
-  * **`:UEP structs[!] [Game|Engine|Editor] [--no-deps|--deep-deps]`**: Opens a picker to select and jump to the definition of a C++ struct.
-      * Flags: The `[!]`, `[Game|Engine|Editor]`, and `[--no-deps|--deep-deps]` flags control cache regeneration and scope filtering in the same way as the `:UEP files` command.
-      * Scope: `[Game|Engine|Editor]` is the base scope. The default is **`Editor`**, which scans all components (equivalent to a Full scan) to provide the richest set of Editor/Runtime symbols.
+  * **`:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: Opens a picker to select and jump to the definition of a C++ class.
+      * Flags: Controls cache regeneration and scope filtering.
+      * Scope: Default is **`runtime`**.
+      * Deps: Default is **`--deep-deps`**.
+  * **`:UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: Opens a picker to select and jump to the definition of a C++ struct.
+      * Flags: Controls cache regeneration and scope filtering.
+      * Scope: Default is **`runtime`**.
+      * Deps: Default is **`--deep-deps`**.
+  * **`:UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: Opens a picker to select and jump to the definition of a C++ enum.
+      * Flags: Controls cache regeneration and scope filtering.
+      * Scope: Default is **`runtime`**.
+      * Deps: Default is **`--deep-deps`**.
   * **`:UEP purge [ComponentName]`**:
       * Deletes only the **file cache** (`*.files.json`) for the specified Game, Engine, or Plugin component.
       * This allows forcing a file rescan without re-analyzing the project's dependency structure.
   * **`:UEP cleanup`**:
       * **DANGEROUS**: Permanently deletes **ALL** structural caches (`*.project.json`) and **ALL** file caches (`*.files.json`) associated with the current project, including all plugins and the linked engine.
       * The command runs asynchronously with a progress bar and requires confirmation.
-      * After running this, you **must** run `:UEP refresh` to rebuild the project structure from scratch. 
+      * After running this, you **must** run `:UEP refresh` to rebuild the project structure from scratch.
   * **`:UEP goto_definition[!] [ClassName]`**: Jumps to the actual definition file of a class, skipping forward declarations.
-      * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor. It performs an **intelligent hierarchical search** based on the current module's dependencies (current component -> shallow deps -> deep deps) before falling back to LSP.
+      * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor. It performs an **intelligent hierarchical search** based on the current module's dependencies (current component -\> shallow deps -\> deep deps) before falling back to LSP.
       * With `!`: Ignores arguments and the word under the cursor, and always opens a picker UI to select a class from the entire project.
 
 ## 🤖 API & Automation Examples
@@ -283,6 +302,7 @@ You can use the `UEP.api` module to integrate with other Neovim configurations.
 Create keymaps to quickly perform common tasks.
 
 #### Open File
+
 Enhance the built-in `gf` command to use UEP's intelligent file searching for includes.
 
 ```lua
@@ -310,7 +330,9 @@ vim.keymap.set('n', '<leader>pf', function()
   require('UEP.api').files({})
 end, { desc = "UEP: [P]roject [F]iles" })
 ```
+
 #### Go to Definition (UEP)
+
 Use UEP's intelligent definition jump, complementing LSP's default jump.
 
 ```lua
@@ -355,21 +377,20 @@ opts = {
 
 **Unreal Engine Related Plugins:**
 
-* **[UEP.nvim](https://github.com/taku25/UEP.nvim)**
-    * Analyzes `uproject` files for easy file navigation.
-* **[UBT.nvim](https://github.com/taku25/UBT.nvim)**
-    * Asynchronously run Build, GenerateClangDataBase, and other tasks from Neovim.
-* **[UCM.nvim](https://github.com/taku25/UCM.nvim)**
-    * Add and delete classes directly from Neovim.
-* **[ULG.nvim](https://github.com/taku25/ULG.nvim)**
-    * View UE logs, live coding status, stat fps, and more within nvim.
-* **[USH.nvim](https://github.com/taku25/USH.nvim)**
-    * Interact with `ushell` from nvim.
-* **[neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)**
-    * Display an IDE-like project explorer.
-* **[tree-sitter for Unreal Engine](https://github.com/taku25/tree-sitter-unreal-cpp)**
-    * Provides tree-sitter highlighting, including support for `UCLASS` and other Unreal Engine specific syntax.
-    
+  * **[UEP.nvim](https://github.com/taku25/UEP.nvim)**
+      * Analyzes `uproject` files for easy file navigation.
+  * **[UBT.nvim](https://github.com/taku25/UBT.nvim)**
+      * Asynchronously run Build, GenerateClangDataBase, and other tasks from Neovim.
+  * **[UCM.nvim](https://github.com/taku25/UCM.nvim)**
+      * Add and delete classes directly from Neovim.
+  * **[ULG.nvim](https://github.com/taku25/ULG.nvim)**
+      * View UE logs, live coding status, stat fps, and more within nvim.
+  * **[USH.nvim](https://github.com/taku25/USH.nvim)**
+      * Interact with `ushell` from nvim.
+  * **[neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)**
+      * Display an IDE-like project explorer.
+  * **[tree-sitter for Unreal Engine](https://github.com/taku25/tree-sitter-unreal-cpp)**
+      * Provides tree-sitter highlighting, including support for `UCLASS` and other Unreal Engine specific syntax.
 
 ## 📜 License
 
