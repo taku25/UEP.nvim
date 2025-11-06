@@ -46,6 +46,15 @@ M.setup = function()
       name = "UEP.nvim",
       impl = tree_provider,
     })
+
+
+    local build_targets_provider = require("UEP.provider.build_targets")
+    unl_api.provider.register({
+      capability = "uep.get_build_targets",
+      name = "UEP.nvim",
+      impl = build_targets_provider, 
+      priority = 100,
+    })
     -- ★ unl_log.get("UEP") ではなく、UEP独自のロガーラッパーを使うのがより良い実践
     local uep_logger = require("UEP.logger").get()
     if uep_logger then

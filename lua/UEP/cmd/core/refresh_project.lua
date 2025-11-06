@@ -1,4 +1,5 @@
 -- lua/UEP/cmd/core/refresh_project.lua (最適化版: mtime差分更新 + vim.schedule非同期ループ)
+-- [!] Target.cs スキャンを `refresh_target.lua` に分離
 
 local unl_finder = require("UNL.finder")
 local unl_path = require("UNL.path")
@@ -10,6 +11,7 @@ local project_cache = require("UEP.cache.project")
 local uep_config = require("UEP.config")
 local module_cache = require("UEP.cache.module")
 local refresh_modules_core = require("UEP.cmd.core.refresh_modules")
+local refresh_target_core = require("UEP.cmd.core.refresh_target") -- [!] 新しく require
 
 local M = {}
 
@@ -43,21 +45,16 @@ local function parse_project_or_plugin_file(path)
   return type_map
 end
 
--- ▼▼▼ [修正] 最適化版 parse_single_component ▼▼▼
+-- [!] `parse_target_cs_file` ヘルパー関数はここから削除 (refresh_target.lua に移動)
+
 ---
--- 1コンポーネントの Build.cs を非同期で検索・パースする
--- mtime を比較し、変更がないファイルはパースをスキップする
--- vim.schedule を使い、メインスレッドをブロックしない
---
--- @param component table
--- @param module_type_map table
--- @param old_component_data table|nil 前回のキャッシュデータ
--- @param on_done function(ok, { meta = {}, mtimes = {} })
+-- 1コンポーネントの Build.cs を非同期で検索・パースする (mtime 最適化版)
+-- (この関数はユーザー提供のコードから変更なし)
 local function parse_single_component(component, module_type_map, old_component_data, on_done)
   local log = uep_log.get()
   local search_paths = {}
 
-  -- 1. 検索パスの決定 (変更なし)
+  -- 1. 検索パスの決定
   if component.type == "Engine" then
     table.insert(search_paths, fs.joinpath(component.root_path, "Engine", "Source", "Runtime"))
     table.insert(search_paths, fs.joinpath(component.root_path, "Engine", "Source", "Developer"))
@@ -83,7 +80,7 @@ local function parse_single_component(component, module_type_map, old_component_
     end
   end
   
-  -- 2. fd で Build.cs を非同期検索 (変更なし)
+  -- 2. fd で Build.cs を非同期検索
   local build_cs_files = {}
   local fd_stderr = {}
   vim.fn.jobstart(fd_cmd, {
@@ -198,7 +195,6 @@ local function parse_single_component(component, module_type_map, old_component_
     end,
   })
 end
--- ▲▲▲ 最適化版 parse_single_component 完了 ▲▲▲
 
 -------------------------------------------------
 -- メインAPI
@@ -249,6 +245,25 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
          log.error("fd command failed for uplugins: %s", table.concat(uplugin_fd_stderr, "\n"))
       end
 
+      -- ▼▼▼【ここからが変更ブロック】▼▼▼
+      
+      -- [!] `refresh_target_core` を呼び出す
+      -- `Target.cs` のスキャンと `Build.cs` のスキャンを並行させるため、
+      -- `fd` のコールバックネストの外で `build_targets_list` を保持する
+      local build_targets_list = nil
+      local build_cs_completed = false
+      
+      refresh_target_core.find_and_parse_targets_async(game_root, engine_root, function(parsed_targets)
+        build_targets_list = parsed_targets or {}
+        -- もし Build.cs のパースが先に終わっていたら、最終処理を呼び出す
+        if build_cs_completed then
+            -- `resolve_and_save_all` はこのスコープの最後で定義される
+            resolve_and_save_all(build_targets_list)
+        end
+      end)
+
+      -- ▲▲▲【変更ブロックここまで】▲▲▲
+
       -- .uproject/.uplugin を先に解析 (変更なし)
       log.info("Found %d .uplugin files. Parsing project and plugin definitions...", #all_uplugin_files)
       local module_type_map = {}
@@ -283,7 +298,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       elseif refresh_opts.scope == "Engine" then components_to_process = vim.tbl_filter(function(c) return c.owner_name == engine_name end, all_components)
       else components_to_process = all_components end
 
-      -- ▼▼▼ [修正] Build.cs パースループ開始 (逐次版) ▼▼▼
+      -- Build.cs パースループ開始 (逐次版)
       progress:stage_define("parse_components", #all_components)
       progress:stage_update("parse_components", 0, "PASS 1: Parsing all Build.cs files (non-blocking)...")
       local raw_modules_by_component = {}
@@ -296,7 +311,11 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         current_index = current_index + 1
         -- 1. 全コンポーネントが完了したら、最終処理へ
         if current_index > #all_components then
-          resolve_and_save_all()
+          build_cs_completed = true
+          -- もし Target.cs のスキャンが先に終わっていたら、最終処理を呼び出す
+          if build_targets_list then
+              resolve_and_save_all(build_targets_list)
+          end
           return
         end
         
@@ -324,7 +343,8 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       end
 
       -- 依存関係解決と保存 (最終コールバック)
-      resolve_and_save_all = function()
+      -- [!] 引数 parsed_build_targets を受け取る
+      resolve_and_save_all = function(parsed_build_targets)
         progress:stage_update("parse_components", #all_components, "PASS 1 Complete. Aggregating modules...")
         
         -- 1. Parse 結果を集約 (変更なし)
@@ -389,6 +409,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
           
           local uplugin_path = component.type == "Plugin" and component.uplugin_path or nil
 
+          -- [!] new_data テーブルに build_targets を追加
           local new_data = {
             name = component.name, display_name = component.display_name, type = component.type,
             root_path = component.root_path, owner_name = component.owner_name,
@@ -396,20 +417,23 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
             generation = new_generation, source_mtimes = source_mtimes,
             runtime_modules = runtime_modules, developer_modules = developer_modules,
             editor_modules = editor_modules, programs_modules = programs_modules,
+            
+            -- ▼▼▼【ここが修正箇所】▼▼▼
+            -- Gameコンポーネントのキャッシュにのみ、ビルドターゲットリストを保存する
+            build_targets = (component.type == "Game") and parsed_build_targets or nil,
+            -- ▲▲▲【修正完了】▲▲▲
           }
 
           local cache_filename = component.name .. ".project.json"
           local old_data = project_cache.load(cache_filename)
           local has_changed = false
           
-          -- ▼▼▼ [修正] 古い mtime チェック (cache_is_stale) を削除 ▼▼▼
-          -- `parse_single_component` が差分更新したので、`generation` の比較だけで十分
+          -- mtime 差分更新済みなので、`generation` の比較だけでOK
           if refresh_opts.force then has_changed = true; log.info("Forced update for component: %s", component.display_name)
           elseif not old_data then has_changed = true
           elseif old_data.generation ~= new_generation then
             has_changed = true
           end
-          -- ▲▲▲ 修正完了 ▲▲▲
 
           if has_changed then
             log.info("Updating project cache for component: %s (gen: %s)", component.display_name, new_generation:sub(1,8))
@@ -501,20 +525,21 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
             game_root, engine_root,
             function(files_ok)
                 if not files_ok then log.error("Module file cache generation failed.") end
-                on_done(files_ok, result_data)
+                -- [!] 最終的な on_done 呼び出し
+                on_done(files_ok, result_data) 
             end
           )
         else
           log.info("Project structure is up-to-date and all module caches exist. Nothing to refresh.")
+          -- [!] 最終的な on_done 呼び出し
           on_done(true, result_data)
         end
 
       end -- resolve_and_save_all 終わり
 
-      -- [!] 逐次処理の最初の呼び出し
+      -- [!] 逐次処理の最初の呼び出し (引数なしでOK)
       parse_next()
-      -- ▲▲▲ 変更完了 ▲▲▲
-
+      
     end, -- .uplugin 検索 on_exit 終わり
   }) -- .uplugin 検索 jobstart 終わり
 end -- M.update_project_structure 終わり
