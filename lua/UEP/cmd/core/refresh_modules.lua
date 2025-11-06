@@ -11,20 +11,39 @@ local unl_types_ok, unl_event_types = pcall(require, "UNL.event.types")
 
 local M = {}
 
+local defaults = require("UEP.config.defaults") -- [!] デフォルト設定を読み込み
+
+local M = {}
+
 function M.create_fd_command(base_paths, type_flag)
   local conf = uep_config.get()
+  
+  -- confの値がnilでも、defaultsの値 (テーブル) にフォールバックする
   local exclude_dirs = conf.excludes_directory
+  if type(exclude_dirs) ~= "table" then
+      exclude_dirs = defaults.excludes_directory or {}
+  end
+  
   local fd_cmd = {
     "fd", "--full-path", "--type", type_flag, "--path-separator", "/",
     "--no-ignore", "--hidden"
   }
+  
+  -- これで exclude_dirs がテーブルであることが保証される
   for _, dir in ipairs(exclude_dirs) do table.insert(fd_cmd, "--exclude"); table.insert(fd_cmd, dir) end
+  
   if type_flag == "f" then
     local extensions = conf.include_extensions
+    if type(extensions) ~= "table" then
+        extensions = defaults.include_extensions or {}
+    end
+
+    -- これで extensions がテーブルであることが保証される
     for _, ext in ipairs(extensions) do
       if ext ~= "uproject" and ext ~= "uplugin" then table.insert(fd_cmd, "--extension"); table.insert(fd_cmd, ext) end
     end
   end
+  
   for _, path in ipairs(base_paths) do
       if vim.fn.isdirectory(path) == 1 then -- 存在確認
           table.insert(fd_cmd, "--search-path")

@@ -6,15 +6,24 @@ local files_cache_manager = require("UEP.cache.files")
 local uep_log = require("UEP.logger")
 local core_utils = require("UEP.cmd.core.utils")
 local unl_progress = require("UNL.backend.progress")
+local defaults = require("UEP.config.defaults")
 
 local M = {}
 
 -- (ヘルパー関数 create_fd_command, categorize_path に変更はありません)
 M.create_fd_command = function (base_paths, type_flag)
   local conf = uep_config.get()
+
   local extensions = conf.include_extensions
+  if type(extensions) ~= "table" then extensions = defaults.include_extensions or {} end
+  
   local include_dirs = conf.include_directory
+  if type(include_dirs) ~= "table" then include_dirs = defaults.include_directory or {} end
+
   local exclude_dirs = conf.excludes_directory
+  if type(exclude_dirs) ~= "table" then exclude_dirs = defaults.excludes_directory or {} end
+
+  -- table.concat は空テーブルを渡されてもエラーにならず、空文字列を返すので安全
   local dir_pattern = "(" .. table.concat(include_dirs, "|") .. ")"
   local final_regex
   if type_flag == "f" then
@@ -27,7 +36,10 @@ M.create_fd_command = function (base_paths, type_flag)
     final_regex = ".*[\\\\/]" .. dir_pattern .. "[\\\\/]?.*"
   end
   local fd_cmd = { "fd", "--regex", final_regex, "--full-path", "--type", type_flag, "--path-separator", "/" }
+
+  -- これで exclude_dirs がテーブルであることが保証される
   for _, dir in ipairs(exclude_dirs) do table.insert(fd_cmd, "--exclude"); table.insert(fd_cmd, dir) end
+  
   vim.list_extend(fd_cmd, base_paths)
   return fd_cmd
 end
