@@ -98,6 +98,11 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Find all files in Program modules.",
       args = {},
     },
+    config_files = {
+      handler = uep_api.config_files,
+      desc = "Find all config files (.ini) in the project.",
+      args = {},
+    },
     find_derived = {
       handler = uep_api.find_derived,
       bang = true,

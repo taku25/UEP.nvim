@@ -153,6 +153,9 @@ All commands start with `:UEP`.
 " Search for files within Programs directories.
 :UEP program_files
 
+" Search for all config files (.ini).
+:UEP config_files
+
 " LiveGrep across the project or engine source code.
 :UEP grep [Game|Engine|Runtime|Editor|Full]
 
@@ -233,6 +236,8 @@ All commands start with `:UEP`.
   * **`:UEP program_files`**:
       * Searches for files within all `Programs` directories related to the project and engine (e.g., UnrealBuildTool, AutomationTool).
       * Useful for investigating the code of build tools.
+  * **`:UEP config_files`**:
+      * Searches for all configuration files (.ini) across the project and engine.
   * **`:UEP tree`**:
       * Only works if `neo-tree-unl.nvim` is installed.
       * Opens a full logical tree in `neo-tree`, including "Game", "Plugins", and "Engine" categories for the entire project.

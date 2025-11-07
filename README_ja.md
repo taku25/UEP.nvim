@@ -153,6 +153,9 @@ opts = {
 " Programsディレクトリ内のファイルを検索します。
 :UEP program_files
 
+" すべてのコンフィグファイル (.ini) を検索します。
+:UEP config_files
+
 " プロジェクトまたはエンジンのソースコード全体からLiveGrepします。
 :UEP grep [Game|Engine|Runtime|Editor|Full]
 
@@ -236,6 +239,8 @@ opts = {
   * **`:UEP program_files`**:
       * プロジェクトとエンジンに関連する全ての`Programs`ディレクトリ（例: UnrealBuildTool, AutomationTool）内のファイルを検索します。
       * ビルドツールのコードを調査する際に便利です。
+  * **`:UEP config_files`**:
+      * プロジェクトとエンジンに関連する全てのコンフィグファイル (.ini) を検索します
   * **`:UEP module_tree [ModuleName]`**:
       * `neo-tree-unl.nvim` がインストールされている場合にのみ機能します。
       * `ModuleName`を引数として渡すと、そのモジュールのみをルートとしたツリーが表示されます。
