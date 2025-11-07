@@ -143,24 +143,11 @@ function M.execute(opts)
 
 
 -- 呼び出し側（program_files や UEP files を生成するコード）
-
-local N =#picker_items -- (または 24026。リストの総数)
-
--- ★★★ 本当の修正：ipairs ではなく、1からNまで回す ★★★
-local dense_results = {}
-for i = 1, N do
-  local v = picker_items[i]
-  if v ~= nil then
-    table.insert(dense_results, v)
-  end
-end
--- ★★★★★★★★★★★
-
     -- STEP 5: ピッカーを起動
     unl_picker.pick({
       kind = "uep_program_files",
       title = "ﬧ Programs Files",
-      items = dense_results,
+      items = picker_items,
       conf = uep_config.get(),
       preview_enabled = true,
       devicons_enabled = true,
