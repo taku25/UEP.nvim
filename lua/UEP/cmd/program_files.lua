@@ -133,7 +133,7 @@ function M.execute(opts)
     end
 
     -- [!] ユーザーのデバッグコード (print) を反映 (string.formatを使用)
-    print(string.format("Picker Items: %d, Context Items: %d", #picker_items, #program_files_with_context))
+    -- print(string.format("Picker Items: %d, Context Items: %d", #picker_items, #program_files_with_context))
     
     table.sort(picker_items, function(a, b) return a.display < b.display end)
 
