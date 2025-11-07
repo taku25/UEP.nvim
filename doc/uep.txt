@@ -18,13 +18,13 @@ CONTENTS                                                 *UEP-contents*
 ==============================================================================
 1. Introduction                                     *UEP-introduction*
 
-*UEP.nvim* (Unreal Engine Project Explorer) is a Neovim plugin designed to
+UEP.nvim (Unreal Engine Project Explorer) is a Neovim plugin designed to
 understand and navigate the structure of Unreal Engine projects.
 By asynchronously parsing and caching the module and file information for the
 entire project, it provides an incredibly fast and intelligent file navigation
 experience without blocking the UI.
 It is a core plugin in the *Unreal Neovim Plugin Stack* and depends on the
-*UNL.nvim* library as its foundation.
+UNL.nvim library as its foundation.
 
 Main Features:
 - Fast, Asynchronous Caching:
@@ -44,7 +44,7 @@ Main Features:
 ==============================================================================
 2. Usage                                                      *UEP-usage*
 
-All commands for *UEP.nvim* begin with `:UEP`.
+All commands for UEP.nvim begin with `:UEP`.
 
 ------------------------------------------------------------------------------
 Command List                                           *UEP-commands-list*
@@ -273,8 +273,8 @@ Command Details                                     *UEP-commands-detail*
 ==============================================================================
 3. Configuration                                       *UEP-configuration*
 
-The configuration for *UEP.nvim* is managed through the settings system of its
-dependency library, *UNL.nvim*.
+The configuration for UEP.nvim is managed through the settings system of its
+dependency library, UNL.nvim.
 
 ------------------------------------------------------------------------------
 Setup                                                          *UEP-setup*
@@ -304,7 +304,7 @@ Project-specific Settings (.unlrc.json)                  *UEP-unlrc*
 
 By creating a JSON file named `.unlrc.json` in the root directory of your
 project, you can override global settings for that project only. This feature
-is provided by *UNL.nvim*.
+is provided by UNL.nvim.
 
 Example:
 >json
@@ -316,8 +316,8 @@ Example:
 ------------------------------------------------------------------------------
 Full Configuration                           *UEP-default-configuration*
 
-The following are all configurable options related to *UEP.nvim* with their
-default values. These settings are treated as part of the *UNL.nvim*
+The following are all configurable options related to UEP.nvim with their
+default values. These settings are treated as part of the UNL.nvim
 configuration table.
 
 >lua
@@ -348,7 +348,7 @@ configuration table.
 ==============================================================================
 4. Lua API                                                     *UEP-api*
 
-*UEP.nvim* provides a simple API for external integration. You can call functions
+UEP.nvim provides a simple API for external integration. You can call functions
 similar to the commands directly from Lua.
 
 Require the API module:
