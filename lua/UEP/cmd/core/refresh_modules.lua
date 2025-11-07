@@ -26,7 +26,7 @@ function M.create_fd_command(base_paths, type_flag)
   
   local fd_cmd = {
     "fd", "--full-path", "--type", type_flag, "--path-separator", "/",
-    "--no-ignore", "--hidden"
+    "--no-ignore" --, "--hidden"
   }
   
   -- これで exclude_dirs がテーブルであることが保証される
@@ -50,36 +50,34 @@ function M.create_fd_command(base_paths, type_flag)
           table.insert(fd_cmd, path)
       end
   end
+
   return fd_cmd
 end
+
 
 function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by_path, all_components_map, progress, game_root, engine_root, on_done)
   local log = uep_log.get()
   local modules_to_refresh_list = vim.tbl_values(modules_to_refresh_meta)
   local total_count = #modules_to_refresh_list
 
-  -- ▼▼▼ 疑似モジュールリストを動的に構築 ▼▼▼
+  -- ... (PSEUDO_MODULES の構築は変更なし) ...
   local PSEUDO_MODULES = {}
-  -- 1. Engine 固有のものを追加
   PSEUDO_MODULES["_EngineConfig"] = { name = "_EngineConfig", root = fs.joinpath(engine_root, "Engine", "Config") }
   PSEUDO_MODULES["_EngineShaders"] = { name = "_EngineShaders", root = fs.joinpath(engine_root, "Engine", "Shaders") }
   PSEUDO_MODULES["_EnginePrograms"] = { name = "_EnginePrograms", root = fs.joinpath(engine_root, "Engine", "Source", "Programs") }
-
-  -- 2. Game と Plugin のルートコンポーネントを追加
   for comp_name_hash, comp_meta in pairs(all_components_map) do
-      if comp_meta.type == "Game" or comp_meta.type == "Plugin" then
-          local pseudo_name = comp_meta.display_name
-          local pseudo_root = comp_meta.root_path
-          if PSEUDO_MODULES[pseudo_name] then
-              log.warn("Duplicate pseudo-module name detected: %s. Skipping component: %s", pseudo_name, comp_name_hash)
-          elseif not pseudo_root then
-              log.warn("Pseudo-module '%s' has nil root_path. Skipping.", pseudo_name)
-          else
-              PSEUDO_MODULES[pseudo_name] = { name = pseudo_name, root = pseudo_root, type = comp_meta.type }
-          end
+    if comp_meta.type == "Game" or comp_meta.type == "Plugin" then
+      local pseudo_name = comp_meta.display_name
+      local pseudo_root = comp_meta.root_path
+      if PSEUDO_MODULES[pseudo_name] then
+        log.warn("Duplicate pseudo-module name detected: %s. Skipping component: %s", pseudo_name, comp_name_hash)
+      elseif not pseudo_root then
+        log.warn("Pseudo-module '%s' has nil root_path. Skipping.", pseudo_name)
+      else
+        PSEUDO_MODULES[pseudo_name] = { name = pseudo_name, root = pseudo_root, type = comp_meta.type }
       end
+    end
   end
-  -- ▲▲▲ 疑似モジュール構築ここまで ▲▲▲
 
   progress:stage_define("module_file_scan", 1)
   progress:stage_update("module_file_scan", 0, ("Scanning files for %d modules (+ %d components)..."):format(total_count, vim.tbl_count(PSEUDO_MODULES)))
@@ -92,30 +90,93 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
   local all_found_files = {}
   local all_found_dirs = {}
   local files_stderr = {}
+
+  -- ▼▼▼【修正 1: fd (files) のバッファリング】▼▼▼
+  local line_buffer_files = "" -- [!] ファイルスキャン用のバッファ
+
   local job_ok, job_id_or_err = pcall(vim.fn.jobstart, fd_cmd_files, {
     stdout_buffered = true, stderr_buffered = true,
-    on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(all_found_files, line) end end end end,
+    
+    on_stdout = function(_, data, _)
+      if not data then return end
+      data[1] = line_buffer_files .. (data[1] or "")
+      local last_line_index = #data
+      local last_line = data[last_line_index]
+      
+      if last_line and last_line ~= "" and not last_line:find("[\r\n]$") then
+        line_buffer_files = table.remove(data, last_line_index)
+      else
+        line_buffer_files = ""
+      end
+
+      for _, line in ipairs(data) do
+        if line and line ~= "" then
+          table.insert(all_found_files, line)
+        end
+      end
+    end,
+
     on_stderr = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(files_stderr, line) end end end end,
+    
     on_exit = function(_, files_code)
+      -- [!] 終了時にファイルバッファの残りを処理
+      if line_buffer_files and line_buffer_files ~= "" then
+        table.insert(all_found_files, line_buffer_files)
+        line_buffer_files = ""
+      end
+
       if files_code ~= 0 then log.error("fd (files) command failed: %s", table.concat(files_stderr, "\n")); if on_done then on_done(false) end; return end
 
+      -- === fd (dirs) ジョブの開始 ===
       vim.schedule(function()
         local dirs_stderr = {}
+        
+        -- ▼▼▼【修正 2: fd (dirs) のバッファリング】▼▼▼
+        local line_buffer_dirs = "" -- [!] ディレクトリ スキャン用のバッファ
+
         local job2_ok, job2_id_or_err = pcall(vim.fn.jobstart, fd_cmd_dirs, {
           stdout_buffered = true, stderr_buffered = true,
-          on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(all_found_dirs, line) end end end end,
+          
+          on_stdout = function(_, data, _)
+            if not data then return end
+            data[1] = line_buffer_dirs .. (data[1] or "")
+            local last_line_index = #data
+            local last_line = data[last_line_index]
+            
+            if last_line and last_line ~= "" and not last_line:find("[\r\n]$") then
+              line_buffer_dirs = table.remove(data, last_line_index)
+            else
+              line_buffer_dirs = ""
+            end
+            
+            for _, line in ipairs(data) do
+              if line and line ~= "" then
+                table.insert(all_found_dirs, line)
+              end
+            end
+          end,
+          
           on_stderr = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(dirs_stderr, line) end end end end,
+          
           on_exit = function(_, dirs_code)
+            -- [!] 終了時にディレクトリバッファの残りを処理
+            if line_buffer_dirs and line_buffer_dirs ~= "" then
+              table.insert(all_found_dirs, line_buffer_dirs)
+              line_buffer_dirs = ""
+
+            end
+
             if dirs_code ~= 0 then log.error("fd (dirs) command failed: %s", table.concat(dirs_stderr, "\n")); if on_done then on_done(false) end; return end
 
             progress:stage_update("module_file_scan", 1, ("File scan complete (%d files, %d dirs). Classifying..."):format(#all_found_files, #all_found_dirs))
-
+            
+            -- ... (以降の分類・保存ロジックは変更なし) ...
             local files_by_path_key = {}
             local dirs_by_path_key = {}
             
             for _, pseudo in pairs(PSEUDO_MODULES) do
-                files_by_path_key[pseudo.root] = { source={}, config={}, shader={}, programs={}, other={}, content={} }
-                dirs_by_path_key[pseudo.root] = { source={}, config={}, shader={}, programs={}, other={}, content={} }
+              files_by_path_key[pseudo.root] = { source={}, config={}, shader={}, programs={}, other={}, content={} }
+              dirs_by_path_key[pseudo.root] = { source={}, config={}, shader={}, programs={}, other={}, content={} }
             end
             for path, meta in pairs(modules_to_refresh_meta) do
               files_by_path_key[path] = { source={}, config={}, shader={}, programs={}, other={}, content={} }
@@ -129,54 +190,53 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
             for _, pseudo in pairs(PSEUDO_MODULES) do table.insert(sorted_pseudo_roots, pseudo.root) end
             table.sort(sorted_pseudo_roots, function(a,b) return #a > #b end)
 
-            -- ▼▼▼ 3d. ファイル振り分け (バグ修正版) ▼▼▼
+            -- ▼▼▼ ファイル振り分け ▼▼▼
             for _, file in ipairs(all_found_files) do
+  
+              -- if file:find("/Programs/", 1, true) then
+              --   log.info(file)
+              -- end
               local assigned = false
-              -- 1. 実際のモジュール (Build.cs基準) に割り当て
+              -- 1. 実際のモジュール
               for _, mod_root in ipairs(sorted_real_module_roots) do
                 if file:find(mod_root, 1, true) then
                   local category = core_utils.categorize_path(file)
                   if category ~= "uproject" and category ~= "uplugin" then
                     if files_by_path_key[mod_root] then
-                        if not files_by_path_key[mod_root][category] then files_by_path_key[mod_root][category] = {} end
-                        table.insert(files_by_path_key[mod_root][category], file)
+                      if not files_by_path_key[mod_root][category] then files_by_path_key[mod_root][category] = {} end
+                      table.insert(files_by_path_key[mod_root][category], file)
                     else
-                        log.warn("refresh_modules: files_by_path_key key missing for %s", mod_root)
+                      log.warn("refresh_modules: files_by_path_key key missing for %s", mod_root)
                     end
                   end
                   assigned = true; break
                 end
               end
-              -- 2. 疑似モジュール に割り当て
+              -- 2. 疑似モジュール
               if not assigned then
                 for _, pseudo_root in ipairs(sorted_pseudo_roots) do
                   if file:find(pseudo_root, 1, true) then
-                      
-                      -- ★ _EnginePrograms 疑似モジュール (root が .../Engine/Source/Programs) の場合、
-                      -- "Source" 除外チェックを *しない* (UnrealBuildTool.cs のため)
-                      local is_engine_programs = pseudo_root:find("Engine/Source/Programs", 1, true)
-                      
-                      -- "Source" 除外チェックを実行するかどうかのフラグ
-                      local should_check_source_exclusion = true
-                      if is_engine_programs then
-                          should_check_source_exclusion = false
-                      end
+                    
+                    local is_engine_programs = pseudo_root:find("Engine/Source/Programs", 1, true)
+                    local should_check_source_exclusion = true
+                    if is_engine_programs then
+                      should_check_source_exclusion = false
+                    end
 
-                      -- "Source" ディレクトリ配下のファイルは除外 (ただし _EnginePrograms は除く)
-                      if (not should_check_source_exclusion) or (not file:find(fs.joinpath(pseudo_root, "Source"), 1, true)) then
-                          local category = core_utils.categorize_path(file)
-                          if files_by_path_key[pseudo_root] then
-                              if not files_by_path_key[pseudo_root][category] then files_by_path_key[pseudo_root][category] = {} end
-                              table.insert(files_by_path_key[pseudo_root][category], file)
-                          end
+                    if (not should_check_source_exclusion) or (not file:find(fs.joinpath(pseudo_root, "Source"), 1, true)) then
+                      local category = core_utils.categorize_path(file)
+                      if files_by_path_key[pseudo_root] then
+                        if not files_by_path_key[pseudo_root][category] then files_by_path_key[pseudo_root][category] = {} end
+                        table.insert(files_by_path_key[pseudo_root][category], file)
                       end
-                      assigned = true; break
+                    end
+                    assigned = true; break
                   end
                 end
               end
             end
             
-            -- ▼▼▼ 3e. ディレクトリ振り分け (バグ修正版) ▼▼▼
+            -- ▼▼▼ ディレクトリ振り分け ▼▼▼
             for _, dir in ipairs(all_found_dirs) do
                 local assigned = false
                 -- 1. 実際のモジュール
@@ -198,7 +258,6 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
                 if not assigned then
                     for _, pseudo_root in ipairs(sorted_pseudo_roots) do
                         if dir:find(pseudo_root, 1, true) then
-                            -- ★ "Source" 除外チェック (ディレクトリにも適用)
                             local is_engine_programs = pseudo_root:find("Engine/Source/Programs", 1, true)
                             local should_check_source_exclusion = true
                             if is_engine_programs then
@@ -279,27 +338,27 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
               
               log.debug("create_module_caches_for: Saving %d pseudo-modules...", vim.tbl_count(PSEUDO_MODULES))
               for _, pseudo in pairs(PSEUDO_MODULES) do
-                 saved_count = saved_count + 1
-                 progress:stage_update("module_cache_save", saved_count, ("Saving: %s [%d/%d]"):format(pseudo.name, saved_count, total_count + vim.tbl_count(PSEUDO_MODULES)))
-                 local pseudo_files_data = files_by_path_key[pseudo.root]
-                 local pseudo_dirs_data = dirs_by_path_key[pseudo.root]
-                 if pseudo_files_data and pseudo_dirs_data then
-                     local pseudo_header_details = {}
-                     if header_details_by_file then
+                  saved_count = saved_count + 1
+                  progress:stage_update("module_cache_save", saved_count, ("Saving: %s [%d/%d]"):format(pseudo.name, saved_count, total_count + vim.tbl_count(PSEUDO_MODULES)))
+                  local pseudo_files_data = files_by_path_key[pseudo.root]
+                  local pseudo_dirs_data = dirs_by_path_key[pseudo.root]
+                  if pseudo_files_data and pseudo_dirs_data then
+                      local pseudo_header_details = {}
+                      if header_details_by_file then
                         for category, files in pairs(pseudo_files_data) do
-                           for _, file in ipairs(files) do
+                            for _, file in ipairs(files) do
                               if header_details_by_file[file] then pseudo_header_details[file] = header_details_by_file[file] end
-                           end
+                            end
                         end
-                     end
-                     local data_to_save = { files = pseudo_files_data, directories = pseudo_dirs_data, header_details = pseudo_header_details }
-                     local pseudo_meta = { name = pseudo.name, module_root = pseudo.root }
-                     module_cache.save(pseudo_meta, data_to_save)
-                 else
-                     log.debug("create_module_caches_for: No files/dirs found for pseudo-module '%s'. Saving empty.", pseudo.name)
-                     local pseudo_meta = { name = pseudo.name, module_root = pseudo.root }
-                     module_cache.save(pseudo_meta, { files = {}, directories = {}, header_details = {} })
-                 end
+                      end
+                      local data_to_save = { files = pseudo_files_data, directories = pseudo_dirs_data, header_details = pseudo_header_details }
+                      local pseudo_meta = { name = pseudo.name, module_root = pseudo.root }
+                      module_cache.save(pseudo_meta, data_to_save)
+                  else
+                      log.debug("create_module_caches_for: No files/dirs found for pseudo-module '%s'. Saving empty.", pseudo.name)
+                      local pseudo_meta = { name = pseudo.name, module_root = pseudo.root }
+                      module_cache.save(pseudo_meta, { files = {}, directories = {}, header_details = {} })
+                  end
               end
 
               progress:stage_update("module_cache_save", saved_count, "All module caches saved.")

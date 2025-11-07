@@ -58,7 +58,7 @@ function M.get_all_classes(opts, on_complete)
             seed_modules[n] = true
           end --[[ IF 2 End ]]
         end --[[ IF 1 End ]]
-      end --[[ ★★★ ここに FOR ループを閉じる end が必要でした ★★★ ]]
+      end
     elseif requested_scope == "full" then
       for n,_ in pairs(all_modules_map) do seed_modules[n] = true end
     else -- Unknown scope defaults to runtime
