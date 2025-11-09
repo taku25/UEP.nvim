@@ -1,4 +1,4 @@
--- lua/UEP/cmd/core/refresh_modules.lua (疑似モジュール定義 ＋ 振り分けバグ修正 決定版)
+-- lua/UEP/cmd/core/refresh_modules.lua (疑似モジュール名の重複バグ修正版)
 
 local class_parser = require("UEP.parser.class")
 local uep_config = require("UEP.config")
@@ -60,14 +60,21 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
   local modules_to_refresh_list = vim.tbl_values(modules_to_refresh_meta)
   local total_count = #modules_to_refresh_list
 
-  -- ... (PSEUDO_MODULES の構築は変更なし) ...
+  -- ... (PSEUDO_MODULES の構築) ...
   local PSEUDO_MODULES = {}
   PSEUDO_MODULES["_EngineConfig"] = { name = "_EngineConfig", root = fs.joinpath(engine_root, "Engine", "Config") }
   PSEUDO_MODULES["_EngineShaders"] = { name = "_EngineShaders", root = fs.joinpath(engine_root, "Engine", "Shaders") }
   PSEUDO_MODULES["_EnginePrograms"] = { name = "_EnginePrograms", root = fs.joinpath(engine_root, "Engine", "Source", "Programs") }
+  
   for comp_name_hash, comp_meta in pairs(all_components_map) do
     if comp_meta.type == "Game" or comp_meta.type == "Plugin" then
-      local pseudo_name = comp_meta.display_name
+      
+      -- ▼▼▼ [ここから修正] ▼▼▼
+      -- display_name が "xxx" で重複するのを防ぐため、
+      -- "Game_xxx" や "Plugin_xxx" のようにコンポーネントタイプでプレフィックスを付ける
+      local pseudo_name = comp_meta.type .. "_" .. comp_meta.display_name
+      -- ▲▲▲ [修正完了] ▲▲▲
+      
       local pseudo_root = comp_meta.root_path
       if PSEUDO_MODULES[pseudo_name] then
         log.warn("Duplicate pseudo-module name detected: %s. Skipping component: %s", pseudo_name, comp_name_hash)
@@ -91,7 +98,6 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
   local all_found_dirs = {}
   local files_stderr = {}
 
-  -- ▼▼▼【修正 1: fd (files) のバッファリング】▼▼▼
   local line_buffer_files = "" -- [!] ファイルスキャン用のバッファ
 
   local job_ok, job_id_or_err = pcall(vim.fn.jobstart, fd_cmd_files, {
@@ -119,7 +125,6 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
     on_stderr = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(files_stderr, line) end end end end,
     
     on_exit = function(_, files_code)
-      -- [!] 終了時にファイルバッファの残りを処理
       if line_buffer_files and line_buffer_files ~= "" then
         table.insert(all_found_files, line_buffer_files)
         line_buffer_files = ""
@@ -127,11 +132,9 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
 
       if files_code ~= 0 then log.error("fd (files) command failed: %s", table.concat(files_stderr, "\n")); if on_done then on_done(false) end; return end
 
-      -- === fd (dirs) ジョブの開始 ===
       vim.schedule(function()
         local dirs_stderr = {}
         
-        -- ▼▼▼【修正 2: fd (dirs) のバッファリング】▼▼▼
         local line_buffer_dirs = "" -- [!] ディレクトリ スキャン用のバッファ
 
         local job2_ok, job2_id_or_err = pcall(vim.fn.jobstart, fd_cmd_dirs, {
@@ -159,18 +162,15 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
           on_stderr = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(dirs_stderr, line) end end end end,
           
           on_exit = function(_, dirs_code)
-            -- [!] 終了時にディレクトリバッファの残りを処理
             if line_buffer_dirs and line_buffer_dirs ~= "" then
               table.insert(all_found_dirs, line_buffer_dirs)
               line_buffer_dirs = ""
-
             end
 
             if dirs_code ~= 0 then log.error("fd (dirs) command failed: %s", table.concat(dirs_stderr, "\n")); if on_done then on_done(false) end; return end
 
             progress:stage_update("module_file_scan", 1, ("File scan complete (%d files, %d dirs). Classifying..."):format(#all_found_files, #all_found_dirs))
             
-            -- ... (以降の分類・保存ロジックは変更なし) ...
             local files_by_path_key = {}
             local dirs_by_path_key = {}
             
@@ -192,10 +192,6 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
 
             -- ▼▼▼ ファイル振り分け ▼▼▼
             for _, file in ipairs(all_found_files) do
-  
-              -- if file:find("/Programs/", 1, true) then
-              --   log.info(file)
-              -- end
               local assigned = false
               -- 1. 実際のモジュール
               for _, mod_root in ipairs(sorted_real_module_roots) do
@@ -277,7 +273,6 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
                 end
             end
             
-            -- ( ... STEP 4, 5, 6 は変更なし ... )
             progress:stage_define("header_analysis", #all_found_files)
             local all_existing_header_details = {}
             for path, mod_meta in pairs(all_modules_meta_by_path) do
