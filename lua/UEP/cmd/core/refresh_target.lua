@@ -1,5 +1,5 @@
 -- lua/UEP/cmd/core/refresh_target.lua
--- Target.cs ファイルのスキャンと解析を担当するモジュール
+-- [!] DatasmithMax* のような非標準的な .Target.cs ファイルに対応
 
 local fs = require("vim.fs")
 local uep_log = require("UEP.logger")
@@ -17,27 +17,33 @@ local function parse_target_cs_file(file_path)
     return nil
   end
 
-  -- [!] ユーザーがテスト成功した正規表現ロジックを使用
   local content = table.concat(lines, "\n")
   local flattened = content:gsub("[\r\n]", " ") -- 改行をスペースに置換
 
-  -- 1. ターゲット名とベースクラスを抽出
-  local name_match, base_class = flattened:match([[public%s+class%s+([%w_]+Target)%s*:%s*([%w_]+Rules)]])
-  -- 2. ターゲットタイプを抽出
+  -- ▼▼▼ [修正 1] ▼▼▼
+  -- "public class NameTarget : BaseRules" という厳格なパターンをやめ、
+  -- "public class [AnyName] : [AnyBase]" という柔軟なパターンでマッチさせる
+  local name_match, base_class = flattened:match([[public%s+class%s+([%w_]+)%s*:%s*([%w_]+)]])
+  -- ▲▲▲ 修正 1 完了 ▲▲▲
+  
+  -- 2. ターゲットタイプを抽出 (変更なし)
   local type_match = flattened:match([[Type%s*=%s*TargetType%.([%w_]+);]])
 
   local final_name = nil
   local final_type = nil
 
-  -- 名前の処理
+  -- ▼▼▼ [修正 2] ▼▼▼
+  -- 名前の処理 (正規表現が柔軟になったため、nil チェックが重要)
   if name_match then
-    final_name = name_match:gsub("Target$", "")
+    -- "Target" で終わっていれば削除する。終わっていなければ、そのまま
+    final_name = name_match:gsub("Target$", "") 
   else
-    uep_log.get().warn("Target.cs parser: Could not parse name from: %s", file_path)
+    -- 柔軟な正規表現でもマッチしなかった場合、ファイル形式が異なる
+    uep_log.get().warn("Target.cs parser: Could not parse 'public class ... : ...' from: %s", file_path)
     return nil -- 名前が取れなければ失敗
   end
   
-  -- タイプの処理
+  -- タイプの処理 (ベースクラスの判定を強化)
   if type_match then
     -- Type = ... が明示的に指定されている場合
     final_type = type_match
@@ -45,15 +51,22 @@ local function parse_target_cs_file(file_path)
     -- Type がない場合、ベースクラスでデフォルトを決める
     if base_class == "TestTargetRules" then
       final_type = "Program"
+    elseif base_class:find("Rules$") then
+      -- "TargetRules" や "ModuleRules" (Build.cs) など、"Rules" で終わる
+      -- .Target.cs ファイルなので "Game" (または "Editor") が妥当
+      final_type = "Game" 
     else
-      -- "TargetRules" またはその他
-      final_type = "Game"
+      -- "Rules" で終わらないベースクラス (例: DatasmithTargetBase)
+      -- これらは通常 "Program" ターゲット
+      uep_log.get().trace("Target.cs parser: Base class '%s' does not end in 'Rules'. Guessing 'Program' type for %s", base_class, file_path)
+      final_type = "Program"
     end
   else
     -- Type も base_class も見つからない（パース失敗）
     uep_log.get().warn("Target.cs parser: Could not parse type OR base class from: %s", file_path)
     return nil
   end
+  -- ▲▲▲ 修正 2 完了 ▲▲▲
 
   -- 成功
   return { name = final_name, type = final_type }
@@ -61,9 +74,7 @@ end
 
 ---
 -- 指定されたパスから *.Target.cs ファイルを非同期で検索し、パースする
--- @param game_root string
--- @param engine_root string
--- @param on_complete function(build_targets_list table)
+-- (この関数自体には変更はありません)
 function M.find_and_parse_targets_async(game_root, engine_root, on_complete)
   local log = uep_log.get()
   log.debug("Scanning for *.Target.cs files...")
@@ -104,13 +115,13 @@ function M.find_and_parse_targets_async(game_root, engine_root, on_complete)
       
       -- 見つかった Target.cs をパースする
       local build_targets_list = {}
-      local seen_targets = {} -- ★ 重複チェック用のテーブルを追加
+      local seen_targets = {} -- 重複チェック用のテーブル
 
       for _, cs_path in ipairs(all_target_cs_files) do
         local target_info = parse_target_cs_file(cs_path)
         
         if target_info then
-          -- ★ name と type の組み合わせで重複をチェック
+          -- name と type の組み合わせで重複をチェック
           local key = target_info.name .. "::" .. target_info.type
           if not seen_targets[key] then
             table.insert(build_targets_list, target_info)
