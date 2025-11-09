@@ -138,7 +138,7 @@ Command Details                                     *UEP-commands-detail*
     Performs a live grep across project and engine source code (requires rg).
     - `[Game|...|Full]`: (Optional, default: `runtime`)
       - `Game`: Searches only your project's source files and plugins.
-      - `Engine`: Searches *only* the associated engine's source code.
+      - `Engine`: Searches only the associated engine's source code.
       - `Full` / `Runtime` / `Editor` / `Developer`: Searches both project
         and engine code.
 
@@ -191,11 +191,11 @@ Command Details                                     *UEP-commands-detail*
     This command runs asynchronously and requires confirmation.
 
 :UEP cleanup
-    **DANGEROUS**: Permanently deletes **ALL** structural caches
-    (`*.project.json`) and **ALL** file caches (`*.files.json`) associated
+    DANGEROUS: Permanently deletes ALL structural caches
+    (`*.project.json`) and ALL file caches (`*.files.json`) associated
     with the current project, including all plugins and the linked engine.
     This command runs asynchronously with a progress bar and requires confirmation.
-    You **must** run |:UEP refresh| immediately afterwards to rebuild the cache.
+    You must run |:UEP refresh| immediately afterwards to rebuild the cache.
 
 :UEP find_derived[!] [ClassName]
     Searches for all classes that inherit from a specified base class.
@@ -213,7 +213,7 @@ Command Details                                     *UEP-commands-detail*
 
 :UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Displays a picker to select and jump to the definition of a C++ class.
-    - **Usage**: Similar to |:UEP files|, this command filters the list of all
+    - Usage: Similar to |:UEP files|, this command filters the list of all
       known symbols by scope and dependency depth.
     - `[Game|...|Full]`: (Optional, default: `runtime`) Specifies the
       base scope of modules for the search.
@@ -224,13 +224,13 @@ Command Details                                     *UEP-commands-detail*
 
 :UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Displays a picker to select and jump to the definition of a C++ struct.
-    - **Usage**: Behaves identically to |:UEP classes|.
+    - Usage: Behaves identically to |:UEP classes|.
     - `[Game|...|Full]`: (Optional, default: `runtime`)
     - `[--no-deps|...]`: (Optional, default: `--deep-deps`)
 
 :UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Displays a picker to select and jump to the definition of a C++ enum.
-    - **Usage**: Behaves identically to |:UEP classes|.
+    - Usage: Behaves identically to |:UEP classes|.
     - `[Game|...|Full]`: (Optional, default: `runtime`)
     - `[--no-deps|...]`: (Optional, default: `--deep-deps`)
 

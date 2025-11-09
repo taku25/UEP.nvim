@@ -184,7 +184,7 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
     このコマンドは非同期で実行され、実行には確認が必要です。
 
 :UEP cleanup
-    **危険**: 現在のプロジェクトに関連する**全て**の構造キャッシュ 
+    危険: 現在のプロジェクトに関連する**全て**の構造キャッシュ 
     （`*.project.json`）および**全て**のファイルキャッシュ（`*.files.json`）を
     永久に削除します（プラグインやリンクされたエンジンも含む）。
     このコマンドはプログレスバーを表示しながら非同期で実行され、実行には確認が
@@ -207,7 +207,7 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
 
 :UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     C++クラスの定義を選択し、ジャンプするためのピッカーを表示します。
-    - **使い方**: |:UEP files| と同様に動作し、スコープと依存関係の深さに
+    - 使い方: |:UEP files| と同様に動作し、スコープと依存関係の深さに
       基づいて、既知のシンボルリストをフィルタリングします。
     - `[Game|...|Full]`: (省略可、デフォルト: `runtime`) 検索のベース
       となるモジュールのスコープを指定します。
@@ -218,13 +218,13 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
 
 :UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     C++構造体の定義を選択し、ジャンプするためのピッカーを表示します。
-    - **使い方**: |:UEP classes| と全く同じ挙動をします。
+    - 使い方: |:UEP classes| と全く同じ挙動をします。
     - `[Game|...|Full]`: (省略可、デフォルト: `runtime`)
     - `[--no-deps|...]`: (省略可、デフォルト: `--deep-deps`)
 
 :UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     C++ Enum（列挙型）の定義を選択し、ジャンプするためのピッカーを表示します。
-    - **使い方**: |:UEP classes| と全く同じ挙動をします。
+    - 使い方: |:UEP classes| と全く同じ挙動をします。
     - `[Game|...|Full]`: (省略可、デフォルト: `runtime`)
     - `[--no-deps|...]`: (省略可、デフォルト: `--deep-deps`)
 
