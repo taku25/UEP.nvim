@@ -6,10 +6,7 @@ local unl_progress = require("UNL.backend.progress")
 local uep_log = require("UEP.logger")
 local projects_cache = require("UEP.cache.projects")
 
--- ▼▼▼ 削除 ▼▼▼
--- local files_cache_manager = require("UEP.cache.files")
--- local refresh_files_core = require("UEP.cmd.core.refresh_files")
--- ▲▲▲ 削除 ▲▲▲
+
 
 local refresh_project_core = require("UEP.cmd.core.refresh_project")
 local unl_events = require("UNL.event.events")
@@ -45,7 +42,6 @@ function M.execute(opts, on_complete)
   log.info("Starting refresh with scope: '%s', bang: %s, force: %s",
     refresh_opts.scope, tostring(refresh_opts.bang), tostring(refresh_opts.force))
 
-  -- ▼▼▼ プログレスバーの重みを、refresh_project_core 内部のステージに合わせる ▼▼▼
   local progress_weights = {
     parse_components = 0.6,
     resolve_deps = 0.05,
@@ -54,7 +50,6 @@ function M.execute(opts, on_complete)
     header_analysis = 0.2,
     module_cache_save = 0.05,
   }
-  -- ▲▲▲ ここまで ▲▲▲
 
 
   local conf = uep_config.get()
@@ -71,7 +66,7 @@ function M.execute(opts, on_complete)
     if on_complete then on_complete(ok) end
   end
 
-  -- ▼▼▼ ここからが修正箇所 ▼▼▼
+
   -- refresh_project_core が構造キャッシュとモジュールキャッシュの
   -- 両方の更新をハンドルするようになったため、コールバックはシンプルになる
   refresh_project_core.update_project_structure(refresh_opts, uproject_path, progress, function(ok, result)
@@ -99,7 +94,7 @@ function M.execute(opts, on_complete)
     -- STEP 2: (必須) 完了を通知する
     finish_all(true)
   end)
-  -- ▲▲▲ 修正ここまで ▲▲▲
+
 end
 
 return M
