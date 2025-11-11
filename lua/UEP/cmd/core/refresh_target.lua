@@ -1,5 +1,6 @@
 -- lua/UEP/cmd/core/refresh_target.lua
 -- [!] DatasmithMax* のような非標準的な .Target.cs ファイルに対応
+-- [!] 'sealed' キーワードに対応
 
 local fs = require("vim.fs")
 local uep_log = require("UEP.logger")
@@ -21,9 +22,9 @@ local function parse_target_cs_file(file_path)
   local flattened = content:gsub("[\r\n]", " ") -- 改行をスペースに置換
 
   -- ▼▼▼ [修正 1] ▼▼▼
-  -- "public class NameTarget : BaseRules" という厳格なパターンをやめ、
-  -- "public class [AnyName] : [AnyBase]" という柔軟なパターンでマッチさせる
-  local name_match, base_class = flattened:match([[public%s+class%s+([%w_]+)%s*:%s*([%w_]+)]])
+  -- "public class [AnyName] : [AnyBase]" という厳格なパターンをやめ、
+  -- "public [sealed] class [AnyName] : [AnyBase]" という柔軟なパターンでマッチさせる
+  local name_match, base_class = flattened:match([[public%s+[%w_]*%s*class%s+([%w_]+)%s*:%s*([%w_]+)]])
   -- ▲▲▲ 修正 1 完了 ▲▲▲
   
   -- 2. ターゲットタイプを抽出 (変更なし)
@@ -56,7 +57,7 @@ local function parse_target_cs_file(file_path)
       -- .Target.cs ファイルなので "Game" (または "Editor") が妥当
       final_type = "Game" 
     else
-      -- "Rules" で終わらないベースクラス (例: DatasmithTargetBase)
+      -- "Rules" で終わらないベースクラス (例: DatasmithTargetBase, CrashReportClientTarget)
       -- これらは通常 "Program" ターゲット
       uep_log.get().trace("Target.cs parser: Base class '%s' does not end in 'Rules'. Guessing 'Program' type for %s", base_class, file_path)
       final_type = "Program"
