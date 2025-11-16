@@ -257,5 +257,55 @@ function M.execute(opts)
   end)
 end
 -- ▲▲▲ execute 関数修正ここまで ▲▲▲
+function M.delete_all_picker_caches()
+  local log = uep_log.get()
+  local conf = uep_config.get()
+  local base_dir = unl_cache_core.get_cache_dir(conf)
+  if not base_dir then return false end
+  local cmd_cache_dir = vim.fs.joinpath(base_dir, "cmd")
+  if vim.fn.isdirectory(cmd_cache_dir) == 0 then return true end
+
+  local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
+  if not project_root then return false end
+  
+  -- .picker_files_ で始まるキャッシュファイルにマッチ
+  local project_prefix = unl_path.normalize(project_root):gsub("[\\/:]", "_") .. ".picker_files_"
+  
+  local deleted_any = false
+  local errors = {}
+  
+  -- glob を使って関連するキャッシュファイルを検索
+  local files_to_delete = vim.fn.glob(vim.fs.joinpath(cmd_cache_dir, project_prefix .. "*.cache.json"), true, true)
+
+  for _, path in ipairs(files_to_delete) do
+      local ok, err = pcall(vim.loop.fs_unlink, path)
+      if ok then
+          log.info("Deleted stale file picker cache: %s", path)
+          deleted_any = true
+          
+          -- 対応するオンメモリキャッシュも削除 (ファイル名からキーを再構築)
+          local filename = vim.fn.fnamemodify(path, ":t")
+          local scope_deps_ext = filename:match(project_prefix .. "(.*).cache.json")
+          if scope_deps_ext then
+              local parts = vim.split(scope_deps_ext, "_", { plain = true })
+              if #parts >= 1 then
+                  local scope = parts[1]
+                  local deps_str = table.concat(parts, "_", 2)
+                  local deps_flag = "--deep-deps" -- デフォルト
+                  if deps_str == "shallowdeps" then deps_flag = "--shallow-deps"
+                  elseif deps_str == "nodeps" then deps_flag = "--no-deps" end
+                  
+                  local context_key = get_context_key(scope, deps_flag)
+                  if context_key then uep_context.del(context_key) end
+              end
+          end
+      else
+          table.insert(errors, ("Failed to delete %s: %s"):format(path, tostring(err)))
+      end
+  end
+  
+  if #errors > 0 then log.error("Errors during file picker cache deletion:\n%s", table.concat(errors, "\n")) end
+  return #errors == 0
+end
 
 return M

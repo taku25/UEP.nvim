@@ -1,7 +1,9 @@
--- lua/UEP/hub.lua (修正版)
+-- lua/UEP/event/hub.lua (修正版)
 
 local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
+local symbol_cache = require("UEP.cache.symbols")
+local files_cmd = require("UEP.cmd.files") -- M.delete_all_picker_caches を呼ぶため
 
 local M = {}
 
@@ -26,10 +28,17 @@ M.setup = function()
       old_source_file = payload.operations[1].old; old_header_file = payload.operations[2].old
     end
 
-    -- ▼▼▼ 修正点: requireするパスを新しいものに変更 ▼▼▼
+    -- ▼▼▼ [! 2. 修正] コールバック内を修正 ▼▼▼
     require("UEP.cmd.core.refresh_modules").update_single_module_cache(module_name, function(ok)
       if ok then
         uep_log.info("Lightweight cache update for module '%s' succeeded.", module_name)
+        
+        -- [!] ソースキャッシュが更新されたので、派生キャッシュをすべて削除する
+        uep_log.debug("Purging derived caches (symbols and files) due to lightweight refresh...")
+        symbol_cache.delete() -- 全スコープのシンボルキャッシュを削除
+        files_cmd.delete_all_picker_caches() -- 全スコープのファイルピッカーキャッシュを削除
+        uep_log.debug("Derived caches purged.")
+
         unl_events.publish(unl_event_types.ON_AFTER_UEP_LIGHTWEIGHT_REFRESH, {
           status = "success", event_type = event_type, source_file = source_file,
           header_file = header_file, old_source_file = old_source_file, old_header_file = old_header_file,
@@ -42,9 +51,15 @@ M.setup = function()
 
   local function handle_directory_change(payload)
     if not (payload and payload.status == "success" and payload.module) then return end
-    -- ▼▼▼ 修正点: requireするパスを新しいものに変更 ▼▼▼
+    -- ▼▼▼ [! 3. 修正] こちらも同様にコールバック内を修正 ▼▼▼
     require("UEP.cmd.core.refresh_modules").update_single_module_cache(payload.module.name, function(ok)
       if ok then
+        -- [!] ソースキャッシュが更新されたので、派生キャッシュをすべて削除する
+        uep_log.debug("Purging derived caches (symbols and files) due to directory change...")
+        symbol_cache.delete() -- 全スコープのシンボルキャッシュを削除
+        files_cmd.delete_all_picker_caches() -- 全スコープのファイルピッカーキャッシュを削除
+        uep_log.debug("Derived caches purged.")
+
         unl_events.publish(unl_event_types.ON_AFTER_UEP_LIGHTWEIGHT_REFRESH, {
           event_type = payload.type,
           updated_module = payload.module.name,
