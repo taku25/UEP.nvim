@@ -85,7 +85,7 @@ return {
     -- UEP固有の設定があればここに記述します
   },
 }
-```
+````
 
 ## ⚙️ 設定 (Configuration)
 
@@ -201,6 +201,9 @@ opts = {
 " 特定のモジュールの論理ツリーを表示します (neo-tree-unl.nvim が必要)。
 :UEP module_tree [ModuleName]
 
+" UEPツリーを閉じ、展開状態のキャッシュをクリアします。
+:UEP close_tree
+
 " 既知のプロジェクト一覧をUIで表示し、選択したプロジェクトにカレントディレクトリを変更します。
 :UEP cd
 
@@ -236,6 +239,7 @@ opts = {
   * **`:UEP tree`**:
       * `neo-tree-unl.nvim` がインストールされている場合にのみ機能します。
       * プロジェクト全体の「Game」「Plugins」「Engine」のカテゴリを含む、完全な論理ツリーを`neo-tree`で開きます。
+      * 実行時に、以前のツリー展開状態のキャッシュをクリアします。
   * **`:UEP program_files`**:
       * プロジェクトとエンジンに関連する全ての`Programs`ディレクトリ（例: UnrealBuildTool, AutomationTool）内のファイルを検索します。
       * ビルドツールのコードを調査する際に便利です。
@@ -245,6 +249,10 @@ opts = {
       * `neo-tree-unl.nvim` がインストールされている場合にのみ機能します。
       * `ModuleName`を引数として渡すと、そのモジュールのみをルートとしたツリーが表示されます。
       * 引数なしで実行すると、プロジェクト内の全モジュールを選択するためのピッカーUIが表示されます。
+      * 実行時に、以前のツリー展開状態のキャッシュをクリアします。
+  * **`:UEP close_tree`**:
+      * `neo-tree`ウィンドウを（開いていれば）閉じ、UEPが内部で保持しているノードの展開状態キャッシュをクリアします。
+      * これにより、次回の`:UEP tree`または`:UEP module_tree`コマンドが、完全に折りたたまれた状態から開始されるようになります。
   * **`:UEP grep [Scope]`**
       * プロジェクトとエンジンのソースコード全体からLiveGrepします検索します (ripgrepが必須)。
       * Scopeには `Game`, `Engine`, `Runtime` (デフォルト), `Editor`, `Full` を指定でき、検索範囲を限定します。
@@ -293,7 +301,7 @@ opts = {
   * **`:UEP cleanup`**:
       * **危険**: 現在のプロジェクトに関連する**全て**の構造キャッシュ (`*.project.json`) および**全て**のファイルキャッシュ (`*.files.json`) を永久に削除します（プラグインやリンクされたエンジンも含む）。
       * このコマンドはプログレスバーを表示しながら非同期で実行され、実行にはユーザーの確認が必要です。
-      * 実行後、プロジェクトの構造をゼロから再構築するために、**必ず** `:UEP refresh` を実行してください。
+      * 実行後、プロジェクトの構造をゼロから再構築するために、**必ず** `:UEP refresh Full` を実行してください。（引数なしの `:UEP refresh` は "Full" スコープにフォールバックします）
   * **`:UEP goto_definition[!] [ClassName]`**: 先行宣言をスキップして、クラスの実際の定義ファイルにジャンプします。
       * `!`なし: `[ClassName]`引数が指定されていればそれを使用し、なければカーソル下の単語を使用します。現在のモジュールの依存関係（現在のコンポーネント -\> 浅い依存 -\> 深い依存）に基づいて**インテリジェントな階層的検索**を実行し、見つからなければLSPにフォールバックします。
       * `!`あり: 引数やカーソル下の単語を無視し、常にプロジェクト全体のクラスを選択するためのピッカーUIを開きます。
@@ -326,7 +334,7 @@ opts = {
 ```lua
 -- init.lua や keymaps.lua などに記述
 vim.keymap.set('n', 'gf', require('UEP.api').open_file, { noremap = true, silent = true, desc = "UEP: インクルードファイルを開く" })
-````
+```
 
 #### インクルードを追加 (Add Include)
 
@@ -398,6 +406,8 @@ Unreal Engine 関連プラグイン:
 
   * [UEP.nvim](https://github.com/taku25/UEP.nvim)
       * urpojectを解析してファイルナビゲートなどを簡単に行えるようになります
+  * [UEA.nvim](https://www.google.com/search?q=https://github.com/taku25/UEA.nvim)
+      * C++クラスがどのBlueprintアセットから使用されているかを検索します
   * [UBT.nvim](https://github.com/taku25/UBT.nvim)
       * BuildやGenerateClangDataBaseなどを非同期でNeovim上から使えるようになります
   * [UCM.nvim](https://github.com/taku25/UCM.nvim)

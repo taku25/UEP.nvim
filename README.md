@@ -85,7 +85,7 @@ return {
     -- UEP-specific settings can be placed here
   },
 }
-```
+````
 
 ## ⚙️ Configuration
 
@@ -201,6 +201,9 @@ All commands start with `:UEP`.
 " Display the logical tree for a specific module (requires neo-tree-unl.nvim).
 :UEP module_tree [ModuleName]
 
+" Close the UEP tree and clear its expanded state.
+:UEP close_tree
+
 " Display a list of known projects in a UI and change the current directory to the selected project.
 :UEP cd
 
@@ -241,10 +244,15 @@ All commands start with `:UEP`.
   * **`:UEP tree`**:
       * Only works if `neo-tree-unl.nvim` is installed.
       * Opens a full logical tree in `neo-tree`, including "Game", "Plugins", and "Engine" categories for the entire project.
+      * Clears any previously saved expanded state.
   * **`:UEP module_tree [ModuleName]`**:
       * Only works if `neo-tree-unl.nvim` is installed.
       * If `ModuleName` is provided, it displays a tree rooted at that module only.
       * If run without arguments, it displays a picker UI to select from all modules in the project.
+      * Clears any previously saved expanded state.
+  * **`:UEP close_tree`**:
+      * Closes the `neo-tree` window (if open) and clears UEP's internal cache of which nodes were expanded.
+      * This ensures that the next `:UEP tree` or `:UEP module_tree` command starts with a fully collapsed view.
   * **`:UEP grep [Scope]`**:
       * LiveGreps the entire project and engine source code (requires ripgrep).
       * `Scope` can be `Game`, `Engine`, `Runtime` (default), `Editor`, or `Full`.
@@ -313,7 +321,7 @@ Enhance the built-in `gf` command to use UEP's intelligent file searching for in
 ```lua
 -- in init.lua or keymaps.lua
 vim.keymap.set('n', 'gf', require('UEP.api').open_file, { noremap = true, silent = true, desc = "UEP: Open include file" })
-````
+```
 
 #### Add Include
 
@@ -384,6 +392,8 @@ opts = {
 
   * **[UEP.nvim](https://github.com/taku25/UEP.nvim)**
       * Analyzes `uproject` files for easy file navigation.
+  * **[UEA.nvim](https://www.google.com/search?q=https://github.com/taku25/UEA.nvim)**
+      * Finds Blueprint usages of C++ classes.
   * **[UBT.nvim](https://github.com/taku25/UBT.nvim)**
       * Asynchronously run Build, GenerateClangDataBase, and other tasks from Neovim.
   * **[UCM.nvim](https://github.com/taku25/UCM.nvim)**
