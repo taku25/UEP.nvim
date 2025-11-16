@@ -64,6 +64,11 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "deps_flag", required = false },
       },
     },
+    close_tree = {
+      handler = uep_api.close_tree,
+      desc = "Close neo-tree and clear the expanded state.",
+      args = {},
+    },
     module_tree = {
       handler = uep_api.module_tree,
       desc = "Open filer focused on a module and its dependencies.",

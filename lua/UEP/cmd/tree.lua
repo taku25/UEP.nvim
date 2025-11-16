@@ -1,4 +1,5 @@
 -- lua/UEP/cmd/tree.lua (新スコープ完全対応版)
+-- [!] tree provider を呼び出して展開状態をクリアするよう修正
 
 local uep_log = require("UEP.logger").get()
 local unl_finder = require("UNL.finder")
@@ -6,6 +7,7 @@ local unl_context = require("UNL.context")
 local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
 local uep_config = require("UEP.config")
+local cmd_tree_provider = require("UEP.provider.tree") -- [! 1. provider を require]
 
 local M = {}
 
@@ -54,6 +56,10 @@ function M.execute(opts)
     deps_flag = requested_deps, -- ★ 新しい deps フラグ
   }
   -- ▲▲▲ 修正ここまで ▲▲▲
+
+  -- [! 2. ツリーを開く前に、展開状態キャッシュをクリアする]
+  cmd_tree_provider.request({ capability = "uep.clear_tree_state" })
+  uep_log.debug("Cleared tree expanded state for new :UEP tree request.")
 
   unl_context.use("UEP"):key("pending_request:" .. "neo-tree-uproject"):set("payload", payload)
   uep_log.info("Request stored for neo-tree. Scope: %s, Deps: %s", requested_scope, requested_deps)

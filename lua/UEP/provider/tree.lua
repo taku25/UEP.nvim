@@ -1,5 +1,6 @@
 -- From: C:\Users\taku3\Documents\git\UEP.nvim\lua\UEP\provider\tree.lua
 -- (:UEP module_tree でEagerロードを実装)
+-- [!] グローバル変数を廃止し、uep_context を使うように変更
 
 local unl_context = require("UNL.context")
 local uep_log = require("UEP.logger") 
@@ -7,10 +8,14 @@ local projects_cache = require("UEP.cache.projects")
 local project_cache = require("UEP.cache.project")
 local module_cache = require("UEP.cache.module")
 local fs = require("vim.fs")
+local uep_context = require("UEP.context") -- [! 1. uep_context を require]
 
 local M = {}
 
-M.expanded_nodes = {} 
+-- [! 2. 展開状態を保存するコンテキストキーを定義]
+local EXPANDED_STATE_KEY = "tree_expanded_state"
+
+-- [! 3. グローバル変数 M.expanded_nodes = {} を削除]
 
 -------------------------------------------------
 -- ヘルパー関数
@@ -34,6 +39,9 @@ local function build_fs_hierarchy(root_path, aggregated_files, aggregated_dirs, 
     local root_prefix = root_path:gsub("[/\\]$", "") .. "/"
     local root_prefix_lower = root_prefix:lower()
     local root_prefix_len = #root_prefix
+
+    -- [! 4. M.expanded_nodes の代わりに uep_context から読み込む]
+    local expanded_nodes = uep_context.get(EXPANDED_STATE_KEY) or {}
 
     local function process_paths(paths, item_type)
         for _, raw_full_path in ipairs(paths or {}) do
@@ -78,9 +86,9 @@ local function build_fs_hierarchy(root_path, aggregated_files, aggregated_dirs, 
             }
         }
         
-        -- [!] is_eager または M.expanded_nodes[child_path] の場合に再帰
-        if has_children and (is_eager or M.expanded_nodes[child_path]) then
-            log.trace("Node '%s' is being expanded (Eager: %s, Cached: %s).", name, tostring(is_eager), tostring(M.expanded_nodes[child_path]))
+        -- [! 5. M.expanded_nodes[child_path] -> expanded_nodes[child_path] に変更]
+        if has_children and (is_eager or expanded_nodes[child_path]) then
+            log.trace("Node '%s' is being expanded (Eager: %s, Cached: %s).", name, tostring(is_eager), tostring(expanded_nodes[child_path]))
             node_data.loaded = true
             -- [!] M.load_children ではなく、自分自身 (build_fs_hierarchy) を Eager で再帰呼び出し
             node_data.children = build_fs_hierarchy(child_path, aggregated_files, aggregated_dirs, is_eager)
@@ -99,6 +107,9 @@ local function build_top_level_nodes(required_components_map, filtered_modules_m
     local top_nodes = {}
     local log = uep_log.get()
     
+    -- [! 6. M.expanded_nodes の代わりに uep_context から読み込む]
+    local expanded_nodes = uep_context.get(EXPANDED_STATE_KEY) or {}
+    
     local game_node = {
         id = "category_Game", name = game_name, path = project_root, type = "directory",
         children = {}, loaded = false,
@@ -107,7 +118,8 @@ local function build_top_level_nodes(required_components_map, filtered_modules_m
             child_context = { type = "GameRoot", root = project_root, engine_root = engine_root, game_name = game_name, engine_name = engine_name, required_components_map = required_components_map, filtered_modules_meta = filtered_modules_meta }
         }
     }
-    if M.expanded_nodes[game_node.id] then
+    -- [! 7. expanded_nodes を使用]
+    if expanded_nodes[game_node.id] then
         log.trace("Node 'Game' was previously expanded, loading children recursively.")
         game_node.loaded = true
         game_node.children = M.load_children(game_node)
@@ -122,7 +134,8 @@ local function build_top_level_nodes(required_components_map, filtered_modules_m
             child_context = { type = "EngineRoot", root = engine_root, game_name = game_name, engine_name = engine_name, required_components_map = required_components_map, filtered_modules_meta = filtered_modules_meta }
         }
     }
-    if M.expanded_nodes[engine_node.id] then
+    -- [! 8. expanded_nodes を使用]
+    if expanded_nodes[engine_node.id] then
         log.trace("Node 'Engine' was previously expanded, loading children recursively.")
         engine_node.loaded = true
         engine_node.children = M.load_children(engine_node)
@@ -181,8 +194,9 @@ end
 
 function M.clear_tree_state()
     local log = uep_log.get()
-    log.debug("Tree Provider: Clearing expanded node state.")
-    M.expanded_nodes = {}
+    log.debug("Tree Provider: Clearing expanded node state from context.")
+    -- [! 9. M.expanded_nodes = {} の代わりに uep_context.del を使用]
+    uep_context.del(EXPANDED_STATE_KEY)
     return true
 end
 
@@ -342,13 +356,19 @@ end
 ---
 -- [修正] M.load_children (uep_type == "module_root" を削除)
 function M.load_children(node)
+    -- [! 10. M.expanded_nodes への書き込みロジックを変更]
     if node and node.id then
-        M.expanded_nodes[node.id] = true
+        local expanded_nodes = uep_context.get(EXPANDED_STATE_KEY) or {}
+        expanded_nodes[node.id] = true
+        uep_context.set(EXPANDED_STATE_KEY, expanded_nodes)
     end
     
     local log = uep_log.get() 
     log.debug("Tree Provider: load_children called for node: %s (Type: %s)", node.name, node.extra and node.extra.uep_type or "fs")
     local start_time = os.clock()
+
+    -- [! 11. expanded_nodes を uep_context から取得]
+    local expanded_nodes = uep_context.get(EXPANDED_STATE_KEY) or {}
 
     if not node or not node.extra then
         log.warn("load_children: Node extra data missing.")
@@ -496,7 +516,8 @@ function M.load_children(node)
                          child_paths = { files = aggregated_files, dirs = aggregated_dirs }
                      }
                  }
-                 if has_children and M.expanded_nodes[child_path] then
+                 -- [! 12. M.expanded_nodes[child_path] -> expanded_nodes[child_path] に変更]
+                 if has_children and expanded_nodes[child_path] then
                      log.trace("Node '%s' was previously expanded, loading children recursively.", name)
                      node_data.loaded = true
                      node_data.children = M.load_children(node_data)

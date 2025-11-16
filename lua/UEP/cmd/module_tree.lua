@@ -1,4 +1,5 @@
 -- lua/UEP/cmd/module_tree.lua (新Depsフラグ対応版)
+-- [!] tree provider を呼び出して展開状態をクリアするよう修正
 
 local uep_log = require("UEP.logger").get()
 local unl_finder = require("UNL.finder")
@@ -9,11 +10,16 @@ local uep_config = require("UEP.config")
 local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
 local projects_cache = require("UEP.cache.projects") -- ★ projects_cache を追加
+local cmd_tree_provider = require("UEP.provider.tree") -- [! 1. provider を require]
 
 local M = {}
 
 -- (共通関数 store_request_and_open_neotree に変更はありません)
 local function store_request_and_open_neotree(payload)
+  -- [! 2. ツリーを開く前に、展開状態キャッシュをクリアする]
+  cmd_tree_provider.request({ capability = "uep.clear_tree_state" })
+  uep_log.debug("Cleared tree expanded state for new :UEP module_tree request.")
+
   -- consumer ID を直接指定
   unl_context.use("UEP"):key("pending_request:" .. "neo-tree-uproject"):set("payload", payload)
   uep_log.info("Request stored for neo-tree (module_tree). Module: %s, Deps: %s",

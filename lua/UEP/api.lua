@@ -24,6 +24,7 @@ local cmd_classes = require("UEP.cmd.classes")
 local cmd_structs = require("UEP.cmd.structs")
 local cmd_enums = require("UEP.cmd.enums")
 local cmd_config_grep = require("UEP.cmd.config_grep") -- [!] 追加
+local cmd_tree_provider = require("UEP.provider.tree") -- [!] clear_tree_state のため
 
 local M = {}
 
@@ -63,6 +64,18 @@ end
 
 function M.tree(opts)
   cmd_tree.execute(opts or {})
+end
+
+
+function M.close_tree(opts)
+  -- 1. UEPの展開状態キャッシュをクリア
+  cmd_tree_provider.request({ capability = "uep.clear_tree_state" })
+  
+  -- 2. neo-tree ウィンドウを閉じる
+  local ok, neo_tree_cmd = pcall(require, "neo-tree.command")
+  if ok then
+    neo_tree_cmd.execute({ action = "close" })
+  end
 end
 
 function M.update_module_cache(opts, on_complete)
