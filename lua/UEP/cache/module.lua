@@ -149,7 +149,7 @@ function M.delete(module_meta)
   if stat then
     local ok, err = vim.loop.fs_unlink(path)
     if ok then
-      log.info("Successfully deleted module cache: %s", path)
+      log.trace("Successfully deleted module cache: %s", path)
       return true
     else
       log.error("Failed to delete module cache %s: %s", path, tostring(err))

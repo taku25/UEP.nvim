@@ -443,7 +443,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       end
 
       if has_changed then
-        log.info("Updating project cache for component: %s (gen: %s)", component.display_name, new_generation:sub(1,8))
+        log.trace("Updating project cache for component: %s (gen: %s)", component.display_name, new_generation:sub(1,8))
         project_cache.save(cache_filename, new_data)
         table.insert(result_data.changed_components, new_data)
       end

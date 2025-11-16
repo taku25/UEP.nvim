@@ -94,7 +94,7 @@ function M.delete_component_cache_file(cache_filename)
   if stat then
     local ok, err = vim.loop.fs_unlink(path)
     if ok then
-      log.info("Successfully deleted project cache: %s", path)
+      log.trace("Successfully deleted project cache: %s", path)
       return true
     else
       log.error("Failed to delete project cache %s: %s", path, tostring(err))

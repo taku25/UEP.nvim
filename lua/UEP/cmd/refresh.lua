@@ -21,7 +21,7 @@ function M.execute(opts, on_complete)
   local refresh_opts = {
     bang = opts.has_bang or false,
     force = opts.force_flag == "--force",
-    scope = opts.type, -- "Game", "Engine", or nil
+    scope = opts.scope, -- [! 1. 修正] opts.type -> opts.scope
   }
 
   local project_info = unl_finder.project.find_project(vim.loop.cwd())
