@@ -95,6 +95,8 @@ Command List                                           *UEP-commands-list*
     Deletes a project from the list of known projects.
 :UEP goto_definition[!] [ClassName]
     Jumps to the actual class or struct definition file of a class, skipping forward declarations.
+:UEP system_open[!] [Path]
+    Opens the file location in the system file explorer.
 
 ------------------------------------------------------------------------------
 Command Details                                     *UEP-commands-detail*
@@ -270,6 +272,13 @@ Command Details                                     *UEP-commands-detail*
     current module's dependencies (current component -> shallow deps ->
     deep deps) and falls back to LSP if not found.
 
+:UEP system_open[!] [Path]
+    Opens the location of the specified file in the OS file explorer.
+    - `[!](bang)`: (Optional)
+      If `!` is added, opens a picker UI to select a file from the entire
+      project cache.
+    - `[Path]`: (Optional)
+      If omitted, opens the directory of the current buffer's file.
 ==============================================================================
 3. Configuration                                       *UEP-configuration*
 
@@ -423,6 +432,12 @@ Require the API module:
       - `has_bang` (boolean, optional): `true` forces the class picker UI.
       - `class_name` (string, optional): The class name to jump to. If
         omitted and `has_bang` is false, uses the word under the cursor.
+
+*uep_api.system_open({opts})*
+    Opens the system file explorer.
+    `opts` table:
+      - `has_bang` (boolean, optional): `true` forces the file picker UI.
+      - `path` (string, optional): The file path to open.
 
 ==============================================================================
 5. Integration Examples (neo-tree)         *UEP-integration-examples*

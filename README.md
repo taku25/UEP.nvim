@@ -212,6 +212,9 @@ All commands start with `:UEP`.
 
 " Jumps to the actual class or struct definition file, skipping forward declarations.
 :UEP goto_definition[!] [ClassName]
+
+" Open the file location in the system file explorer.
+:UEP system_open[!] [Path]
 ```
 
 ### Command Details
@@ -305,6 +308,10 @@ All commands start with `:UEP`.
   * **`:UEP goto_definition[!] [ClassName]`**: Jumps to the actual definition file of a class, skipping forward declarations.
       * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor. It performs an **intelligent hierarchical search** based on the current module's dependencies (current component -\> shallow deps -\> deep deps) before falling back to LSP.
       * With `!`: Ignores arguments and the word under the cursor, and always opens a picker UI to select a class from the entire project.
+  * **`:UEP system_open[!] [Path]`**:
+      * Opens the location of the specified file in the OS file explorer (Explorer/Finder/xdg-open).
+      * `!` (Bang): Ignores arguments/current buffer and opens a picker UI to select a file from the entire project cache.
+      * `[Path]`: Optional path. If omitted and no `!`, opens the directory of the current file.
 
 ## 🤖 API & Automation Examples
 
