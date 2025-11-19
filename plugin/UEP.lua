@@ -195,6 +195,12 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "scope", required = false },
       },
     },
+    ["system_open"] = {
+      handler = uep_api.system_open,
+      bang = true,
+      desc = "Open the file location in system explorer. Use '!' to pick from project files.",
+      args = { { name = "path", required = false } },
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)

@@ -25,6 +25,7 @@ local cmd_structs = require("UEP.cmd.structs")
 local cmd_enums = require("UEP.cmd.enums")
 local cmd_config_grep = require("UEP.cmd.config_grep") -- [!] 追加
 local cmd_tree_provider = require("UEP.provider.tree") -- [!] clear_tree_state のため
+local cmd_system_open = require("UEP.cmd.system_open") -- [New]
 
 local M = {}
 
@@ -148,5 +149,8 @@ function M.config_grep(opts)
 end
 function M.config_files(opts)
   cmd_config_files.execute(opts or {})
+end
+function M.system_open(opts)
+  cmd_system_open.execute(opts or {})
 end
 return M
