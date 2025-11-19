@@ -397,22 +397,26 @@ opts = {
 
 **Unreal Engine Related Plugins:**
 
-  * **[UEP.nvim](https://github.com/taku25/UEP.nvim)**
-      * Analyzes `uproject` files for easy file navigation.
-  * **[UEA.nvim](https://www.google.com/search?q=https://github.com/taku25/UEA.nvim)**
+  * [UEP.nvim](https://github.com/taku25/UEP.nvim)
+      * Analyzes .uproject to simplify file navigation.
+  * [UEA.nvim](https://www.google.com/url?sa=E&source=gmail&q=https://github.com/taku25/UEA.nvim)
       * Finds Blueprint usages of C++ classes.
-  * **[UBT.nvim](https://github.com/taku25/UBT.nvim)**
-      * Asynchronously run Build, GenerateClangDataBase, and other tasks from Neovim.
-  * **[UCM.nvim](https://github.com/taku25/UCM.nvim)**
-      * Add and delete classes directly from Neovim.
-  * **[ULG.nvim](https://github.com/taku25/ULG.nvim)**
-      * View UE logs, live coding status, stat fps, and more within nvim.
-  * **[USH.nvim](https://github.com/taku25/USH.nvim)**
-      * Interact with `ushell` from nvim.
-  * **[neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)**
+  * [UBT.nvim](https://github.com/taku25/UBT.nvim)
+      * Use Build, GenerateClangDataBase, etc., asynchronously from Neovim.
+  * [UCM.nvim](https://github.com/taku25/UCM.nvim)
+      * Add or delete classes from Neovim.
+  * [ULG.nvim](https://github.com/taku25/ULG.nvim)
+      * View UE logs, LiveCoding, stat fps, etc., from Neovim.
+  * [USH.nvim](https://github.com/taku25/USH.nvim)
+      * Interact with ushell from Neovim.
+  * [USX.nvim](https://github.com/taku25/USX.nvim)
+      * Plugin for highlight settings for tree-sitter-unreal-cpp and tree-sitter-unreal-shader.
+  * [neo-tree-unl](https://github.com/taku25/neo-tree-unl.nvim)
       * Display an IDE-like project explorer.
-  * **[tree-sitter for Unreal Engine](https://github.com/taku25/tree-sitter-unreal-cpp)**
-      * Provides tree-sitter highlighting, including support for `UCLASS` and other Unreal Engine specific syntax.
+  * [tree-sitter for Unreal Engine](https://github.com/taku25/tree-sitter-unreal-cpp)
+      * Provides syntax highlighting using tree-sitter, including UCLASS, etc.
+  * [tree-sitter for Unreal Engine Shader](https://github.com/taku25/tree-sitter-unreal-shader)
+      * Provides syntax highlighting for Unreal Shaders like usf, ush.
 
 ## 📜 License
 
