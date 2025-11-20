@@ -69,6 +69,13 @@ M.setup = function()
       name = "UEP.nvim",
       impl = modules_provider,
     })
+
+    local class_context_provider = require("UEP.provider.class_context")
+    unl_api.provider.register({
+      capability = "uep.get_class_context",
+      name = "UEP.nvim",
+      impl = class_context_provider,
+    })
   end
 end
 
