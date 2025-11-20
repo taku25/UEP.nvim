@@ -3,26 +3,10 @@ local parents_core = require("UEP.cmd.core.parents")
 local uep_log = require("UEP.logger").get()
 local unl_api = require("UNL.api")
 local class_provider = require("UEP.provider.class")
-local symbol_cache_mod = require("UEP.cache.symbols")
 
 local M = {}
 
-local function load_any_symbol_cache()
-    local scopes = { "Game", "Runtime", "Engine", "Full", "Developer", "Editor", "game", "runtime", "engine", "full", "developer", "editor" }
-    local deps = { "--deep-deps", "--shallow-deps", "--no-deps" }
-
-    for _, scope in ipairs(scopes) do
-        for _, dep in ipairs(deps) do
-            local cache = symbol_cache_mod.load(scope, dep)
-            if cache and next(cache) then
-                return cache
-            end
-        end
-    end
-    return nil
-end
-
--- 非同期処理本体
+-- 非同期処理の実体
 local function process_request_async(opts, on_complete)
     local raw_class_name = opts.class_name
     if not raw_class_name then 
@@ -32,50 +16,62 @@ local function process_request_async(opts, on_complete)
     
     uep_log.debug("Provider 'uep.get_class_context' (Async) called for: %s", raw_class_name)
 
-    -- 1. キャッシュロード
-    local symbol_cache = load_any_symbol_cache()
-    
-    if not symbol_cache then 
-        uep_log.info("Symbol cache not found. Attempting to generate...")
-        -- ここも同期だと重いが、プロバイダー呼び出しなので一旦許容
-        -- 本来はここも非同期チェーンにすべき
-        class_provider.request({ scope = "Full", deps_flag = "--deep-deps", project_root = opts.project_root })
-        symbol_cache = load_any_symbol_cache()
-    end
+    -- 1. 全クラス情報を取得 (確実に動く以前のロジックを採用)
+    -- (内部でキャッシュのロードやマージが行われるため、少し重いが確実)
+    local header_details_map = class_provider.request({
+        scope = "Full", 
+        deps_flag = "--deep-deps",
+        project_root = opts.project_root
+    })
 
-    if not symbol_cache then 
-        on_complete(false, "Symbol cache could not be loaded.")
+    if not header_details_map then 
+        uep_log.warn("Could not retrieve project classes. Run :UEP refresh.")
+        on_complete(false, "No header details found")
         return 
     end
 
-    -- 2. クラス検索
+    -- 2. 検索用にリスト化 & マップ化
+    local all_classes_list = {}
     local target_class_info = nil
     local class_map = {}
-    for _, sym in ipairs(symbol_cache) do
-        class_map[sym.class_name] = sym
+
+    for file_path, details in pairs(header_details_map) do
+        if details.classes then
+            for _, cls in ipairs(details.classes) do
+                cls.file_path = file_path
+                table.insert(all_classes_list, cls)
+                class_map[cls.class_name] = cls
+
+                if cls.class_name == raw_class_name then
+                    target_class_info = cls
+                end
+            end
+        end
     end
 
-    if class_map[raw_class_name] then
-        target_class_info = class_map[raw_class_name]
-    else
+    -- 3. プレフィックス対応 (MyActor -> AMyActor)
+    if not target_class_info then
         local prefixes = { "U", "A", "F", "E", "I", "S" }
         for _, prefix in ipairs(prefixes) do
             local candidate = prefix .. raw_class_name
             if class_map[candidate] then
                 target_class_info = class_map[candidate]
+                uep_log.debug("Resolved class name '%s' -> '%s'", raw_class_name, candidate)
                 break
             end
         end
     end
 
     if not target_class_info then 
-        on_complete(false, "Class not found in cache.")
+        uep_log.debug("Class '%s' not found in project.", raw_class_name)
+        on_complete(false, "Class not found")
         return 
     end
 
-    -- 3. 継承チェーン取得
-    local parents = parents_core.get_inheritance_chain(target_class_info.class_name, symbol_cache)
+    -- 4. 継承チェーン取得
+    local parents = parents_core.get_inheritance_chain(target_class_info.class_name, all_classes_list)
     
+    -- ヘルパー: .h / .cpp 解決
     local function resolve_paths(info)
         local header_path = info.file_path
         local cpp_path = nil
@@ -100,27 +96,25 @@ local function process_request_async(opts, on_complete)
         table.insert(result.parents, resolve_paths(parent_info))
     end
 
-    -- 完了通知
+    -- 成功通知
     on_complete(true, result)
 end
 
 function M.request(opts)
-    -- コールバック関数を取得
     local on_complete = opts.on_complete
+    
+    -- 同期呼び出しへのフォールバック (念のため)
     if not on_complete then
-        uep_log.warn("uep.get_class_context called without on_complete callback. Running synchronously (deprecated).")
-        -- フォールバック: 同期実行して返す（旧仕様互換）
         local res_ok, res_val
         process_request_async(opts, function(ok, val) res_ok = ok; res_val = val end)
         if res_ok then return res_val else return nil end
     end
 
-    -- ★ 非同期実行: メインループをブロックしないように schedule で実行
+    -- 非同期実行 (vim.scheduleでラップしてメインスレッドの空き時間に処理)
     vim.schedule(function()
         process_request_async(opts, on_complete)
     end)
     
-    -- 非同期モードなので即座に nil を返す（結果はコールバックで）
     return nil
 end
 
