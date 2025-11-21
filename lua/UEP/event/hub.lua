@@ -1,22 +1,22 @@
--- lua/UEP/event/hub.lua (修正版)
+-- lua/UEP/event/hub.lua
 
 local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
 local symbol_cache = require("UEP.cache.symbols")
-local files_cmd = require("UEP.cmd.files") -- M.delete_all_picker_caches を呼ぶため
+local files_cmd = require("UEP.cmd.files") -- picker cache clear
 
 local M = {}
 
 M.setup = function()
   local uep_log = require("UEP.logger").get()
 
+  -- ファイル変更時のハンドラ (既存)
   local function handle_file_change(event_type, payload)
     if not (payload and payload.status == "success" and payload.module) then return end
 
     local module_name = payload.module.name
     uep_log.info("Detected file change in module '%s'. Triggering lightweight cache update.", module_name)
     
-    -- (payloadの組み立てロジックは変更なし)
     local source_file, header_file, old_source_file, old_header_file = nil, nil, nil, nil
     if event_type == "new" or event_type == "delete" then
       source_file = payload.source_path; header_file = payload.header_path
@@ -28,15 +28,13 @@ M.setup = function()
       old_source_file = payload.operations[1].old; old_header_file = payload.operations[2].old
     end
 
-    -- ▼▼▼ [! 2. 修正] コールバック内を修正 ▼▼▼
     require("UEP.cmd.core.refresh_modules").update_single_module_cache(module_name, function(ok)
       if ok then
         uep_log.info("Lightweight cache update for module '%s' succeeded.", module_name)
         
-        -- [!] ソースキャッシュが更新されたので、派生キャッシュをすべて削除する
         uep_log.debug("Purging derived caches (symbols and files) due to lightweight refresh...")
-        symbol_cache.delete() -- 全スコープのシンボルキャッシュを削除
-        files_cmd.delete_all_picker_caches() -- 全スコープのファイルピッカーキャッシュを削除
+        symbol_cache.delete()
+        files_cmd.delete_all_picker_caches()
         uep_log.debug("Derived caches purged.")
 
         unl_events.publish(unl_event_types.ON_AFTER_UEP_LIGHTWEIGHT_REFRESH, {
@@ -46,33 +44,37 @@ M.setup = function()
         })
       end
     end)
-    -- ▲▲▲ ここまで ▲▲▲
   end
 
+  -- ★追加: ディレクトリ変更時のハンドラ
   local function handle_directory_change(payload)
     if not (payload and payload.status == "success" and payload.module) then return end
-    -- ▼▼▼ [! 3. 修正] こちらも同様にコールバック内を修正 ▼▼▼
-    require("UEP.cmd.core.refresh_modules").update_single_module_cache(payload.module.name, function(ok)
-      if ok then
-        -- [!] ソースキャッシュが更新されたので、派生キャッシュをすべて削除する
-        uep_log.debug("Purging derived caches (symbols and files) due to directory change...")
-        symbol_cache.delete() -- 全スコープのシンボルキャッシュを削除
-        files_cmd.delete_all_picker_caches() -- 全スコープのファイルピッカーキャッシュを削除
-        uep_log.debug("Derived caches purged.")
+    
+    local module_name = payload.module.name
+    uep_log.info("Detected directory change (%s) in module '%s'. Triggering lightweight cache update.", payload.type, module_name)
 
+    require("UEP.cmd.core.refresh_modules").update_single_module_cache(module_name, function(ok)
+      if ok then
+        -- ディレクトリ構成が変わったので派生キャッシュもクリア
+        uep_log.debug("Purging derived caches due to directory change...")
+        symbol_cache.delete()
+        files_cmd.delete_all_picker_caches()
+
+        -- ツリー更新のためにイベントを発行
         unl_events.publish(unl_event_types.ON_AFTER_UEP_LIGHTWEIGHT_REFRESH, {
-          event_type = payload.type,
-          updated_module = payload.module.name,
+          event_type = payload.type, -- "add", "delete", "rename" etc.
+          updated_module = module_name,
         })
       end
     end)
-    -- ▲▲▲ ここまで ▲▲▲
   end
 
   unl_events.subscribe(unl_event_types.ON_AFTER_NEW_CLASS_FILE, function(p) handle_file_change("new", p) end)
   unl_events.subscribe(unl_event_types.ON_AFTER_DELETE_CLASS_FILE, function(p) handle_file_change("delete", p) end)
   unl_events.subscribe(unl_event_types.ON_AFTER_RENAME_CLASS_FILE, function(p) handle_file_change("rename", p) end)
   unl_events.subscribe(unl_event_types.ON_AFTER_MOVE_CLASS_FILE, function(p) handle_file_change("move", p) end)
+  
+  -- ★購読追加
   unl_events.subscribe(unl_event_types.ON_AFTER_MODIFY_DIRECTORY, handle_directory_change)
 end
 
