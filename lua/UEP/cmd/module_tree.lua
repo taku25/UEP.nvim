@@ -27,12 +27,19 @@ local function store_request_and_open_neotree(payload)
 
   unl_events.publish(unl_event_types.ON_REQUEST_UPROJECT_TREE_VIEW, payload )
 
-  local ok, neo_tree_cmd = pcall(require, "neo-tree.command")
-  if ok then
-    neo_tree_cmd.execute({ source = "uproject", action = "focus" })
+  -- ★★★ 修正箇所: UNXが存在しない場合のみ neo-tree を開く ★★★
+  local unx_ok, _ = pcall(require, "UNX")
+  if not unx_ok then
+    local ok, neo_tree_cmd = pcall(require, "neo-tree.command")
+    if ok then
+      neo_tree_cmd.execute({ source = "uproject", action = "focus" })
+    else
+       uep_log.warn("neo-tree command not found.")
+    end
   else
-     uep_log.warn("neo-tree command not found.")
+     uep_log.info("UNX.nvim detected. Skipping automatic neo-tree focus.")
   end
+  -- ★★★ 修正箇所ここまで ★★★
 end
 
 function M.execute(opts)
