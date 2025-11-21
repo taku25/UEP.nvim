@@ -8,6 +8,7 @@ local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
 local uep_config = require("UEP.config")
 local cmd_tree_provider = require("UEP.provider.tree") -- [! 1. provider を require]
+local ui_control = require("UEP.cmd.core.ui_control") -- ★ 追記
 
 local M = {}
 
@@ -56,29 +57,7 @@ function M.execute(opts)
     deps_flag = requested_deps, -- ★ 新しい deps フラグ
   }
   -- ▲▲▲ 修正ここまで ▲▲▲
-
-  -- [! 2. ツリーを開く前に、展開状態キャッシュをクリアする]
-  cmd_tree_provider.request({ capability = "uep.clear_tree_state" })
-  uep_log.debug("Cleared tree expanded state for new :UEP tree request.")
-
-  unl_context.use("UEP"):key("pending_request:" .. "neo-tree-uproject"):set("payload", payload)
-  uep_log.info("Request stored for neo-tree. Scope: %s, Deps: %s", requested_scope, requested_deps)
-
-  unl_events.publish(unl_event_types.ON_REQUEST_UPROJECT_TREE_VIEW, payload )
-
--- ★★★ 修正箇所: UNXが存在しない場合のみ neo-tree を開く ★★★
-  local unx_ok, _ = pcall(require, "UNX")
-  if not unx_ok then
-    local ok, neo_tree_cmd = pcall(require, "neo-tree.command")
-    if ok then
-      neo_tree_cmd.execute({ source = "uproject", action = "focus" })
-    else
-      uep_log.warn("neo-tree command not found.")
-    end
-  else
-     uep_log.info("UNX.nvim detected. Skipping automatic neo-tree focus.")
-  end
-  -- ★★★ 修正箇所ここまで ★★★
+  ui_control.handle_tree_request(payload)
 
 end
 

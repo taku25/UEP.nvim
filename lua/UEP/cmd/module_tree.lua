@@ -11,36 +11,10 @@ local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
 local projects_cache = require("UEP.cache.projects") -- ★ projects_cache を追加
 local cmd_tree_provider = require("UEP.provider.tree") -- [! 1. provider を require]
+local ui_control = require("UEP.cmd.core.ui_control") -- ★ 追記
 
 local M = {}
 
--- (共通関数 store_request_and_open_neotree に変更はありません)
-local function store_request_and_open_neotree(payload)
-  -- [! 2. ツリーを開く前に、展開状態キャッシュをクリアする]
-  cmd_tree_provider.request({ capability = "uep.clear_tree_state" })
-  uep_log.debug("Cleared tree expanded state for new :UEP module_tree request.")
-
-  -- consumer ID を直接指定
-  unl_context.use("UEP"):key("pending_request:" .. "neo-tree-uproject"):set("payload", payload)
-  uep_log.info("Request stored for neo-tree (module_tree). Module: %s, Deps: %s",
-               payload.target_module or "Picker", payload.deps_flag)
-
-  unl_events.publish(unl_event_types.ON_REQUEST_UPROJECT_TREE_VIEW, payload )
-
-  -- ★★★ 修正箇所: UNXが存在しない場合のみ neo-tree を開く ★★★
-  local unx_ok, _ = pcall(require, "UNX")
-  if not unx_ok then
-    local ok, neo_tree_cmd = pcall(require, "neo-tree.command")
-    if ok then
-      neo_tree_cmd.execute({ source = "uproject", action = "focus" })
-    else
-       uep_log.warn("neo-tree command not found.")
-    end
-  else
-     uep_log.info("UNX.nvim detected. Skipping automatic neo-tree focus.")
-  end
-  -- ★★★ 修正箇所ここまで ★★★
-end
 
 function M.execute(opts)
   opts = opts or {}
@@ -75,7 +49,7 @@ function M.execute(opts)
 
   if payload.target_module then
     -- モジュール名が指定されていれば、すぐにリクエストを保存して neo-tree を開く
-    store_request_and_open_neotree(payload)
+    ui_control.handle_tree_request(payload)
   else
     -- モジュール名が指定されていなければ、ピッカーで選択させる
     uep_log.info("Fetching module list for picker...")
@@ -120,7 +94,7 @@ function M.execute(opts)
       on_submit = function(selected_module)
         if not selected_module then return end
         payload.target_module = selected_module
-        store_request_and_open_neotree(payload)
+        ui_control.handle_tree_request(payload)
       end,
     })
   end
