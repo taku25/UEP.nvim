@@ -19,28 +19,29 @@ function M.handle_tree_request(payload)
     -- 1. UNXプロバイダーの状態をチェック
     local unl_api_ok, unl_api_mod = pcall(require, "UNL.api")
     if unl_api_ok then
-        local is_open_res = unl_api_mod.provider.request("unx.is_open", { name = "UEP.nvim" })
-        if is_open_res ~= nil then
-            has_unx_provider = true
-            is_unx_open = is_open_res
+        -- ★修正: ok (リクエスト成功フラグ) と is_open_result (結果) の2つの戻り値を受け取る
+        has_unx_provider, is_open_result = unl_api_mod.provider.request("unx.is_open", { name = "UEP.nvim" })
+        -- ok が true (プロバイダーが見つかり、実行エラーがなかった) かつ
+        -- is_open_result が nil でない (プロバイダーが意図した値を返した) 場合
+        if is_open_result == false then
+            is_unx_open = is_open_result
         end
     end
 
-    -- 2. UNXへのイベントペイロードをコンテキストに保存
-    unl_context.use("UEP"):key("pending_request:" .. "neo-tree-uproject"):set("payload", payload)
-    unl_events.publish(unl_event_types.ON_REQUEST_UPROJECT_TREE_VIEW, payload )
-    
     -- 3. UNXが存在する場合、状態に応じて開く要求を出す
     if has_unx_provider then
         uep_log.info("UNX provider detected (is_open: %s). Requesting open if closed.", tostring(is_unx_open))
         if not is_unx_open then
-            -- UNXが開いていなければ、UNXに開くよう要求
+            -- open も ok, result で受け取るが、ここでは戻り値は無視して実行
             unl_api_mod.provider.request("unx.open", { name = "UEP.nvim" })
         end
     end
     
     -- 4. 1フレーム後にフォールバックロジックを実行 (Neo-tree)
     vim.schedule(function()
+        unl_context.use("UEP"):key("pending_request:" .. "neo-tree-uproject"):set("payload", payload)
+        unl_events.publish(unl_event_types.ON_REQUEST_UPROJECT_TREE_VIEW, payload )
+        -- UNXプロバイダーが存在しない場合 (has_unx_provider が false の場合) はneo-treeにフォールバック
         if not has_unx_provider then
             uep_log.warn("UNX.nvim provider not found. Falling back to neo-tree.")
             local ok, neo_tree_cmd = pcall(require, "neo-tree.command")
