@@ -1,5 +1,5 @@
 -- lua/UEP/provider/tree.lua
--- (ユニークID受け渡し修正版)
+-- (Engine Root のパス結合修正版)
 
 local unl_context = require("UNL.context")
 local uep_log = require("UEP.logger") 
@@ -25,7 +25,6 @@ end
 
 local function build_fs_hierarchy(root_path, aggregated_files, aggregated_dirs, is_eager)
     local log = uep_log.get()
-    
     local nodes = {}
     local direct_children_map = {} 
     local grand_children_exist = {} 
@@ -89,33 +88,23 @@ local function build_fs_hierarchy(root_path, aggregated_files, aggregated_dirs, 
     return nodes
 end
 
--- ▼▼▼ 修正: 引数に owner_name (ユニークID) を追加 ▼▼▼
 local function build_top_level_nodes(required_components_map, filtered_modules_meta, game_name, engine_name, game_owner, engine_owner, project_root, engine_root)
     local top_nodes = {}
     local log = uep_log.get()
     
     local expanded_nodes = uep_context.get(EXPANDED_STATE_KEY) or {}
     
+    if not game_owner then 
+        game_owner = game_name 
+    end
+    if not engine_owner then engine_owner = engine_name end
+
     local game_node = {
         id = "category_Game", name = game_name, path = project_root, type = "directory",
         children = {}, loaded = false,
         extra = {
             uep_type = "category",
-            child_context = { 
-                type = "GameRoot", 
-                root = project_root, 
-                engine_root = engine_root, 
-                
-                -- ★修正: IDも渡す
-                game_name = game_name, 
-                game_owner = game_owner, 
-                
-                engine_name = engine_name, 
-                engine_owner = engine_owner,
-                
-                required_components_map = required_components_map, 
-                filtered_modules_meta = filtered_modules_meta 
-            }
+            child_context = { type = "GameRoot", root = project_root, engine_root = engine_root, game_name = game_name, engine_name = engine_name, required_components_map = required_components_map, filtered_modules_meta = filtered_modules_meta, game_owner = game_owner, engine_owner = engine_owner }
         }
     }
     if expanded_nodes[game_node.id] then
@@ -129,20 +118,7 @@ local function build_top_level_nodes(required_components_map, filtered_modules_m
         children = {}, loaded = false,
         extra = {
             uep_type = "category",
-            child_context = { 
-                type = "EngineRoot", 
-                root = engine_root, 
-                
-                -- ★修正: IDも渡す
-                game_name = game_name, 
-                game_owner = game_owner,
-                
-                engine_name = engine_name, 
-                engine_owner = engine_owner,
-                
-                required_components_map = required_components_map, 
-                filtered_modules_meta = filtered_modules_meta 
-            }
+            child_context = { type = "EngineRoot", root = engine_root, game_name = game_name, engine_name = engine_name, required_components_map = required_components_map, filtered_modules_meta = filtered_modules_meta, game_owner = game_owner, engine_owner = engine_owner }
         }
     }
     if expanded_nodes[engine_node.id] then
@@ -154,7 +130,6 @@ local function build_top_level_nodes(required_components_map, filtered_modules_m
     table.sort(top_nodes, directory_first_sorter)
     return top_nodes
 end
--- ▲▲▲ 修正完了 ▲▲▲
 
 local function build_module_nodes(filtered_modules_meta)
     local log = uep_log.get()
@@ -207,7 +182,6 @@ end
 -------------------------------------------------
 
 function M.clear_tree_state()
-    local log = uep_log.get()
     uep_context.del(EXPANDED_STATE_KEY)
     return true
 end
@@ -238,8 +212,6 @@ function M.build_tree_model(opts)
   
   local all_modules_map, module_to_component_name, all_components_map = {}, {}, {}
   local game_name, engine_name
-  
-  -- ▼▼▼ 修正: owner_name (ユニークID) も取得する変数を追加 ▼▼▼
   local game_owner, engine_owner
   
   for _, comp_name in ipairs(project_registry_info.components) do
@@ -255,19 +227,16 @@ function M.build_tree_model(opts)
           end
         end
       end
-      
-      -- ★修正: ここで owner_name も取得して保持する
       if p_cache.type == "Game" then 
           game_name = p_cache.display_name
-          game_owner = p_cache.owner_name -- これが重要！
+          game_owner = p_cache.owner_name 
       end
       if p_cache.type == "Engine" then 
           engine_name = p_cache.display_name
-          engine_owner = p_cache.owner_name -- これが重要！
+          engine_owner = p_cache.owner_name
       end
     end
   end
-  -- ▲▲▲ 修正完了 ▲▲▲
   
   if not next(all_modules_map) then return {{ id = "_message_", name = "No modules in cache.", type = "message" }} end
   
@@ -327,7 +296,6 @@ function M.build_tree_model(opts)
   if opts.target_module then
       top_level_nodes = build_module_nodes(filtered_modules_meta)
   else
-      -- ★修正: 引数に game_owner, engine_owner を追加
       top_level_nodes = build_top_level_nodes(required_components_map, filtered_modules_meta, game_name, engine_name, game_owner, engine_owner, project_root, engine_root)
   end
   
@@ -366,25 +334,28 @@ function M.load_children(node)
         if context then
             local required_components_map = context.required_components_map
             local filtered_modules_meta = context.filtered_modules_meta
-            
-            -- ▼▼▼ 修正: 渡されたユニークID (owner) を直接使う ▼▼▼
             local owner_name_to_match = (context.type == "GameRoot") and context.game_owner or context.engine_owner
-            -- ▲▲▲ 修正完了 ▲▲▲
-
+            
             local child_files = {} 
             local child_dirs = {}
             
+            -- A. 疑似モジュール (Config/Shaders)
             local pseudo_module_files = {}
             if context.type == "GameRoot" then
               pseudo_module_files._GameShaders = { root=fs.joinpath(context.root, "Shaders"), files={}, dirs={} }
               pseudo_module_files._GameConfig  = { root=fs.joinpath(context.root, "Config"), files={}, dirs={} }
             else 
+              -- ★修正: EngineRoot の場合、context.root (正しいEngineRoot) の直下 Config/Shaders を結合
               pseudo_module_files._EngineShaders = { root=fs.joinpath(context.root, "Engine", "Shaders"), files={}, dirs={} }
               pseudo_module_files._EngineConfig  = { root=fs.joinpath(context.root, "Engine", "Config"), files={}, dirs={} }
+
+
             end
             
             for pseudo_name, data in pairs(pseudo_module_files) do
-                local pseudo_meta = { name = pseudo_name, module_root = data.root }; local pseudo_cache = module_cache.load(pseudo_meta)
+                local pseudo_meta = { name = pseudo_name, module_root = data.root }; 
+                local pseudo_cache = module_cache.load(pseudo_meta)
+                
                 if pseudo_cache then
                     if pseudo_cache.files then for cat, files in pairs(pseudo_cache.files) do if files and #files > 0 then vim.list_extend(data.files, files) end end end
                     if pseudo_cache.directories then for cat, dirs in pairs(pseudo_cache.directories) do if dirs and #dirs > 0 then vim.list_extend(data.dirs, dirs) end end end
@@ -393,8 +364,10 @@ function M.load_children(node)
                 vim.list_extend(child_dirs, data.dirs or {})
             end
             
+            -- B. コンポーネント (Game/Engine/Plugins)
             for comp_name, component in pairs(required_components_map) do
                 if component.owner_name == owner_name_to_match then
+                    
                     local root_file = component.uproject_path or component.uplugin_path
                     if root_file then table.insert(child_files, root_file) end
 
