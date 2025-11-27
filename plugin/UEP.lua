@@ -201,7 +201,7 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Open the file location in system explorer. Use '!' to pick from project files.",
       args = { { name = "path", required = false } },
     },
-    ["virtual_override"] = {
+    ["implement_virtual"] = {
       handler = uep_api.implement_virtual, 
       desc = "Override a virtual function from the parent class.",
       args = {
