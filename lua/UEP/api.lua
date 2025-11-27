@@ -27,6 +27,7 @@ local cmd_config_grep = require("UEP.cmd.config_grep") -- [!] 追加
 local cmd_tree_provider = require("UEP.provider.tree") -- [!] clear_tree_state のため
 local cmd_system_open = require("UEP.cmd.system_open") -- [New]
 local cmd_implement_virtual = require("UEP.cmd.implement_virtual") -- [New]
+local cmd_goto_super = require("UEP.cmd.goto_super") -- [New]
 
 local M = {}
 
@@ -157,6 +158,18 @@ end
 
 function M.implement_virtual(opts)
   cmd_implement_virtual.execute(opts or {})
+end
+
+function M.goto_super_def(opts)
+  opts = opts or {}
+  opts.mode = "definition"
+  cmd_goto_super.execute(opts)
+end
+
+function M.goto_super_impl(opts)
+  opts = opts or {}
+  opts.mode = "implementation"
+  cmd_goto_super.execute(opts)
 end
 
 return M

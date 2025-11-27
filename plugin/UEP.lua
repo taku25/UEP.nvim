@@ -208,6 +208,16 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "class_name", required = false },
       },
     },
+    ["goto_super_def"] = {
+      handler = uep_api.goto_super_def,
+      desc = "Jump to the parent class definition of the current function.",
+      args = {},
+    },
+    ["goto_super_impl"] = {
+      handler = uep_api.goto_super_impl,
+      desc = "Jump to parent implementation (Source) of the current function.",
+      args = {},
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)
