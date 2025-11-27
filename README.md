@@ -215,6 +215,15 @@ All commands start with `:UEP`.
 
 " Open the file location in the system file explorer.
 :UEP system_open[!] [Path]
+
+" Jumps to the parent class definition of the current function.
+:UEP goto_super_def
+
+" Jumps to the parent class implementation of the current function.
+:UEP goto_super_impl
+
+" Override a virtual function from the parent class hierarchy.
+:UEP implement_virtual
 ```
 
 ### Command Details
@@ -312,7 +321,16 @@ All commands start with `:UEP`.
       * Opens the location of the specified file in the OS file explorer (Explorer/Finder/xdg-open).
       * `!` (Bang): Ignores arguments/current buffer and opens a picker UI to select a file from the entire project cache.
       * `[Path]`: Optional path. If omitted and no `!`, opens the directory of the current file.
-
+  * **`:UEP goto_super_def`**:
+      * Jumps to the definition (header file) of the parent class's function that corresponds to the current function under the cursor.
+      * Intelligently resolves the inheritance chain using cached project data.
+  * **`:UEP goto_super_impl`**:
+      * Jumps to the implementation (source file) of the parent class's function.
+      * Falls back to the header definition if the source file is not found.
+  * **`:UEP implement_virtual [ClassName]`**:
+      * Lists all overrideable virtual functions from the parent class hierarchy.
+      * Selecting a function automatically inserts the declaration into the header file and copies the implementation stub to the clipboard.
+      * Must be executed within a header file.
 ## 🤖 API & Automation Examples
 
 You can use the `UEP.api` module to integrate with other Neovim configurations.
