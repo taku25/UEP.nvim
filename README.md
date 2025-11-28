@@ -33,6 +33,7 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
       * The `:UEP find_derived` command instantly finds all child classes that inherit from a specified base class.
       * The `:UEP find_parents` command displays the entire inheritance chain from a specified class up to `UObject`.
       * The `:UEP add_include` command automatically finds and inserts the correct `#include` directive for a class name under the cursor or one chosen from a list.
+      * The `:UEP find_module` command allows you to select a class from a list and copies the name of the module it belongs to (e.g., "Core", "Engine") to the clipboard, making it easy to edit `Build.cs`.  <-- 追加
       * Leverages the class inheritance data cached by `:UEP refresh` for high-speed navigation.
   * **Intelligent Content Searching (Grep)**:
       * Performs high-speed content searches across the entire project and engine source code (requires ripgrep).
@@ -224,6 +225,9 @@ All commands start with `:UEP`.
 
 " Override a virtual function from the parent class hierarchy.
 :UEP implement_virtual
+
+" Find the module name for a class and copy it to the clipboard.
+:UEP find_module[!]
 ```
 
 ### Command Details
@@ -331,6 +335,11 @@ All commands start with `:UEP`.
       * Lists all overrideable virtual functions from the parent class hierarchy.
       * Selecting a function automatically inserts the declaration into the header file and copies the implementation stub to the clipboard.
       * Must be executed within a header file.
+  * **`:UEP find_module[!]`**:
+      * Opens a picker UI to select a class, struct, or enum from the entire project.
+      * Selecting an item copies the name of the module it belongs to (e.g., `"Core"`, `"UMG"`) to the system clipboard.
+      * This is extremely useful when adding dependencies to `Build.cs`.
+      * Use `!` to force a cache refresh before opening the picker.
 ## 🤖 API & Automation Examples
 
 You can use the `UEP.api` module to integrate with other Neovim configurations.
