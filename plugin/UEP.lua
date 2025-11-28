@@ -225,6 +225,12 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "scope", required = false },
       },
     },
+    ["find_module"] = {
+      handler = uep_api.find_module,
+      bang = true,
+      desc = "Find the module name for a class and copy it to clipboard.",
+      args = {},
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)

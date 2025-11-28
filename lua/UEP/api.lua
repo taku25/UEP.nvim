@@ -29,6 +29,7 @@ local cmd_system_open = require("UEP.cmd.system_open") -- [New]
 local cmd_implement_virtual = require("UEP.cmd.implement_virtual") -- [New]
 local cmd_goto_super = require("UEP.cmd.goto_super") -- [New]
 local cmd_config_tree = require("UEP.cmd.config_tree") -- ★新規追加
+local cmd_find_module = require("UEP.cmd.find_module")
 
 local M = {}
 
@@ -175,5 +176,9 @@ end
 
 function M.config_tree(opts)
   cmd_config_tree.execute(opts or {})
+end
+
+function M.find_module(opts)
+  cmd_find_module.execute(opts or {})
 end
 return M
