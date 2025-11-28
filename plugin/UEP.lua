@@ -218,6 +218,13 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Jump to parent implementation (Source) of the current function.",
       args = {},
     },
+    config_tree = { -- ★新規追加
+      handler = uep_api.config_tree,
+      desc = "Open config override explorer. Scope: Game|Engine|Full.",
+      args = {
+        { name = "scope", required = false },
+      },
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)

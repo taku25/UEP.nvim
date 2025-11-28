@@ -1,8 +1,8 @@
 -- lua/UEP/provider/init.lua
 
--- ▼▼▼ この行を追加します ▼▼▼
+-- ▼▼▼ この行を追加 ▼▼▼
 local unl_log = require("UNL.logging")
-local log = require("UEP.logger") -- 念のためこちらも（もし将来使うなら）
+local log = require("UEP.logger") 
 
 local M = {}
 
@@ -21,8 +21,6 @@ M.setup = function()
     -- ツリープロバイダーの登録
     local tree_provider = require("UEP.provider.tree")
     unl_api.provider.register({
-      -- capabilityは包括的な名前にしたが、機能ごとに分ける方が明確かもしれない
-      -- ここでは例として両方登録しておく（UNL側は同じimplを参照するだけなので問題ない）
       capability = "uep.get_pending_tree_request",
       name = "UEP.nvim",
       impl = tree_provider, 
@@ -32,21 +30,16 @@ M.setup = function()
       name = "UEP.nvim",
       impl = tree_provider, 
     })
-
-    -- [New] 子ノード遅延読み込みプロバイダーの登録
     unl_api.provider.register({
       capability = "uep.load_tree_children",
       name = "UEP.nvim",
       impl = tree_provider,
     })
-
-
     unl_api.provider.register({
       capability = "uep.clear_tree_state",
       name = "UEP.nvim",
       impl = tree_provider,
     })
-
 
     local build_targets_provider = require("UEP.provider.build_targets")
     unl_api.provider.register({
@@ -55,12 +48,6 @@ M.setup = function()
       impl = build_targets_provider, 
       priority = 100,
     })
-    -- ★ unl_log.get("UEP") ではなく、UEP独自のロガーラッパーを使うのがより良い実践
-    local uep_logger = require("UEP.logger").get()
-    if uep_logger then
-      uep_logger.info("Registered UEP providers to UNL.nvim.")
-    end
-
 
     -- モジュールリストプロバイダーの登録
     local modules_provider = require("UEP.provider.modules")
@@ -76,6 +63,20 @@ M.setup = function()
       name = "UEP.nvim",
       impl = class_context_provider,
     })
+
+    -- ★★★ [New] Config Explorer プロバイダーの登録 ★★★
+    local config_explorer_provider = require("UEP.provider.config_explorer")
+    unl_api.provider.register({
+      capability = "uep.get_config_tree_model",
+      name = "UEP.nvim",
+      impl = config_explorer_provider, 
+    })
+    -- ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+
+    local uep_logger = require("UEP.logger").get()
+    if uep_logger then
+      uep_logger.info("Registered UEP providers to UNL.nvim.")
+    end
   end
 end
 

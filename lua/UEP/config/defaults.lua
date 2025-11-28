@@ -5,6 +5,13 @@ local M = {
     -- refreshコマンド実行時に自動で設定をリロードするかどうか
     auto_reload_config_on_refresh = true,
   },
+
+  config_explorer = {
+    -- 強制的に表示対象とする主要プラットフォームのリスト
+    major_platforms = { 
+      "Windows", "Mac", "Linux", "Android", "IOS", "TVOS", "Apple", "Unix" 
+    },
+  },
   cache = { dirname = "UEP" },
   
   include_extensions = { "uproject", "cpp", "h", "hpp", "inl", "ini", "cs", "usf", "ush" },
