@@ -8,6 +8,7 @@ local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
 local uep_log = require("UEP.logger")
 local fs = require("vim.fs")
+local shader_provider = require("UEP.provider.shader") -- ★追加
 
 local M = {}
 
@@ -50,6 +51,21 @@ local function find_and_open(partial_path, from_path)
   core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
     if not ok then return log.error("Could not get project maps: %s", tostring(maps)) end
 
+    if partial_path:match("%.us[hf]$") then
+        log.debug("Detected shader file extension. Attempting shader path resolution...")
+        
+        -- provider/shader.lua で解決を試みる
+        local resolved_shader = shader_provider.resolve(partial_path, maps)
+        
+        if resolved_shader then
+            log.info("Resolved shader path: %s -> %s", partial_path, resolved_shader)
+            vim.cmd("edit " .. vim.fn.fnameescape(resolved_shader))
+            return -- シェーダーとして解決できたので終了
+        else
+            log.debug("Shader resolution failed for '%s'. Falling back to standard search.", partial_path)
+            -- 解決できなかった場合は、通常のC++ファイルと同じ検索ロジックへ流す (フォールバック)
+        end
+    end
     local found_paths = {}
     local current_file_dir = vim.fn.fnamemodify(from_path, ":h")
 
