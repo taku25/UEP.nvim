@@ -228,6 +228,9 @@ All commands start with `:UEP`.
 
 " Find the module name for a class and copy it to the clipboard.
 :UEP find_module[!]
+
+" Search Unreal Engine Web Docs. Use '!' to pick a class.
+:UEP web_doc[!]
 ```
 
 ### Command Details
@@ -340,6 +343,11 @@ All commands start with `:UEP`.
       * Selecting an item copies the name of the module it belongs to (e.g., `"Core"`, `"UMG"`) to the system clipboard.
       * This is extremely useful when adding dependencies to `Build.cs`.
       * Use `!` to force a cache refresh before opening the picker.
+  * **`:UEP web_doc` / `:UEP web_doc!`**:
+      * Opens the Unreal Engine Web Documentation in your browser.
+      * Without `!`: Searches for the word under the cursor.
+      * With `!`: Opens a picker to select a class from the project.
+      * **Note (Experimental)**: The logic for generating direct URLs (especially for Plugins) is currently in beta and may not be 100% accurate. In such cases, it falls back to a site-specific search.
 ## 🤖 API & Automation Examples
 
 You can use the `UEP.api` module to integrate with other Neovim configurations.
