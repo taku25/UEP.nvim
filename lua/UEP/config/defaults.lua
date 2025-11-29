@@ -1,11 +1,16 @@
 local M = {
   
   -- UEPプラグイン固有の設定テーブルを追加
-  uep = {
     -- refreshコマンド実行時に自動で設定をリロードするかどうか
     auto_reload_config_on_refresh = true,
-  },
+  
 
+
+  shader = {
+    -- 自動解決でカバーできないパスを手動で追加
+    -- 例: { ["/MyCustom/"] = "Source/MyGame/Shaders/" }
+    extra_mappings = {},
+  },
   config_explorer = {
     -- 強制的に表示対象とする主要プラットフォームのリスト
     major_platforms = { 
