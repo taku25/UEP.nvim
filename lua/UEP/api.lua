@@ -23,13 +23,15 @@ local cmd_goto_definition = require("UEP.cmd.goto_definition")
 local cmd_classes = require("UEP.cmd.classes")
 local cmd_structs = require("UEP.cmd.structs")
 local cmd_enums = require("UEP.cmd.enums")
-local cmd_config_grep = require("UEP.cmd.config_grep") -- [!] 追加
-local cmd_tree_provider = require("UEP.provider.tree") -- [!] clear_tree_state のため
-local cmd_system_open = require("UEP.cmd.system_open") -- [New]
-local cmd_implement_virtual = require("UEP.cmd.implement_virtual") -- [New]
-local cmd_goto_super = require("UEP.cmd.goto_super") -- [New]
-local cmd_config_tree = require("UEP.cmd.config_tree") -- ★新規追加
+local cmd_config_grep = require("UEP.cmd.config_grep")
+local cmd_tree_provider = require("UEP.provider.tree")
+local cmd_system_open = require("UEP.cmd.system_open")
+local cmd_implement_virtual = require("UEP.cmd.implement_virtual")
+local cmd_goto_super = require("UEP.cmd.goto_super")
+local cmd_config_tree = require("UEP.cmd.config_tree")
 local cmd_find_module = require("UEP.cmd.find_module")
+local cmd_web_doc = require("UEP.cmd.web_doc")
+
 
 local M = {}
 
@@ -181,4 +183,10 @@ end
 function M.find_module(opts)
   cmd_find_module.execute(opts or {})
 end
+
+function M.web_doc(opts)
+  cmd_web_doc.execute(opts or {})
+end
+
+
 return M
