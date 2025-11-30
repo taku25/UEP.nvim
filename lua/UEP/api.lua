@@ -31,6 +31,8 @@ local cmd_goto_super = require("UEP.cmd.goto_super")
 local cmd_config_tree = require("UEP.cmd.config_tree")
 local cmd_find_module = require("UEP.cmd.find_module")
 local cmd_web_doc = require("UEP.cmd.web_doc")
+local cmd_build_cs = require("UEP.cmd.build_cs") -- ★ 変更
+local cmd_target_cs = require("UEP.cmd.target_cs") -- ★ 変更
 
 
 local M = {}
@@ -189,4 +191,12 @@ function M.web_doc(opts)
 end
 
 
+function M.build_cs(opts)
+  cmd_build_cs.execute(opts or {})
+end
+
+-- ★ 変更
+function M.target_cs(opts)
+  cmd_target_cs.execute(opts or {})
+end
 return M

@@ -10,7 +10,7 @@ local unl_event_types = require("UNL.event.types")
 local M = {}
 
 local MAGIC_CODE = "UEP Project Cache"
-local CACHE_VERSION = 1
+local CACHE_VERSION = 2
 
 local function get_cache_path(cache_filename)
   if not cache_filename then return nil end

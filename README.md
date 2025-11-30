@@ -229,6 +229,12 @@ All commands start with `:UEP`.
 " Find the module name for a class and copy it to the clipboard.
 :UEP find_module[!]
 
+" Open the Build.cs file for the current module. Use '!' to list all modules.
+:UEP build_cs[!]
+
+" Open the Target.cs file. Use '!' to include Engine targets.
+:UEP target_cs[!]
+
 " Search Unreal Engine Web Docs. Use '!' to pick a class.
 :UEP web_doc[!]
 ```
@@ -343,6 +349,12 @@ All commands start with `:UEP`.
       * Selecting an item copies the name of the module it belongs to (e.g., `"Core"`, `"UMG"`) to the system clipboard.
       * This is extremely useful when adding dependencies to `Build.cs`.
       * Use `!` to force a cache refresh before opening the picker.
+  * **`:UEP build_cs[!]`**:
+      * Without `!`: Opens the `Build.cs` file corresponding to the module of the current file. If the module cannot be determined, it falls back to the picker.
+      * With `!`: Displays a picker to select from all `Build.cs` files in the project.
+  * **`:UEP target_cs[!]`**:
+      * Without `!`: Displays a list of `Target.cs` files in the current project (Game/Plugins) for selection. If there is only one target, it opens immediately.
+      * With `!`: Includes `Target.cs` files from the Engine in the list.
   * **`:UEP web_doc` / `:UEP web_doc!`**:
       * Opens the Unreal Engine Web Documentation in your browser.
       * Without `!`: Searches for the word under the cursor.

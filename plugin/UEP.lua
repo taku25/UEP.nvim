@@ -226,14 +226,26 @@ local command_spec = { -- line 10: 開始の '{'
       },
     },
 
--- ★新規: Webドキュメント検索
-    ["web_doc"] = {
+    web_doc = {
       handler = uep_api.web_doc,
       bang = true,
       desc = "Search Unreal Engine Web Docs. Use '!' to open browser directly.",
       args = {
         { name = "query", required = false },
       },
+    },
+    build_cs = {
+      handler = uep_api.build_cs,
+      bang = true,
+      desc = "Open Build.cs of the current module. Use '!' to list all modules.",
+      args = {},
+    },
+    -- ★ 変更: target_cs
+    target_cs = {
+      handler = uep_api.target_cs,
+      bang = true,
+      desc = "Open Target.cs. Use '!' to force list selection.",
+      args = {},
     },
 
   }, -- <<< subcommands テーブルを閉じる '}'
