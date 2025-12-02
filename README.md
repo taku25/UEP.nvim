@@ -237,6 +237,9 @@ All commands start with `:UEP`.
 
 " Search Unreal Engine Web Docs. Use '!' to pick a class.
 :UEP web_doc[!]
+
+" Search for shader files (.usf, .ush).
+:UEP shaders[!] [Game|Engine|Runtime|Editor|Full]
 ```
 
 ### Command Details
@@ -360,6 +363,9 @@ All commands start with `:UEP`.
       * Without `!`: Searches for the word under the cursor.
       * With `!`: Opens a picker to select a class from the project.
       * **Note (Experimental)**: The logic for generating direct URLs (especially for Plugins) is currently in beta and may not be 100% accurate. In such cases, it falls back to a site-specific search.
+  * **`:UEP shaders[!] [Scope]`**:
+      * Searches for shader files (`.usf`, `.ush`) within the specified scope (default `Full`).
+      * Useful for quickly accessing engine or project shaders.
 ## 🤖 API & Automation Examples
 
 You can use the `UEP.api` module to integrate with other Neovim configurations.

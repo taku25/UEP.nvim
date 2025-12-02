@@ -249,6 +249,7 @@ local command_spec = { -- line 10: 開始の '{'
     },
     shaders = {
       handler = uep_api.shaders,
+      bang = true,
       desc = "List and select shader files (.usf, .ush).",
       args = {
         { name = "scope", required = false },
