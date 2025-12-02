@@ -1,5 +1,6 @@
+-- From: lua/UEP/provider/tree.lua
 -- lua/UEP/provider/tree.lua
--- (Engine Root のパス結合修正版)
+-- (Plugin Shaders 表示対応 & Content/Resources 完全除外版)
 
 local unl_context = require("UNL.context")
 local uep_log = require("UEP.logger") 
@@ -348,8 +349,6 @@ function M.load_children(node)
               -- ★修正: EngineRoot の場合、context.root (正しいEngineRoot) の直下 Config/Shaders を結合
               pseudo_module_files._EngineShaders = { root=fs.joinpath(context.root, "Engine", "Shaders"), files={}, dirs={} }
               pseudo_module_files._EngineConfig  = { root=fs.joinpath(context.root, "Engine", "Config"), files={}, dirs={} }
-
-
             end
             
             for pseudo_name, data in pairs(pseudo_module_files) do
@@ -370,6 +369,38 @@ function M.load_children(node)
                     
                     local root_file = component.uproject_path or component.uplugin_path
                     if root_file then table.insert(child_files, root_file) end
+
+                    -- [! Fix] Pluginの疑似モジュール (Shaders/Config等) をロード (Content/Resourcesは除外)
+                    if component.type == "Plugin" then
+                        local pseudo_name = component.type .. "_" .. component.display_name
+                        local pseudo_meta = { name = pseudo_name, module_root = component.root_path }
+                        local pseudo_cache = module_cache.load(pseudo_meta)
+
+                        if pseudo_cache then
+                            local function is_excluded(cat, path)
+                                if cat == "content" then return true end
+                                -- パス文字列で判定 (categorize_pathでsource扱いされている可能性対策)
+                                if path:find("/Content/", 1, true) or path:match("/Content$") then return true end
+                                if path:find("/Resources/", 1, true) or path:match("/Resources$") then return true end
+                                return false
+                            end
+
+                            if pseudo_cache.files then
+                                for cat, files in pairs(pseudo_cache.files) do
+                                    for _, f in ipairs(files or {}) do
+                                        if not is_excluded(cat, f) then table.insert(child_files, f) end
+                                    end
+                                end
+                            end
+                            if pseudo_cache.directories then
+                                for cat, dirs in pairs(pseudo_cache.directories) do
+                                    for _, d in ipairs(dirs or {}) do
+                                        if not is_excluded(cat, d) then table.insert(child_dirs, d) end
+                                    end
+                                end
+                            end
+                        end
+                    end
 
                     local relevant_modules = {}
                     for _, mtype in ipairs({"runtime_modules", "developer_modules", "editor_modules", "programs_modules"}) do 
