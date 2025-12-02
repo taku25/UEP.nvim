@@ -247,7 +247,14 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Open Target.cs. Use '!' to force list selection.",
       args = {},
     },
-
+    shaders = {
+      handler = uep_api.shaders,
+      desc = "List and select shader files (.usf, .ush).",
+      args = {
+        { name = "scope", required = false },
+        { name = "deps_flag", required = false },
+      },
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)

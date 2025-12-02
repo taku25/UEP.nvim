@@ -33,6 +33,7 @@ local cmd_find_module = require("UEP.cmd.find_module")
 local cmd_web_doc = require("UEP.cmd.web_doc")
 local cmd_build_cs = require("UEP.cmd.build_cs") -- ★ 変更
 local cmd_target_cs = require("UEP.cmd.target_cs") -- ★ 変更
+local cmd_shaders = require("UEP.cmd.shaders") -- ★ 変更
 
 
 local M = {}
@@ -198,5 +199,9 @@ end
 -- ★ 変更
 function M.target_cs(opts)
   cmd_target_cs.execute(opts or {})
+end
+
+function M.shaders(opts)
+  cmd_shaders.execute(opts or {})
 end
 return M
