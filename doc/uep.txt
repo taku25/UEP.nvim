@@ -57,6 +57,10 @@ Command List                                           *UEP-commands-list*
     Searches for files belonging to a specific module.
 :UEP program_files
     Searches for files within Programs directories.
+:UEP config_files
+    Searches for all config files (.ini).
+:UEP shaders[!] [Scope]
+    Searches for shader files (.usf, .ush).
 :UEP grep [Game|Engine|Runtime|Editor|Full]
     LiveGrep across the project or engine source code.
 :UEP module_grep [ModuleName]
@@ -97,7 +101,22 @@ Command List                                           *UEP-commands-list*
     Jumps to the actual class or struct definition file of a class, skipping forward declarations.
 :UEP system_open[!] [Path]
     Opens the file location in the system file explorer.
-
+:UEP close_tree
+    Closes the UEP tree and clears its expanded state.
+:UEP goto_super_def
+    Jumps to the parent class definition of the current function.
+:UEP goto_super_impl
+    Jumps to the parent class implementation of the current function.
+:UEP implement_virtual [ClassName]
+    Override a virtual function from the parent class hierarchy.
+:UEP find_module[!]
+    Find the module name for a class and copy it to the clipboard.
+:UEP build_cs[!]
+    Open the Build.cs file.
+:UEP target_cs[!]
+    Open the Target.cs file.
+:UEP web_doc[!]
+    Search Unreal Engine Web Docs.
 ------------------------------------------------------------------------------
 Command Details                                     *UEP-commands-detail*
 
@@ -135,6 +154,14 @@ Command Details                                     *UEP-commands-detail*
 :UEP program_files
     Searches for files within all Programs directories related to the
     project and engine (e.g., UnrealBuildTool, AutomationTool).
+
+:UEP config_files
+    Searches for all configuration files (.ini) across the project and engine.
+
+:UEP shaders[!] [Scope]
+    Searches for shader files (`.usf`, `.ush`) within the specified scope.
+    - `[!](bang)`: (Optional) Forces cache regeneration.
+    - `[Scope]`: (Optional, default: `Full`) `Game`, `Engine`, or `Full`.
 
 :UEP grep [Game|Engine|Runtime|Editor|Full]
     Performs a live grep across project and engine source code (requires rg).
@@ -279,6 +306,45 @@ Command Details                                     *UEP-commands-detail*
       project cache.
     - `[Path]`: (Optional)
       If omitted, opens the directory of the current buffer's file.
+
+:UEP close_tree
+    Closes the `neo-tree` window (if open) and clears UEP's internal cache
+    of which nodes were expanded.
+
+:UEP goto_super_def
+    Jumps to the definition (header file) of the parent class's function
+    that corresponds to the current function under the cursor.
+
+:UEP goto_super_impl
+    Jumps to the implementation (source file) of the parent class's function.
+    Falls back to the header definition if the source file is not found.
+
+:UEP implement_virtual [ClassName]
+    Lists all overrideable virtual functions from the parent class hierarchy.
+    Selecting a function automatically inserts the declaration into the
+    header file and copies the implementation stub to the clipboard.
+    Must be executed within a header file.
+
+:UEP find_module[!]
+    Opens a picker UI to select a class, struct, or enum from the entire
+    project. Selecting an item copies the name of the module it belongs to
+    (e.g., `"Core"`, `"UMG"`) to the system clipboard.
+
+:UEP build_cs[!]
+    - Without `!`: Opens the `Build.cs` file corresponding to the module
+      of the current file.
+    - With `!`: Displays a picker to select from all `Build.cs` files in
+      the project.
+
+:UEP target_cs[!]
+    - Without `!`: Displays a list of `Target.cs` files in the current
+      project.
+    - With `!`: Includes `Target.cs` files from the Engine in the list.
+
+:UEP web_doc[!]
+    Opens the Unreal Engine Web Documentation.
+    - Without `!`: Searches for the word under the cursor.
+    - With `!`: Opens a picker to select a class from the project.
 ==============================================================================
 3. Configuration                                       *UEP-configuration*
 
@@ -439,6 +505,49 @@ Require the API module:
       - `has_bang` (boolean, optional): `true` forces the file picker UI.
       - `path` (string, optional): The file path to open.
 
+*uep_api.config_files({opts})*
+    Opens the config file search UI.
+
+*uep_api.shaders({opts})*
+    Opens the shader file search UI.
+    `opts` table:
+      - `has_bang` (boolean, optional): If `true`, forces cache refresh.
+      - `scope` (string, optional): `"Game"`, `"Engine"`, `"Full"`, etc.
+
+*uep_api.close_tree({opts})*
+    Closes the tree and clears expanded state.
+
+*uep_api.goto_super_def({opts})*
+    Jumps to super definition.
+
+*uep_api.goto_super_impl({opts})*
+    Jumps to super implementation.
+
+*uep_api.implement_virtual({opts})*
+    Starts the virtual function override workflow.
+    `opts` table:
+      - `class_name` (string, optional): The context class name.
+
+*uep_api.find_module({opts})*
+    Finds the module name for a symbol.
+    `opts` table:
+      - `has_bang` (boolean, optional): If `true`, forces cache refresh.
+
+*uep_api.build_cs({opts})*
+    Opens Build.cs.
+    `opts` table:
+      - `has_bang` (boolean, optional): If `true`, list all modules.
+
+*uep_api.target_cs({opts})*
+    Opens Target.cs.
+    `opts` table:
+      - `has_bang` (boolean, optional): If `true`, include engine targets.
+
+*uep_api.web_doc({opts})*
+    Opens Web Documentation.
+    `opts` table:
+      - `has_bang` (boolean, optional): If `true`, opens class picker.
+      - `query` (string, optional): The search query.
 ==============================================================================
 5. Integration Examples (neo-tree)         *UEP-integration-examples*
 

@@ -96,6 +96,26 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
   先行宣言をスキップして、クラスや構造体の実際の定義ファイルにジャンプします。
 :UEP system_open[!] [Path]
   ファイルの場所をシステムエクスプローラーで開きます。
+:UEP config_files
+  すべてのコンフィグファイル (.ini) を検索します。
+:UEP shaders[!] [Scope]
+  シェーダーファイル (.usf, .ush) を検索します。
+:UEP close_tree
+  UEPツリーを閉じ、展開状態のキャッシュをクリアします。
+:UEP goto_super_def
+  現在の関数の親クラス定義へジャンプします。
+:UEP goto_super_impl
+  現在の関数の親クラス実装へジャンプします。
+:UEP implement_virtual [ClassName]
+  親クラス階層から仮想関数をオーバーライドします。
+:UEP find_module[!]
+  クラスが所属するモジュール名を検索し、クリップボードにコピーします。
+:UEP build_cs[!]
+  現在のモジュールのBuild.csを開きます。[!]で全モジュールから選択します。
+:UEP target_cs[!]
+  Target.csを開きます。[!]でエンジンを含めた全ターゲットから選択します。
+:UEP web_doc[!]
+  Unreal EngineのWebドキュメントを検索します。
 
 ------------------------------------------------------------------------------
 コマンド詳細                                           *UEP-commands-detail*
@@ -133,6 +153,15 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
 :UEP program_files
     プロジェクトとエンジンに関連する全てのProgramsディレクトリ
     （例: UnrealBuildTool, AutomationTool）内のファイルを検索します。
+
+:UEP config_files
+    プロジェクトとエンジンに関連するすべてのコンフィグファイル (.ini) を検索
+    します。
+
+:UEP shaders[!] [Scope]
+    指定されたスコープ内のシェーダーファイル (.usf, .ush) を検索します。
+    - `[!](bang)`: (省略可) キャッシュを強制的に再生成します。
+    - `[Scope]`: (省略可、デフォルト: `Full`) `Game`, `Engine`, `Full` など。
 
 :UEP grep [Game|Engine|Runtime|Editor|Full]
     プロジェクトとエンジンのソースコード全体からLiveGrepします (rgが必須)。
@@ -271,6 +300,48 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
       ピッカーUIを開きます。
     - `[Path]`: (省略可)
       省略した場合、現在のバッファのファイルがあるディレクトリを開きます。
+
+:UEP close_tree
+    neo-treeウィンドウを（開いていれば）閉じ、UEPが内部で保持しているノード
+    の展開状態キャッシュをクリアします。次回ツリーを開く際に、全て折りたたま
+    れた状態から開始されます。
+
+:UEP goto_super_def
+    現在カーソルがある関数の、親クラスにおける定義（ヘッダーファイル）へ
+    ジャンプします。キャッシュされたプロジェクトデータを使用して、継承
+    チェーンをインテリジェントに解決します。
+
+:UEP goto_super_impl
+    親クラスにおける関数の実装（ソースファイル）へジャンプします。
+    ソースファイルが見つからない場合は、ヘッダー定義へフォールバックします。
+
+:UEP implement_virtual [ClassName]
+    親クラスの階層からオーバーライド可能な仮想関数をリストアップします。
+    関数を選択すると、ヘッダーファイルに宣言を自動挿入し、実装スタブを
+    クリップボードにコピーします。ヘッダーファイル内で実行する必要があります。
+
+:UEP find_module[!]
+    プロジェクト全体のクラス、構造体、Enumを選択するためのピッカーUIを開き
+    ます。項目を選択すると、そのシンボルが所属しているモジュール名（例：
+    `"Core"`, `"UMG"`）をダブルクォーテーション付きでクリップボードにコピー
+    します。`Build.cs` の編集に便利です。
+
+:UEP build_cs[!]
+    - `!`なし: 現在編集中のファイルが属するモジュールの `Build.cs` を即座
+      に開きます。モジュールが特定できない場合はピッカーを表示します。
+    - `!`あり: プロジェクト内の全ての `Build.cs` をリストアップし、選択
+      して開きます。
+
+:UEP target_cs[!]
+    - `!`なし: 現在のプロジェクトに含まれる `Target.cs` をリストアップし、
+      選択して開きます。
+    - `!`あり: エンジン側の `Target.cs` も含めた全てのターゲットをリスト
+      アップし、選択して開きます。
+
+:UEP web_doc[!]
+    ブラウザでUnreal Engineの公式ドキュメントを開きます。
+    - `!`なし: カーソル下の単語を検索します。
+    - `!`あり: プロジェクト内のクラス一覧から選択して開きます。
 
 ==============================================================================
 3. 設定                                           *UEP-configuration*
@@ -435,6 +506,50 @@ APIモジュールを`require`する:
       - `has_bang` (boolean, optional): `true`でファイルピッカーUIを
         強制的に開きます。
       - `path` (string, optional): 開く対象のファイルパス。
+
+*uep_api.config_files({opts})*
+    コンフィグファイル検索UIを開きます。optsは現在使用されません。
+
+*uep_api.shaders({opts})*
+    シェーダーファイル検索UIを開きます。
+    `opts`テーブル:
+      - `has_bang` (boolean, optional): `true`でキャッシュを強制更新。
+      - `scope` (string, optional): `"Game"`, `"Engine"`, `"Full"`など。
+
+*uep_api.close_tree({opts})*
+    ツリーを閉じ、展開状態をクリアします。optsは現在使用されません。
+
+*uep_api.goto_super_def({opts})*
+    親クラスの定義へジャンプします。optsは現在使用されません。
+
+*uep_api.goto_super_impl({opts})*
+    親クラスの実装へジャンプします。optsは現在使用されません。
+
+*uep_api.implement_virtual({opts})*
+    仮想関数オーバーライドのフローを開始します。
+    `opts`テーブル:
+      - `class_name` (string, optional): コンテキストとなるクラス名。
+
+*uep_api.find_module({opts})*
+    シンボルのモジュール名を検索します。
+    `opts`テーブル:
+      - `has_bang` (boolean, optional): `true`でキャッシュを強制更新。
+
+*uep_api.build_cs({opts})*
+    Build.csを開きます。
+    `opts`テーブル:
+      - `has_bang` (boolean, optional): `true`で全モジュールから選択。
+
+*uep_api.target_cs({opts})*
+    Target.csを開きます。
+    `opts`テーブル:
+      - `has_bang` (boolean, optional): `true`でEngineターゲットを含める。
+
+*uep_api.web_doc({opts})*
+    Webドキュメントを開きます。
+    `opts`テーブル:
+      - `has_bang` (boolean, optional): `true`でクラスピッカーを使用。
+      - `query` (string, optional): 検索クエリ。
 
 ==============================================================================
 5. 連携サンプル (neo-tree)                 *UEP-integration-examples*
