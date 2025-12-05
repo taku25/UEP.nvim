@@ -1,6 +1,4 @@
 -- lua/UEP/cmd/config_files.lua
--- (修正版: on_submit を追加)
-
 local module_cache = require("UEP.cache.module")
 local core_utils = require("UEP.cmd.core.utils")
 local unl_picker = require("UNL.backend.picker")
@@ -28,7 +26,7 @@ function M.execute(opts)
     for mod_name, mod_meta in pairs(maps.all_modules_map) do
         local mod_cache_data = module_cache.load(mod_meta)
         
-        -- [!] "config" カテゴリのファイルのみを収集
+        -- "config" カテゴリのファイルのみを収集
         if mod_cache_data and mod_cache_data.files and mod_cache_data.files.config then
             for _, file_path in ipairs(mod_cache_data.files.config) do
                 table.insert(config_files_with_context, {
@@ -44,15 +42,17 @@ function M.execute(opts)
 
     -- STEP 2: "Pseudo" Modules (Game/Engine/Plugin のルート Config)
     local pseudo_module_files = {}
+    
     if maps.engine_root then
-        pseudo_module_files["_EngineConfig"]  = { root=fs.joinpath(maps.engine_root, "Engine", "Config") }
+        pseudo_module_files["_EngineConfig"] = { root=fs.joinpath(maps.engine_root, "Engine", "Config") }
     end
-    if maps.project_root then
-        pseudo_module_files["_GameConfig"]    = { root=fs.joinpath(maps.project_root, "Config") }
-    end
+    
+    -- Engine/Config 以外に、各コンポーネント(Game/Plugin)のルートConfigも収集
     for comp_name_hash, comp_meta in pairs(maps.all_components_map) do
       if comp_meta.type == "Game" or comp_meta.type == "Plugin" then
-          local pseudo_name = comp_meta.display_name
+          -- 修正: キャッシュ名は [Type]_[DisplayName] で保存されている
+          local pseudo_name = comp_meta.type .. "_" .. comp_meta.display_name
+          
           if not pseudo_module_files[pseudo_name] then
               pseudo_module_files[pseudo_name] = { root = comp_meta.root_path }
           end
@@ -89,7 +89,7 @@ function M.execute(opts)
           local relative_path = core_utils.create_relative_path(item.file_path, item.module_root)
           table.insert(picker_items, {
             display = string.format("%s/%s (%s)", item.module_name, relative_path, item.module_name),
-            value = item.file_path, -- [!] on_submit はこの value (string) を受け取る
+            value = item.file_path,
             filename = item.file_path,
           })
       else
@@ -115,18 +115,15 @@ function M.execute(opts)
       preview_enabled = true,
       devicons_enabled = true,
       
-      -- Telescope の "Build" 無視問題を回避
       file_ignore_patterns = {},
       find_files_ignore_patterns = {},
       hidden = true,
 
-      -- ▼▼▼ [修正] この on_submit を追加 ▼▼▼
-      on_submit = function(selection) -- selection は item.value (ファイルパス文字列)
+      on_submit = function(selection)
         if selection and selection ~= "" then
           pcall(vim.cmd.edit, vim.fn.fnameescape(selection))
         end
       end
-      -- ▲▲▲ 修正完了 ▲▲▲
     })
   end)
 end

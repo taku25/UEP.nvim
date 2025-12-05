@@ -10,26 +10,31 @@ local fs = require("vim.fs")
 local M = {}
 
 -- ▼▼▼ 修正箇所 (ご指摘の通り、Programs を Source より先に戻します) ▼▼▼
+-- ▼▼▼ 修正箇所 ▼▼▼
 M.categorize_path = function(path)
-  -- 1. 最も具体的なものを先に (uproject/uplugin)
+  -- 1. ファイル拡張子による判定 (最優先)
   if path:match("%.uproject$") then return "uproject" end
   if path:match("%.uplugin$") then return "uplugin" end
 
-  -- 3. Source 以外の主要フォルダ (Programs を Source より先に)
-  if path:find("/Programs/", 1, true) or path:match("/Programs$") then return "programs" end
+  -- 2. 特殊ディレクトリによる判定 (優先度高)
+  -- Pluginsフォルダの中にあったとしても、これらのフォルダ名が含まれていればそのカテゴリを優先する
   
-  -- 2. "Source" 
-  if path:find("/Source/", 1, true) or path:match("/Source$") then return "source" end
-  if path:find("/Plugins/", 1, true) then return "source" end -- Plugin の Source も source 扱い
-
-  -- 3. (続き)
+  if path:find("/Programs/", 1, true) or path:match("/Programs$") then return "programs" end
   if path:find("/Shaders/", 1, true) or path:match("/Shaders$") then return "shader" end
   if path:find("/Config/", 1, true) or path:match("/Config$") then return "config" end
   if path:find("/Content/", 1, true) or path:match("/Content$") then return "content" end
   
+  -- 3. Sourceディレクトリ (Plugins/xxx/Source もここでヒットする)
+  if path:find("/Source/", 1, true) or path:match("/Source$") then return "source" end
+  
   -- 4. その他
+  -- 以前あった `if path:find("/Plugins/")` の判定は削除しました。
+  -- Plugins内のファイルも上記の Shaders/Config/Source ルールで正しく分類されるべきであるためです。
+  -- それらに該当しない Plugin 内のファイル (Resources等) は "other" とします。
+  
   return "other"
 end
+-- ▲▲▲ 修正完了 ▲▲▲
 -- ▲▲▲ 修正完了 ▲▲▲
 
 

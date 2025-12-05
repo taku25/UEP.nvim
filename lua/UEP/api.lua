@@ -201,7 +201,7 @@ function M.target_cs(opts)
   cmd_target_cs.execute(opts or {})
 end
 
-function M.shaders(opts)
+function M.shader_files(opts)
   cmd_shaders.execute(opts or {})
 end
 return M

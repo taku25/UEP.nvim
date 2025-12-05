@@ -247,8 +247,8 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Open Target.cs. Use '!' to force list selection.",
       args = {},
     },
-    shaders = {
-      handler = uep_api.shaders,
+    shader_files = {
+      handler = uep_api.shader_files, -- API名も変更済みのものを指定
       bang = true,
       desc = "List and select shader files (.usf, .ush).",
       args = {
