@@ -316,6 +316,7 @@ end
 
 
 function M.load_children(node)
+    -- 1. 展開状態を保存 (UI復元用)
     if node and node.id then
         local expanded_nodes = uep_context.get(EXPANDED_STATE_KEY) or {}
         expanded_nodes[node.id] = true
@@ -323,15 +324,20 @@ function M.load_children(node)
     end
     
     local log = uep_log.get() 
-    local expanded_nodes = uep_context.get(EXPANDED_STATE_KEY) or {}
+    -- (expanded_nodes は再帰呼び出し等で使う可能性がありますが、ここではローカル変数は使いません)
 
-    if not node or not node.extra then return {} end
-
-    local children = {}
-    local uep_type = node.extra.uep_type
+    if not node then return {} end
     
+    -- extra 情報がない場合も許容 (Favorites などの外部ノード対応)
+    local extra = node.extra or {}
+    local children = {}
+    local uep_type = extra.uep_type
+    
+    -- =========================================================
+    -- パターン A: UEP論理ツリー (Category, Game, Engine, Plugin)
+    -- =========================================================
     if uep_type == "category" or uep_type == "Game" or uep_type == "Engine" or uep_type == "Plugin" then
-        local context = node.extra.child_context
+        local context = extra.child_context
         if context then
             local required_components_map = context.required_components_map
             local filtered_modules_meta = context.filtered_modules_meta
@@ -340,19 +346,19 @@ function M.load_children(node)
             local child_files = {} 
             local child_dirs = {}
             
-            -- A. 疑似モジュール (Config/Shaders)
+            -- A-1. 疑似モジュール (Config/Shaders)
             local pseudo_module_files = {}
             if context.type == "GameRoot" then
               pseudo_module_files._GameShaders = { root=fs.joinpath(context.root, "Shaders"), files={}, dirs={} }
               pseudo_module_files._GameConfig  = { root=fs.joinpath(context.root, "Config"), files={}, dirs={} }
             else 
-              -- ★修正: EngineRoot の場合、context.root (正しいEngineRoot) の直下 Config/Shaders を結合
+              -- EngineRoot
               pseudo_module_files._EngineShaders = { root=fs.joinpath(context.root, "Engine", "Shaders"), files={}, dirs={} }
               pseudo_module_files._EngineConfig  = { root=fs.joinpath(context.root, "Engine", "Config"), files={}, dirs={} }
             end
             
             for pseudo_name, data in pairs(pseudo_module_files) do
-                local pseudo_meta = { name = pseudo_name, module_root = data.root }; 
+                local pseudo_meta = { name = pseudo_name, module_root = data.root }
                 local pseudo_cache = module_cache.load(pseudo_meta)
                 
                 if pseudo_cache then
@@ -363,14 +369,14 @@ function M.load_children(node)
                 vim.list_extend(child_dirs, data.dirs or {})
             end
             
-            -- B. コンポーネント (Game/Engine/Plugins)
+            -- A-2. コンポーネント (Game/Engine/Plugins)
             for comp_name, component in pairs(required_components_map) do
                 if component.owner_name == owner_name_to_match then
                     
                     local root_file = component.uproject_path or component.uplugin_path
                     if root_file then table.insert(child_files, root_file) end
 
-                    -- [! Fix] Pluginの疑似モジュール (Shaders/Config等) をロード (Content/Resourcesは除外)
+                    -- Pluginの疑似モジュール (Shaders/Config等) をロード
                     if component.type == "Plugin" then
                         local pseudo_name = component.type .. "_" .. component.display_name
                         local pseudo_meta = { name = pseudo_name, module_root = component.root_path }
@@ -379,7 +385,6 @@ function M.load_children(node)
                         if pseudo_cache then
                             local function is_excluded(cat, path)
                                 if cat == "content" then return true end
-                                -- パス文字列で判定 (categorize_pathでsource扱いされている可能性対策)
                                 if path:find("/Content/", 1, true) or path:match("/Content$") then return true end
                                 if path:find("/Resources/", 1, true) or path:match("/Resources$") then return true end
                                 return false
@@ -435,14 +440,108 @@ function M.load_children(node)
                 end
             end
             children = build_fs_hierarchy(node.path, child_files, child_dirs, false) 
-            
-        elseif node.extra.child_paths then
-             children = build_fs_hierarchy(node.path, node.extra.child_paths.files, node.extra.child_paths.dirs, false) 
         end
+
+    -- =========================================================
+    -- パターン B: 既にパスリストを持っている場合 (再帰処理)
+    -- =========================================================
+    elseif (uep_type == "fs" or uep_type == "module_root") and extra.child_paths then
+         children = build_fs_hierarchy(node.path, extra.child_paths.files, extra.child_paths.dirs, false) 
+    
+    -- =========================================================
+    -- パターン C: 汎用パス検索 (Favorites などの外部リクエスト対応)
+    -- =========================================================
+    else
+        -- ★★★ ここが追加・強化されたロジックです ★★★
+        -- 「指定されたパス」以下のファイル/ディレクトリを、全キャッシュから動的に検索します。
         
-    elseif uep_type == "fs" then
-        if node.extra.child_paths then
-             children = build_fs_hierarchy(node.path, node.extra.child_paths.files, node.extra.child_paths.dirs, false) 
+        local target_path = node.path
+        if target_path then
+            -- 検索用: パス末尾を正規化
+            local search_prefix = target_path:gsub("[/\\]$", "") .. "/"
+            -- Windows対応: 大文字小文字の違いを吸収するため小文字化して比較に使用
+            local search_prefix_lower = search_prefix:lower()
+
+            -- 1. プロジェクト情報を取得
+            local cwd = vim.loop.cwd()
+            local project_root = require("UNL.finder").project.find_project_root(cwd)
+            if project_root then
+                local project_name = vim.fn.fnamemodify(project_root, ":t")
+                local reg = projects_cache.get_project_info(project_name)
+                
+                local found_files = {}
+                local found_dirs = {}
+                
+                if reg and reg.components then
+                    -- 2. 全コンポーネントを走査
+                    for _, cname in ipairs(reg.components) do
+                        local p_cache = project_cache.load(cname .. ".project.json")
+                        if p_cache then
+                            -- 3. 全モジュールを走査
+                            local types = {"runtime_modules", "developer_modules", "editor_modules", "programs_modules"}
+                            local modules_to_scan = {}
+
+                            for _, t in ipairs(types) do
+                                if p_cache[t] then
+                                    for mname, mmeta in pairs(p_cache[t]) do
+                                        table.insert(modules_to_scan, mmeta)
+                                    end
+                                end
+                            end
+                            
+                            -- 疑似モジュール (Game/Pluginルート) も追加
+                            if (p_cache.type == "Game" or p_cache.type == "Plugin") and p_cache.root_path then
+                                local pseudo_name = p_cache.type .. "_" .. p_cache.display_name
+                                table.insert(modules_to_scan, { name=pseudo_name, module_root=p_cache.root_path })
+                            end
+
+                            -- 4. 各モジュールのキャッシュからパス一致を検索
+                            for _, mod_meta in ipairs(modules_to_scan) do
+                                -- 最適化: モジュールルートがターゲットパスと全く関係なければスキップ
+                                -- (モジュールがターゲットの中にあるか、ターゲットがモジュールの中にある場合のみスキャン)
+                                local m_root = mod_meta.module_root
+                                if m_root then
+                                    local m_root_lower = m_root:lower()
+                                    -- 交差判定 (どちらかがどちらかを含んでいる)
+                                    if m_root_lower:find(search_prefix_lower, 1, true) or search_prefix_lower:find(m_root_lower, 1, true) then
+                                        
+                                        local cache = module_cache.load(mod_meta)
+                                        if cache then
+                                            if cache.files then
+                                                for _, list in pairs(cache.files) do
+                                                    for _, f in ipairs(list) do
+                                                        -- ファイルパスがターゲットパスで始まっているか
+                                                        if f:lower():find(search_prefix_lower, 1, true) == 1 then 
+                                                            table.insert(found_files, f) 
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                            if cache.directories then
+                                                for _, list in pairs(cache.directories) do
+                                                    for _, d in ipairs(list) do
+                                                        if d:lower():find(search_prefix_lower, 1, true) == 1 then 
+                                                            table.insert(found_dirs, d) 
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- 5. Engine側の疑似モジュール (Config/Shaders) も必要なら検索
+                -- (今回はプロジェクトメインの検索に絞っていますが、必要ならここに追加可能)
+
+                if #found_files > 0 or #found_dirs > 0 then
+                    -- 見つかったファイル群から、直下の階層構造を構築
+                    children = build_fs_hierarchy(target_path, found_files, found_dirs, false)
+                end
+            end
         end
     end
 

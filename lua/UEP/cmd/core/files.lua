@@ -257,4 +257,142 @@ function M.get_files_for_module(module_name, on_complete)
     end)
 end
 
+function M.get_all_cached_items(opts, on_complete)
+  local log = uep_log.get()
+  opts = opts or {}
+  local requested_scope = opts.scope or "full" -- デフォルトを広めに "full" に変更
+  local deps_flag = opts.deps_flag or "--deep-deps"
+
+  core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
+    if not ok then
+      return on_complete(false, "Failed to get project maps.")
+    end
+    
+    local all_modules_map = maps.all_modules_map
+    local game_name = maps.game_component_name
+    local engine_name = maps.engine_component_name
+
+    -- 1. 起点モジュールの決定 (get_filesと同じロジック)
+    local seed_modules = {}
+    if requested_scope == "game" then
+      for n, m in pairs(all_modules_map) do if m.owner_name == game_name then seed_modules[n] = true end end
+    elseif requested_scope == "engine" then
+      for n, m in pairs(all_modules_map) do if m.owner_name == engine_name then seed_modules[n] = true end end
+    elseif requested_scope == "runtime" then
+      for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
+    elseif requested_scope == "full" then
+      for n, m in pairs(all_modules_map) do if m.type ~= "Program" then seed_modules[n] = true end end
+    else -- Default Runtime
+      for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
+    end
+
+    -- 2. 依存関係の解決
+    local target_module_names = seed_modules
+    if deps_flag ~= "--no-deps" and requested_scope ~= "full" then
+        local deps_key = (deps_flag == "--deep-deps") and "deep_dependencies" or "shallow_dependencies"
+        local modules_to_process = vim.tbl_keys(seed_modules)
+        local processed = {}
+        
+        while #modules_to_process > 0 do
+            local current = table.remove(modules_to_process)
+            if not processed[current] then
+                processed[current] = true
+                target_module_names[current] = true
+                local meta = all_modules_map[current]
+                if meta and meta[deps_key] then
+                    for _, dep in ipairs(meta[deps_key]) do
+                         if not processed[dep] and all_modules_map[dep] then
+                             table.insert(modules_to_process, dep)
+                         end
+                    end
+                end
+            end
+        end
+    end
+
+    local items = {}
+    local seen = {}
+    
+    -- 3. モジュールキャッシュからの収集
+    for mod_name, _ in pairs(target_module_names) do
+        local mod_meta = all_modules_map[mod_name]
+        if mod_meta then
+            local cache = module_cache.load(mod_meta)
+            if cache then
+               -- ファイル
+               if cache.files then
+                 for _, list in pairs(cache.files) do
+                   for _, path in ipairs(list) do
+                     if not seen[path] then
+                       table.insert(items, { path = path, type = "file" })
+                       seen[path] = true
+                     end
+                   end
+                 end
+               end
+               -- ディレクトリ
+               if cache.directories then
+                 for _, list in pairs(cache.directories) do
+                   for _, path in ipairs(list) do
+                     if not seen[path] then
+                       table.insert(items, { path = path, type = "directory" })
+                       seen[path] = true
+                     end
+                   end
+                 end
+               end
+            end
+        end
+    end
+    
+    -- 4. 疑似モジュール (Config/Shaders) の収集
+    -- Scopeに応じてGame/Engineの疑似モジュールを追加
+    local add_game_pseudos = false
+    local add_engine_pseudos = false
+
+    if requested_scope == "full" then
+        add_game_pseudos = true; add_engine_pseudos = true
+    elseif requested_scope == "game" then
+        add_game_pseudos = true
+        if deps_flag ~= "--no-deps" then add_engine_pseudos = true end
+    elseif requested_scope == "engine" then
+        add_engine_pseudos = true
+    else -- Runtime/Developer etc
+        add_game_pseudos = true; add_engine_pseudos = true
+    end
+
+    if add_game_pseudos and maps.all_components_map then
+        for _, comp in pairs(maps.all_components_map) do
+            if comp.type == "Game" or comp.type == "Plugin" then
+                 local pseudo_name = comp.type .. "_" .. comp.display_name
+                 local pseudo_meta = { name = pseudo_name, module_root = comp.root_path }
+                 local cache = module_cache.load(pseudo_meta)
+                 if cache then
+                    if cache.files then for _, l in pairs(cache.files) do for _, p in ipairs(l) do if not seen[p] then table.insert(items, {path=p, type="file"}) seen[p]=true end end end end
+                    if cache.directories then for _, l in pairs(cache.directories) do for _, p in ipairs(l) do if not seen[p] then table.insert(items, {path=p, type="directory"}) seen[p]=true end end end end
+                 end
+            end
+        end
+    end
+    
+    if add_engine_pseudos and maps.engine_root then
+        local engine_pseudos = {
+            { name = "_EngineConfig", root = fs.joinpath(maps.engine_root, "Engine", "Config") },
+            { name = "_EngineShaders", root = fs.joinpath(maps.engine_root, "Engine", "Shaders") },
+        }
+        for _, p in ipairs(engine_pseudos) do
+             local meta = { name = p.name, module_root = p.root }
+             local cache = module_cache.load(meta)
+             if cache then
+                if cache.files then for _, l in pairs(cache.files) do for _, f in ipairs(l) do if not seen[f] then table.insert(items, {path=f, type="file"}) seen[f]=true end end end end
+                if cache.directories then for _, l in pairs(cache.directories) do for _, d in ipairs(l) do if not seen[d] then table.insert(items, {path=d, type="directory"}) seen[d]=true end end end end
+             end
+        end
+    end
+
+    log.info("get_all_cached_items: Found %d items (Scope: %s, Deps: %s).", #items, requested_scope, deps_flag)
+    on_complete(true, items)
+  end)
+end
+
 return M

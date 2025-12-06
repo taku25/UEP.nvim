@@ -73,6 +73,13 @@ M.setup = function()
     })
     -- ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
+    local files_provider = require("UEP.provider.files")
+    unl_api.provider.register({
+      capability = "uep.get_project_items",
+      name = "UEP.nvim",
+      impl = files_provider,
+    })
+
     local uep_logger = require("UEP.logger").get()
     if uep_logger then
       uep_logger.info("Registered UEP providers to UNL.nvim.")
