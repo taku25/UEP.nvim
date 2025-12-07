@@ -214,6 +214,9 @@ All commands start with `:UEP`.
 " Jumps to the actual class or struct definition file, skipping forward declarations.
 :UEP goto_definition[!] [ClassName]
 
+" Select a class first, then select a symbol (function/property) within it to jump.
+:UEP class_symbol[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+
 " Open the file location in the system file explorer.
 :UEP system_open[!] [Path]
 
@@ -240,6 +243,7 @@ All commands start with `:UEP`.
 
 " Search for shader files (.usf, .ush).
 :UEP shaders[!] [Game|Engine|Runtime|Editor|Full]
+
 ```
 
 ### Command Details
@@ -333,6 +337,10 @@ All commands start with `:UEP`.
   * **`:UEP goto_definition[!] [ClassName]`**: Jumps to the actual definition file of a class, skipping forward declarations.
       * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor. It performs an **intelligent hierarchical search** based on the current module's dependencies (current component -\> shallow deps -\> deep deps) before falling back to LSP.
       * With `!`: Ignores arguments and the word under the cursor, and always opens a picker UI to select a class from the entire project.
+  * **`:UEP class_symbol[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**:
+      * Opens a two-step picker: first select a class from the project, then select a symbol (function or property) within that class to jump to.
+      * This command leverages UEP for global class searching and delegates to UCM for detailed symbol parsing of the selected file.
+      * Flags: Controls cache regeneration (`!`) and scope/dependency filtering.
   * **`:UEP system_open[!] [Path]`**:
       * Opens the location of the specified file in the OS file explorer (Explorer/Finder/xdg-open).
       * `!` (Bang): Ignores arguments/current buffer and opens a picker UI to select a file from the entire project cache.
