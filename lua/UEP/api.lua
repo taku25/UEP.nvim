@@ -34,7 +34,7 @@ local cmd_web_doc = require("UEP.cmd.web_doc")
 local cmd_build_cs = require("UEP.cmd.build_cs") -- ★ 変更
 local cmd_target_cs = require("UEP.cmd.target_cs") -- ★ 変更
 local cmd_shaders = require("UEP.cmd.shaders") -- ★ 変更
-
+local cmd_class_symbol = require("UEP.cmd.class_symbol")
 
 local M = {}
 
@@ -203,5 +203,8 @@ end
 
 function M.shader_files(opts)
   cmd_shaders.execute(opts or {})
+end
+function M.class_symbol(opts)
+  cmd_class_symbol.execute(opts)
 end
 return M
