@@ -97,6 +97,8 @@ Command List                                           *UEP-commands-list*
     Selects a destination from a list of known projects to change to.
 :UEP delete
     Deletes a project from the list of known projects.
+:UEP new_project
+    Creates a new Unreal Engine project from a template.
 :UEP goto_definition[!] [ClassName]
     Jumps to the actual class or struct definition file of a class, skipping forward declarations.
 :UEP system_open[!] [Path]
@@ -285,6 +287,18 @@ Command Details                                     *UEP-commands-detail*
 :UEP delete
     Displays a UI with a list of known projects and removes the selected
     project from the list. The actual project files are not deleted.
+
+:UEP new_project
+    Creates a new Unreal Engine project by copying an existing template
+    from the installed engine's `Templates` directory.
+    Provides an interactive wizard to select:
+      1. Engine Version (auto-detected from Windows Registry/Linux Config).
+      2. Template (e.g., `TP_FirstPerson`, `TP_ThirdPerson`).
+      3. Project Name.
+    It automatically performs recursive file copying, renaming, and string
+    replacement (e.g., changing `TP_FirstPerson` to `MyNewProject` in
+    source files) and configures the `.uproject` file with the correct
+    `EngineAssociation`.
 
 :UEP goto_definition[!] [ClassName]
     Jumps to the actual definition file of a class, skipping forward

@@ -211,6 +211,9 @@ All commands start with `:UEP`.
 " Remove a project from the list of known projects (does not delete files).
 :UEP delete
 
+" Create a new Unreal Engine project from a template.
+:UEP new_project
+
 " Jumps to the actual class or struct definition file, skipping forward declarations.
 :UEP goto_definition[!] [ClassName]
 
@@ -257,6 +260,14 @@ All commands start with `:UEP`.
   * **`:UEP delete`**:
       * Deletes a project from UEP's management.
           * This only removes it from UEP's internal list; the actual UE project files are not deleted.
+  * **`:UEP new_project`**:
+      * Creates a new Unreal Engine project by copying an existing template from the installed engine's `Templates` directory.
+      * Provides an interactive wizard to select:
+          1.  Engine Version (auto-detected from Windows Registry).
+          2.  Template (e.g., `TP_FirstPerson`, `TP_ThirdPerson`).
+          3.  Project Name.
+      * Automatically performs recursive file copying, renaming, and string replacement (e.g., changing `TP_FirstPerson` to `MyNewProject` in source files).
+      * Configures the `.uproject` file with the correct `EngineAssociation`.
   * **`:UEP files[!]`**:
       * Without `!`: Selects files from the existing cache data.
       * With `!`: Deletes the cache and creates a new one before selecting files.

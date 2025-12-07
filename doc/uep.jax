@@ -92,6 +92,8 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
   既知のプロジェクト一覧から移動先を選択します。
 :UEP delete
   既知のプロジェクト一覧からプロジェクトを削除します。
+:UEP new_project
+  エンジンのテンプレートから新規Unreal Engineプロジェクトを作成します。
 :UEP goto_definition[!] [ClassName]
   先行宣言をスキップして、クラスや構造体の実際の定義ファイルにジャンプします。
 :UEP system_open[!] [Path]
@@ -281,6 +283,18 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
 :UEP delete
     既知のプロジェクト一覧をUIで表示し、選択したプロジェクトを一覧から削除し
     ます。実際のプロジェクトファイルは削除されません。
+
+:UEP new_project
+    インストール済みエンジンの `Templates` ディレクトリにあるテンプレートを
+    コピーして、新規Unreal Engineプロジェクトを作成します。
+    以下の手順で対話的に作成します:
+      1. エンジンバージョン (Windowsレジストリ/Linux設定から自動検出)。
+      2. テンプレート (例: `TP_FirstPerson`, `TP_ThirdPerson`)。
+      3. プロジェクト名。
+    ファイルの再帰的なコピー、リネーム、およびソースファイル内の文字列置換
+    （例: `TP_FirstPerson` -> `MyNewProject`）を自動的に行います。
+    また、`.uproject` ファイルの `EngineAssociation` を選択したエンジンに
+    合わせて適切に設定します。
 
 :UEP goto_definition[!] [ClassName]
     先行宣言をスキップして、クラスの実際の定義ファイルにジャンプします。
