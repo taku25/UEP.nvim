@@ -264,6 +264,11 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "deps_flag", required = false },
       },
     },
+    ["new_project"] = {
+      handler = uep_api.new_project,
+      desc = "Create a new Unreal Engine project from a template.",
+      args = {},
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)
