@@ -224,7 +224,14 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         table.insert(all_components, { name = engine_name, display_name = "Engine", type = "Engine", root_path = engine_root, owner_name = engine_name })
         for _, uplugin_path in ipairs(all_uplugin_files) do
           local plugin_root = vim.fn.fnamemodify(uplugin_path, ":h")
-          local owner_name = uplugin_path:find(engine_root, 1, true) and engine_name or game_name
+          local owner_name = engine_name -- デフォルトはEngine
+          if uplugin_path:find(game_root, 1, true) then
+            owner_name = game_name
+          elseif uplugin_path:find(engine_root, 1, true) then
+            owner_name = engine_name
+          else
+            owner_name = game_name -- どちらにも属さない（外部ドライブ等）場合はGame扱いにする
+          end
           table.insert(all_components, {
               name = get_name_from_root(plugin_root),
               display_name = vim.fn.fnamemodify(uplugin_path, ":t:r"),
