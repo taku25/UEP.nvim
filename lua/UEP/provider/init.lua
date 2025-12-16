@@ -1,6 +1,4 @@
 -- lua/UEP/provider/init.lua
-
--- ▼▼▼ この行を追加 ▼▼▼
 local unl_log = require("UNL.logging")
 local log = require("UEP.logger") 
 
@@ -9,7 +7,7 @@ local M = {}
 M.setup = function()
   local unl_api_ok, unl_api = pcall(require, "UNL.api")
   if unl_api_ok then
-    -- クラスプロバイダーの登録
+    -- クラスプロバイダー (既存)
     local project_classes_provider = require("UEP.provider.class") 
     unl_api.provider.register({
       capability = "uep.get_project_classes",
@@ -18,7 +16,15 @@ M.setup = function()
       priority = 100,
     })
 
-    -- ツリープロバイダーの登録
+    -- ★追加: 継承チェーンプロバイダー (find_parentsロジックベース)
+    local inheritance_provider = require("UEP.provider.inheritance")
+    unl_api.provider.register({
+      capability = "uep.get_inheritance_chain",
+      name = "UEP.nvim",
+      impl = inheritance_provider,
+    })
+
+    -- ... (以下の既存登録はそのまま) ...
     local tree_provider = require("UEP.provider.tree")
     unl_api.provider.register({
       capability = "uep.get_pending_tree_request",
@@ -49,7 +55,6 @@ M.setup = function()
       priority = 100,
     })
 
-    -- モジュールリストプロバイダーの登録
     local modules_provider = require("UEP.provider.modules")
     unl_api.provider.register({
       capability = "uep.get_project_modules",
@@ -64,14 +69,12 @@ M.setup = function()
       impl = class_context_provider,
     })
 
-    -- ★★★ [New] Config Explorer プロバイダーの登録 ★★★
     local config_explorer_provider = require("UEP.provider.config_explorer")
     unl_api.provider.register({
       capability = "uep.get_config_tree_model",
       name = "UEP.nvim",
       impl = config_explorer_provider, 
     })
-    -- ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
     local files_provider = require("UEP.provider.files")
     unl_api.provider.register({

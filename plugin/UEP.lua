@@ -269,6 +269,22 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Create a new Unreal Engine project from a template.",
       args = {},
     },
+   ["gen_shadow"] = {
+      handler = uep_api.gen_shadow,
+      bang = true,
+      desc = "Generate compile_commands.json from existing build artifacts (Shadow RSP).",
+      args = {
+        { name = "platform", required = false }, -- 必要なら引数拡張
+      },
+    },
+    ["clean_intermediate"] = {
+      handler = uep_api.clean_intermediate,
+      bang = true, -- 確認なしで実行したい場合はbangを使うロジックを追加可能ですが、今回は安全のため必ず確認を入れています
+      desc = "Delete Intermediate folders. Scope: Project(default)|Engine|All.",
+      args = {
+        { name = "scope", required = false }, -- "project", "engine", "all"
+      },
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)
