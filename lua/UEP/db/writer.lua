@@ -55,13 +55,15 @@ local function insert_file_and_classes(insert_fn, module_id, file_path, header_d
         local class_name = cls.name or cls.class_name
         local base_class = cls.base_class or cls.super or ""
         local line_no = cls.line_number or cls.line or 1
+        local sym_type = cls.symbol_type or "class"
 
         if class_name and class_name ~= "" and type(class_name) == "string" then
           insert_fn("classes", {
             name = class_name,
             base_class = base_class,
             file_id = file_id,
-            line_number = line_no
+            line_number = line_no,
+            symbol_type = sym_type
           })
         else
           -- 無効なクラスデータをログに出力（デバッグ用）

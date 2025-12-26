@@ -106,6 +106,9 @@ function M.ensure_tables(db)
   db:eval("CREATE INDEX IF NOT EXISTS idx_classes_name ON classes(name);")
   db:eval("CREATE INDEX IF NOT EXISTS idx_classes_base_class ON classes(base_class);")
   
+  -- symbol_type カラムを追加 (class, struct, enum)
+  ensure_column(db, "classes", "symbol_type", "symbol_type TEXT DEFAULT 'class'")
+
   return true
 end
 

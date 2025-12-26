@@ -175,7 +175,7 @@ function M.get_classes_in_modules(db, module_names)
     for _ in ipairs(chunk) do table.insert(placeholders, "?") end
     
     local sql = string.format([[
-      SELECT c.name as class_name, c.base_class, c.line_number, f.path as file_path, f.filename, 'class' as symbol_type
+      SELECT c.name as class_name, c.base_class, c.line_number, f.path as file_path, f.filename, c.symbol_type
       FROM classes c
       JOIN files f ON c.file_id = f.id
       JOIN modules m ON f.module_id = m.id
