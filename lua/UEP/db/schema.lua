@@ -34,6 +34,7 @@ function M.ensure_tables(db)
   -- 既存テーブルに不足列があれば追加
   ensure_column(db, "modules", "owner_name", "owner_name TEXT")
   ensure_column(db, "modules", "component_name", "component_name TEXT")
+  ensure_column(db, "modules", "deep_dependencies", "deep_dependencies TEXT")
   
   -- 検索用インデックス (名前検索を高速化)
   db:eval("CREATE INDEX IF NOT EXISTS idx_modules_name ON modules(name);")

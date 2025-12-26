@@ -91,12 +91,18 @@ local function process_module_group(insert_fn, modules_map, group_type, scope)
     -- 1. モジュール情報をINSERT
     -- schema変更により、(name, root_path) が重複しない限り登録される
     -- 同名でもパスが違えば別IDとして登録される
+    local deep_deps_json = nil
+    if mod_data.deep_dependencies and type(mod_data.deep_dependencies) == "table" then
+        deep_deps_json = vim.json.encode(mod_data.deep_dependencies)
+    end
+
     local mod_id = insert_fn("modules", {
       name = mod_name,
       type = group_type,
       scope = scope,
       root_path = (mod_data.module_root or ""):gsub("\\", "/"),
-      build_cs_path = (mod_data.path or ""):gsub("\\", "/")
+      build_cs_path = (mod_data.path or ""):gsub("\\", "/"),
+      deep_dependencies = deep_deps_json
     })
 
     -- 2. ファイル情報をINSERT (mod_idがあれば)
@@ -298,10 +304,10 @@ function M.save_project_scan(components_data)
         row_id = rows and rows[1] and rows[1].id or nil
       end
 
-      -- modulesテーブルの場合のみ、type/scope/build_cs_path を更新（既存IDを保持したまま）
+      -- modulesテーブルの場合のみ、type/scope/build_cs_path/owner_name/component_name/deep_dependencies を更新
       if row_id and table_name == "modules" then
-        db:eval([[UPDATE modules SET type = ?, scope = ?, build_cs_path = ? WHERE id = ?]], {
-          data.type, data.scope, data.build_cs_path, row_id
+        db:eval([[UPDATE modules SET type = ?, scope = ?, build_cs_path = ?, owner_name = ?, component_name = ?, deep_dependencies = ? WHERE id = ?]], {
+          data.type, data.scope, data.build_cs_path, data.owner_name, data.component_name, data.deep_dependencies, row_id
         })
       end
 

@@ -158,4 +158,37 @@ function M.get_module_by_name(db, module_name)
   return mod_data
 end
 
+-- モジュール名リストからクラスを取得（チャンク処理付き）
+function M.get_classes_in_modules(db, module_names)
+  if not module_names or #module_names == 0 then return {} end
+  
+  local chunk_size = 900
+  local all_results = {}
+  
+  for i = 1, #module_names, chunk_size do
+    local chunk = {}
+    for j = i, math.min(i + chunk_size - 1, #module_names) do
+      table.insert(chunk, module_names[j])
+    end
+    
+    local placeholders = {}
+    for _ in ipairs(chunk) do table.insert(placeholders, "?") end
+    
+    local sql = string.format([[
+      SELECT c.name as class_name, c.base_class, c.line_number, f.path as file_path, f.filename, 'class' as symbol_type
+      FROM classes c
+      JOIN files f ON c.file_id = f.id
+      JOIN modules m ON f.module_id = m.id
+      WHERE m.name IN (%s)
+    ]], table.concat(placeholders, ","))
+    
+    local rows = db:eval(sql, chunk)
+    if rows then
+      for _, row in ipairs(rows) do table.insert(all_results, row) end
+    end
+  end
+  
+  return all_results
+end
+
 return M

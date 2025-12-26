@@ -87,6 +87,12 @@ M.get_project_maps = function(start_path, on_complete)
   end
 
   for _, row in ipairs(modules_rows) do
+    local deep_deps = nil
+    if row.deep_dependencies and row.deep_dependencies ~= "" then
+        local ok, res = pcall(vim.json.decode, row.deep_dependencies)
+        if ok then deep_deps = res end
+    end
+
     local mod_meta = {
       name = row.name,
       type = row.type,
@@ -95,6 +101,7 @@ M.get_project_maps = function(start_path, on_complete)
       path = row.build_cs_path,
       owner_name = row.owner_name,
       component_name = row.component_name,
+      deep_dependencies = deep_deps,
     }
 
     all_modules_map[row.name] = mod_meta

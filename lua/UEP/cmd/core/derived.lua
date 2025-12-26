@@ -2,9 +2,11 @@
 
 local core_utils = require("UEP.cmd.core.utils")
 -- local files_cache_manager = require("UEP.cache.files") -- 旧キャッシュ (削除)
-local module_cache = require("UEP.cache.module") -- ★ モジュールキャッシュを使用
+-- local module_cache = require("UEP.cache.module") -- ★ モジュールキャッシュを使用 (削除)
 local uep_log = require("UEP.logger")
 local fs = require("vim.fs") -- ★ fs を require (疑似モジュール用)
+local uep_db = require("UEP.db.init")
+local db_query = require("UEP.db.query")
 
 local M = {}
 
@@ -118,65 +120,34 @@ function M.get_all_classes(opts, on_complete)
       return
     end
 
-    -- STEP 3: 対象モジュールのキャッシュをロードし、シンボル情報を収集
-    local all_symbols = {}
-    local modules_processed = 0
-    -- (for ループ - 変更なし)
-    for mod_name, _ in pairs(target_module_names) do
-      local mod_meta = all_modules_map[mod_name]
-      if mod_meta then
-        local mod_cache_data = module_cache.load(mod_meta)
-        if mod_cache_data and mod_cache_data.header_details then
-          for file_path, details in pairs(mod_cache_data.header_details) do
-            if details.classes then
-              for _, symbol_info in ipairs(details.classes) do
-                table.insert(all_symbols, {
-                  display = symbol_info.class_name, class_name = symbol_info.class_name, base_class = symbol_info.base_class, file_path = file_path, filename = file_path, symbol_type = symbol_info.symbol_type or "class"
-                })
-              end
-            end
-          end
-        elseif mod_cache_data == nil then
-          log.trace("derived.get_all_classes: Module cache not found for '%s'. Skipping.", mod_name)
-        end
-        modules_processed = modules_processed + 1
-      else
-        log.warn("derived.get_all_classes: Module meta not found for '%s' during aggregation.", mod_name)
-      end
+    -- STEP 3: DBからクラス情報を取得
+    local db = uep_db.get()
+    if not db then
+        log.error("derived.get_all_classes: DB not available.")
+        if on_complete then on_complete(nil) end
+        return
     end
 
-    -- STEP 4: Full スコープの場合、疑似モジュールのシンボルも追加
-    -- (if ブロック - 変更なし)
-    if requested_scope == "full" and maps.project_root and maps.engine_root then
-      -- ▼▼▼ ここが省略されていた箇所です ▼▼▼
-      local pseudo_module_files = {
-        _EngineShaders = { root=fs.joinpath(engine_root, "Engine", "Shaders"), files={}, dirs={} },
-        _EngineConfig  = { root=fs.joinpath(engine_root, "Engine", "Config"), files={}, dirs={} },
-        _GameShaders   = { root=fs.joinpath(project_root, "Shaders"), files={}, dirs={} },
-        _GameConfig    = { root=fs.joinpath(project_root, "Config"), files={}, dirs={} },
-        -- _GameContent は除外
-      }
-      -- ▲▲▲ ここまで ▲▲▲
-      for pseudo_name, data in pairs(pseudo_module_files) do
-        local pseudo_meta = { name = pseudo_name, module_root = data.root }
-        local pseudo_cache = module_cache.load(pseudo_meta)
-        if pseudo_cache and pseudo_cache.header_details then
-          for file_path, details in pairs(pseudo_cache.header_details) do
-            if details.classes then
-              for _, symbol_info in ipairs(details.classes) do
-                table.insert(all_symbols, {
-                  display = symbol_info.class_name, class_name = symbol_info.class_name, base_class = symbol_info.base_class, file_path = file_path, filename = file_path, symbol_type = symbol_info.symbol_type or "class"
-                })
-              end
-            end
-          end
-        end
-      end
+    local target_module_list = vim.tbl_keys(target_module_names)
+    local raw_classes = db_query.get_classes_in_modules(db, target_module_list)
+    
+    local all_symbols = {}
+    for _, row in ipairs(raw_classes) do
+        table.insert(all_symbols, {
+            display = row.class_name,
+            class_name = row.class_name,
+            base_class = row.base_class,
+            file_path = row.file_path,
+            path = row.file_path, -- Telescopeプレビュー用
+            lnum = row.line_number or 1, -- Telescopeプレビュー用
+            filename = row.file_path, -- Telescopeプレビュー用 (フルパスが必要)
+            symbol_type = row.symbol_type
+        })
     end
 
     local end_time = os.clock()
-    log.info("derived.get_all_classes finished in %.4f seconds. Found %d symbols from %d modules (+ pseudo if Full).",
-      end_time - start_time, #all_symbols, modules_processed)
+    log.info("derived.get_all_classes finished in %.4f seconds. Found %d symbols from %d modules.",
+      end_time - start_time, #all_symbols, #target_module_list)
 
     -- STEP 5: ソートして完了コールバックを呼ぶ
     table.sort(all_symbols, function(a, b) local na = a.class_name or ""; local nb = b.class_name or ""; return na < nb end)
