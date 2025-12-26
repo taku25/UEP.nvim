@@ -1,11 +1,10 @@
 -- lua/UEP/cmd/core/utils.lua (カテゴリ分類を Programs 優先に戻す)
 
 local unl_finder = require("UNL.finder")
-local project_cache = require("UEP.cache.project")
-local projects_cache = require("UEP.cache.projects")
 local unl_path = require("UNL.path")
 local uep_log = require("UEP.logger")
 local fs = require("vim.fs")
+local uep_db = require("UEP.db.init")
 
 local M = {}
 
@@ -43,7 +42,7 @@ end
 
 M.get_project_maps = function(start_path, on_complete)
   local log = uep_log.get()
-  log.debug("get_project_maps called...")
+  log.debug("get_project_maps (DB) called...")
   local start_time = os.clock()
 
   local project_root = unl_finder.project.find_project_root(start_path)
@@ -52,64 +51,68 @@ M.get_project_maps = function(start_path, on_complete)
     return on_complete(false, "Could not find project root.")
   end
 
-  local project_display_name = vim.fn.fnamemodify(project_root, ":t")
-  local project_registry_info = projects_cache.get_project_info(project_display_name)
-  if not project_registry_info or not project_registry_info.components then
-    log.warn("get_project_maps: Project not found in registry.")
-    return on_complete(false, "Project not found in registry. Please run :UEP refresh.")
+  local db = uep_db.get()
+  if not db then
+    log.error("get_project_maps: Could not open DB.")
+    return on_complete(false, "DB not available.")
   end
 
+  local components = db:eval("SELECT * FROM components") or {}
+  if #components == 0 then
+    log.warn("get_project_maps: No components in DB. Run :UEP refresh.")
+    return on_complete(false, "No components in DB.")
+  end
+
+  local modules_rows = db:eval("SELECT * FROM modules") or {}
+
+  local all_components_map = {}
   local all_modules_map = {}
   local module_to_component_name = {}
-  local all_components_map = {}
-  local runtime_modules_map = {}
-  local developer_modules_map = {}
-  local editor_modules_map = {}
-  local programs_modules_map = {}
+  local runtime_modules_map, developer_modules_map, editor_modules_map, programs_modules_map = {}, {}, {}, {}
   local game_name, engine_name
 
-  local module_types_info = {
-      { key = "runtime_modules", map = runtime_modules_map, type_val = "Runtime" },
-      { key = "developer_modules", map = developer_modules_map, type_val = "Developer" },
-      { key = "editor_modules", map = editor_modules_map, type_val = "Editor" },
-      { key = "programs_modules", map = programs_modules_map, type_val = "Program" }
-  }
+  for _, comp in ipairs(components) do
+    all_components_map[comp.name] = {
+      name = comp.name,
+      display_name = comp.display_name,
+      type = comp.type,
+      owner_name = comp.owner_name,
+      root_path = comp.root_path,
+      uplugin_path = comp.uplugin_path,
+      uproject_path = comp.uproject_path,
+      engine_association = comp.engine_association,
+    }
+    if comp.type == "Game" then game_name = comp.name end
+    if comp.type == "Engine" then engine_name = comp.name end
+  end
 
-  for _, comp_name in ipairs(project_registry_info.components) do
-    local p_cache = project_cache.load(comp_name .. ".project.json")
-    if p_cache then
-      all_components_map[comp_name] = p_cache
-      if p_cache.type == "Game" then game_name = comp_name end
-      if p_cache.type == "Engine" then engine_name = comp_name end
+  for _, row in ipairs(modules_rows) do
+    local mod_meta = {
+      name = row.name,
+      type = row.type,
+      scope = row.scope,
+      module_root = row.root_path,
+      path = row.build_cs_path,
+      owner_name = row.owner_name,
+      component_name = row.component_name,
+    }
 
-      for _, type_info in ipairs(module_types_info) do 
-          local cache_key = type_info.key
-          local target_map = type_info.map
-          local default_type = type_info.type_val
+    all_modules_map[row.name] = mod_meta
+    module_to_component_name[row.name] = row.component_name
 
-          if p_cache[cache_key] then
-              for mod_name, mod_data in pairs(p_cache[cache_key]) do
-                  mod_data.type = mod_data.type or default_type
-                  all_modules_map[mod_name] = mod_data
-                  target_map[mod_name] = mod_data
-                  module_to_component_name[mod_name] = comp_name
-              end
-          end
-      end
-    else
-        log.warn("get_project_maps: Failed to load project cache for component '%s'", comp_name)
-    end
+    local t = (row.type or ""):lower()
+    if t == "program" then programs_modules_map[row.name] = mod_meta
+    elseif t == "developer" then developer_modules_map[row.name] = mod_meta
+    elseif t:find("editor", 1, true) or t == "uncookedonly" then editor_modules_map[row.name] = mod_meta
+    else runtime_modules_map[row.name] = mod_meta end
   end
 
   local end_time = os.clock()
-  log.debug("get_project_maps finished in %.4f seconds. Found %d modules across %d components.",
+  log.debug("get_project_maps finished in %.4f seconds (DB). Found %d modules across %d components.",
             end_time - start_time, vim.tbl_count(all_modules_map), vim.tbl_count(all_components_map))
 
-  local engine_root = nil
-  if project_registry_info.engine_association then
-      local engine_info = projects_cache.get_engine_info(project_registry_info.engine_association)
-      if engine_info then engine_root = engine_info.engine_root end
-  end
+  -- Engine rootは Engine コンポーネントの root_path を利用
+  local engine_root = engine_name and all_components_map[engine_name] and all_components_map[engine_name].root_path or nil
 
   on_complete(true, {
     project_root = project_root,
@@ -121,7 +124,7 @@ M.get_project_maps = function(start_path, on_complete)
     developer_modules_map = developer_modules_map,
     editor_modules_map = editor_modules_map,
     programs_modules_map = programs_modules_map,
-    project_registry_info = project_registry_info,
+    project_registry_info = nil,
     game_component_name = game_name,
     engine_component_name = engine_name,
   })

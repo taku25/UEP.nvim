@@ -102,12 +102,13 @@ local function parse_component_build_cs_async(component, build_cs_files, module_
       
       local module_name = vim.fn.fnamemodify(build_cs_path, ":t:r:r")
       local module_root = vim.fn.fnamemodify(build_cs_path, ":h")
-      local location = build_cs_path:find("/Plugins/", 1, true) and "in_plugins" or "in_source"
+      local norm_path = build_cs_path:gsub("\\", "/")
+      local location = norm_path:find("/Plugins/", 1, true) and "in_plugins" or "in_source"
       local mod_type = module_type_map[module_name]
       local type_source = "None"
       if mod_type then type_source = "Plugin/Project File"
       else
-        local lower_path = build_cs_path:lower()
+        local lower_path = norm_path:lower()
         if lower_path:find("/programs/", 1, true) then mod_type = "Program"; type_source = "Path (Programs)"
         elseif lower_path:find("/engine/source/runtime/", 1, true) then mod_type = "Runtime"; type_source = "Path (Runtime)"
         elseif lower_path:find("/engine/source/developer/", 1, true) then mod_type = "Developer"; type_source = "Path (Developer)"
@@ -430,13 +431,22 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         if full_dependency_map[module_name] then
           local mod_meta = full_dependency_map[module_name]
           local mod_type = mod_meta.type
+          local lower_root = (mod_meta.module_root or ""):gsub("\\", "/"):lower()
+          if lower_root:find("/programs/", 1, true) then
+            mod_type = "Program" -- パス優先で Program に補正
+          end
+
           if mod_type then
-            local clean_type_lower = mod_meta.type:match("^%s*(.-)%s*$"):lower()
+            local clean_type_lower = mod_type:match("^%s*(.-)%s*$"):lower()
             if clean_type_lower == "program" then programs_modules[module_name] = mod_meta
             elseif clean_type_lower == "developer" then developer_modules[module_name] = mod_meta
             elseif clean_type_lower:find("editor", 1, true) or clean_type_lower == "uncookedonly" then editor_modules[module_name] = mod_meta
             else runtime_modules[module_name] = mod_meta end
-          else runtime_modules[module_name] = mod_meta end
+            -- mod_meta.type も補正後に反映
+            mod_meta.type = (clean_type_lower == "program") and "Program" or mod_meta.type
+          else
+            runtime_modules[module_name] = mod_meta
+          end
         end
       end
 

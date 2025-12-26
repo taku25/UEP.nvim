@@ -70,7 +70,7 @@ function M.save(module_meta, data)
 
   -- SQLiteに移行のため、JSONファイル保存をスキップ
   -- SQLiteにのみデータを保存
-  db_writer.save_module_files(module_meta, data.files, data.header_details)
+  db_writer.save_module_files(module_meta, data.files, data.header_details, data.directories)
 
   -- オンメモリキャッシュ更新
   local context_key = get_context_key(module_meta)

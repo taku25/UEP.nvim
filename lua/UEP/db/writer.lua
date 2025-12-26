@@ -17,7 +17,6 @@ local function parse_path(full_path)
   return filename, ext:lower()
 end
 
----
 -- 単一のファイルパスをDBに登録し、関連するクラス情報も保存する
 local function insert_file_and_classes(insert_fn, module_id, file_path, header_details)
   if not file_path then 
@@ -96,8 +95,8 @@ local function process_module_group(insert_fn, modules_map, group_type, scope)
       name = mod_name,
       type = group_type,
       scope = scope,
-      root_path = mod_data.module_root or "",
-      build_cs_path = mod_data.path or ""
+      root_path = (mod_data.module_root or ""):gsub("\\", "/"),
+      build_cs_path = (mod_data.path or ""):gsub("\\", "/")
     })
 
     -- 2. ファイル情報をINSERT (mod_idがあれば)
@@ -155,7 +154,7 @@ end
 
 ---
 -- 単一モジュールのファイルデータをSQLiteに保存する
-function M.save_module_files(module_meta, files_data, header_details)
+function M.save_module_files(module_meta, files_data, header_details, directories_data)
   if not (module_meta and module_meta.name and module_meta.module_root) then
     uep_log.get().warn("save_module_files: Invalid module_meta")
     return
@@ -189,16 +188,42 @@ function M.save_module_files(module_meta, files_data, header_details)
         name = module_meta.name,
         type = module_meta.type or "Runtime",
         scope = module_meta.scope or "Individual", -- refresh_modulesから呼ばれる場合
-        root_path = module_meta.module_root,
-        build_cs_path = module_meta.path or ""
+        root_path = (module_meta.module_root or ""):gsub("\\", "/"),
+        build_cs_path = (module_meta.path or ""):gsub("\\", "/")
       })
       
       if module_id and files_data then
-        -- ファイルを登録
+        -- パス重複による UNIQUE(path) 衝突を避けるため、1モジュール内で重複排除してから挿入。
+        -- 既存行が他モジュールにある場合は先に DELETE してから挿入する。
+        local seen_paths = {}
         for category, file_list in pairs(files_data) do
           if type(file_list) == "table" then
             for _, file_path in ipairs(file_list) do
-              insert_file_and_classes(insert_fn_base, module_id, file_path, header_details)
+              if file_path and not seen_paths[file_path] then
+                seen_paths[file_path] = true
+                db:eval("DELETE FROM files WHERE path = ?", { file_path })
+                insert_file_and_classes(insert_fn_base, module_id, file_path, header_details)
+              end
+            end
+          end
+        end
+      end
+
+      -- ディレクトリを登録（カテゴリ保持）
+      if module_id and directories_data then
+        local seen_dirs = {}
+        for category, dir_list in pairs(directories_data) do
+          if type(dir_list) == "table" then
+            for _, dir_path in ipairs(dir_list) do
+              if dir_path and not seen_dirs[dir_path] then
+                seen_dirs[dir_path] = true
+                db:eval("DELETE FROM directories WHERE path = ? AND module_id = ?", { dir_path, module_id })
+                insert_fn_base("directories", {
+                  path = dir_path,
+                  category = category,
+                  module_id = module_id,
+                })
+              end
             end
           end
         end
@@ -246,7 +271,8 @@ function M.save_project_scan(components_data)
 
   -- トランザクション処理
   uep_db.transaction(function(db, insert_fn_base)
-    -- モジュール削除は行わず、既存データを活用する
+    -- コンポーネントは一旦全削除してから再登録（数が少なく整合性重視）
+    db:eval("DELETE FROM components;")
 
     -- INSERT OR REPLACE を使用して上書き
     local function insert_safe(table_name, data)
@@ -282,16 +308,63 @@ function M.save_project_scan(components_data)
       return row_id
     end
 
-    -- components_data をループ
-    for _, comp in pairs(components_data) do
+    -- components_data をループし、componentsテーブルとmodulesを登録
+    for comp_name, comp in pairs(components_data) do
       local scope = comp.type 
       if scope == "Project" then scope = "Game" end 
 
-      process_module_group(insert_safe, comp.runtime_modules, "Runtime", scope)
-      process_module_group(insert_safe, comp.editor_modules, "Editor", scope)
-      process_module_group(insert_safe, comp.developer_modules, "Developer", scope)
-      process_module_group(insert_safe, comp.programs_modules, "Program", scope)
+      insert_safe("components", {
+        name = comp_name,
+        display_name = comp.display_name or comp_name,
+        type = comp.type,
+        owner_name = comp.owner_name,
+        root_path = comp.root_path,
+        uplugin_path = comp.uplugin_path,
+        uproject_path = comp.uproject_path,
+        engine_association = comp.engine_association,
+      })
+
+      -- モジュール登録（component_name/owner_nameを付与）
+      local function normalized_type(t, root_path)
+        local lower_root = (root_path or ""):gsub("\\", "/"):lower()
+        if lower_root:find("/programs/", 1, true) then
+          return "Program"
+        end
+        return t
+      end
+
+      process_module_group(function(table_name, data)
+        data.component_name = comp_name
+        data.owner_name = data.owner_name or comp.owner_name
+        data.type = normalized_type("Runtime", data.module_root or data.root_path)
+        return insert_safe(table_name, data)
+      end, comp.runtime_modules, "Runtime", scope)
+
+      process_module_group(function(table_name, data)
+        data.component_name = comp_name
+        data.owner_name = data.owner_name or comp.owner_name
+        data.type = normalized_type("Editor", data.module_root or data.root_path)
+        return insert_safe(table_name, data)
+      end, comp.editor_modules, "Editor", scope)
+
+      process_module_group(function(table_name, data)
+        data.component_name = comp_name
+        data.owner_name = data.owner_name or comp.owner_name
+        data.type = normalized_type("Developer", data.module_root or data.root_path)
+        return insert_safe(table_name, data)
+      end, comp.developer_modules, "Developer", scope)
+
+      process_module_group(function(table_name, data)
+        data.component_name = comp_name
+        data.owner_name = data.owner_name or comp.owner_name
+        data.type = normalized_type("Program", data.module_root or data.root_path)
+        return insert_safe(table_name, data)
+      end, comp.programs_modules, "Program", scope)
     end
+
+    -- pathベースの最終補正: /programs/ を含むものは Program として揃える
+    -- Windowsパス(\)とUnixパス(/)の両方に対応
+    db:eval([[UPDATE modules SET type = 'Program' WHERE lower(root_path) LIKE '%/programs/%' OR lower(root_path) LIKE '%\programs\%']])
   end)
 
   local ms = (vim.loop.hrtime() - start_t) / 1e6

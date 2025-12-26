@@ -62,9 +62,9 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
 
   -- ... (PSEUDO_MODULES の構築) ...
   local PSEUDO_MODULES = {}
-  PSEUDO_MODULES["_EngineConfig"] = { name = "_EngineConfig", root = fs.joinpath(engine_root, "Engine", "Config") }
-  PSEUDO_MODULES["_EngineShaders"] = { name = "_EngineShaders", root = fs.joinpath(engine_root, "Engine", "Shaders") }
-  PSEUDO_MODULES["_EnginePrograms"] = { name = "_EnginePrograms", root = fs.joinpath(engine_root, "Engine", "Source", "Programs") }
+  PSEUDO_MODULES["_EngineConfig"] = { name = "_EngineConfig", root = fs.joinpath(engine_root, "Engine", "Config"), type = "Config" }
+  PSEUDO_MODULES["_EngineShaders"] = { name = "_EngineShaders", root = fs.joinpath(engine_root, "Engine", "Shaders"), type = "Shader" }
+  PSEUDO_MODULES["_EnginePrograms"] = { name = "_EnginePrograms", root = fs.joinpath(engine_root, "Engine", "Source", "Programs"), type = "Program" }
   
   for comp_name_hash, comp_meta in pairs(all_components_map) do
     if comp_meta.type == "Game" or comp_meta.type == "Plugin" then
