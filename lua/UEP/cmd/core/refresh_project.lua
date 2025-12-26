@@ -14,6 +14,9 @@ local uep_config = require("UEP.config")
 local module_cache = require("UEP.cache.module")
 local refresh_modules_core = require("UEP.cmd.core.refresh_modules")
 local refresh_target_core = require("UEP.cmd.core.refresh_target")
+local db_writer = require("UEP.db.writer")
+local uep_db = require("UEP.db.init")
+local db_writer = require("UEP.db.writer")
 
 local M = {}
 
@@ -356,6 +359,21 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       _module_type_map,
       _uproject_mtime
   )
+    local function db_counts()
+      local db = uep_db.get()
+      if not db then return 0, 0 end
+      local m = db:eval("SELECT count(*) as c FROM modules")
+      local f = db:eval("SELECT count(*) as c FROM files")
+      return (m and m[1] and m[1].c or 0), (f and f[1] and f[1].c or 0)
+    end
+
+    local modules_before, files_before = db_counts()
+    local need_full_scan = (modules_before < 50 or files_before < 100)
+    if need_full_scan and not (refresh_opts.bang or refresh_opts.force) then
+      log.info("Existing DB is small (modules=%d, files=%d). Forcing Full scope rescan once.", modules_before, files_before)
+      refresh_opts.force = true
+      refresh_opts.scope = "Full"
+    end
     -- (この関数の内容は 300 行以上あり、変更はありません)
     -- (... 依存関係解決、キャッシュ保存、モジュールスキャン実行 ...)
     
@@ -451,7 +469,8 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
 
       if has_changed then
         log.trace("Updating project cache for component: %s (gen: %s)", component.display_name, new_generation:sub(1,8))
-        project_cache.save(cache_filename, new_data)
+        -- SQLiteに直接保存するため、個別のproject_cache.saveは不要
+        -- project_cache.save(cache_filename, new_data)
         table.insert(result_data.changed_components, new_data)
       end
       result_data.all_data[component.name] = has_changed and new_data or old_data
@@ -468,8 +487,8 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
                 result_data.all_data[component.name] = old_data
                 progress:stage_update("save_components", current_progress_count, ("Loaded cache: %s [%d/%d]"):format(component.display_name, current_progress_count, #_all_components))
             else
-                log.warn("resolve_and_save_all: Cache missing for out-of-scope component '%s'. This component's modules will be ignored.", component.display_name)
-                progress:stage_update("save_components", current_progress_count, ("Cache missing: %s [%d/%d]"):format(component.display_name, current_progress_count, #_all_components))
+                log.debug("resolve_and_save_all: No cache data found for out-of-scope component '%s'. Will be processed on next full refresh.", component.display_name)
+                progress:stage_update("save_components", current_progress_count, ("No cache: %s [%d/%d]"):format(component.display_name, current_progress_count, #_all_components))
             end
         end
     end
@@ -539,11 +558,27 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         game_root, engine_root,
         function(files_ok)
             if not files_ok then log.error("Module file cache generation failed.") end
+            
+            -- SQLiteに変更されたコンポーネントのデータを一括保存
+            if #result_data.changed_components > 0 then
+              log.info("Saving %d changed component(s) to SQLite database...", #result_data.changed_components)
+              db_writer.save_project_scan(result_data.all_data)
+              log.info("SQLite database update completed.")
+            end
+            
             on_done(files_ok, result_data) 
         end
       )
     else
       log.info("Project structure is up-to-date and all module caches exist. Nothing to refresh.")
+      
+      -- SQLiteに変更されたコンポーネントのデータを一括保存
+      if #result_data.changed_components > 0 then
+        log.info("Saving %d changed component(s) to SQLite database...", #result_data.changed_components)
+        db_writer.save_project_scan(result_data.all_data)
+        log.info("SQLite database update completed.")
+      end
+      
       on_done(true, result_data)
     end
   end -- resolve_and_save_all 終わり

@@ -6,6 +6,7 @@ local uep_log = require("UEP.logger")
 local fs = require("vim.fs")
 local unl_path = require("UNL.path")
 local uep_context = require("UEP.context")
+local db_writer = require("UEP.db.writer")
 
 local M = {}
 
@@ -55,43 +56,21 @@ function M.save(module_meta, data)
   end
   -- ▲▲▲ ここまで ▲▲▲
 
-  local path = get_cache_path(module_meta)
-  if not path then
-    log.error("module_cache.save: FAILED for '%s' - Could not get cache path.", module_name) -- ★ エラーログは常に出力
-    return false
+  -- ヘッダ詳細に何件のクラスがあるかを記録
+  local hdr_count, cls_count = 0, 0
+  if data.header_details then
+    for _, info in pairs(data.header_details) do
+      hdr_count = hdr_count + 1
+      if info.classes then cls_count = cls_count + #info.classes end
+    end
   end
-  -- ▼▼▼ Engine モジュールの場合のみ trace ログを出力 ▼▼▼
-  if is_engine_module then
-    log.trace("module_cache.save: Determined cache path for '%s': %s", module_name, path)
+  if hdr_count > 0 then
+    log.debug("module_cache.save: header_details=%d, classes=%d for '%s'", hdr_count, cls_count, module_name)
   end
-  -- ▲▲▲ ここまで ▲▲▲
 
-  -- データ準備
-  data.magic_code = MAGIC_CODE
-  data.version = CACHE_VERSION
-  -- ▼▼▼ Engine モジュールの場合のみ trace ログを出力 ▼▼▼
-  if is_engine_module then
-    log.trace("module_cache.save: Prepared data structure for '%s'", module_name)
-  end
-  -- ▲▲▲ ここまで ▲▲▲
-
-  -- save_json を pcall でラップ
-  -- ▼▼▼ Engine モジュールの場合のみ trace ログを出力 ▼▼▼
-  if is_engine_module then
-    log.trace("module_cache.save: Calling unl_cache_core.save_json for '%s'...", module_name)
-  end
-  -- ▲▲▲ ここまで ▲▲▲
-  local save_ok, save_err = pcall(unl_cache_core.save_json, path, data)
-
-  if not save_ok then
-    log.error("module_cache.save: unl_cache_core.save_json FAILED for '%s' at path %s: %s", module_name, path, tostring(save_err)) -- ★ エラーログは常に出力
-    return false
-  end
-  -- ▼▼▼ Engine モジュールの場合のみ trace ログを出力 ▼▼▼
-  if is_engine_module then
-    log.trace("module_cache.save: unl_cache_core.save_json SUCCEEDED for '%s'", module_name)
-  end
-  -- ▲▲▲ ここまで ▲▲▲
+  -- SQLiteに移行のため、JSONファイル保存をスキップ
+  -- SQLiteにのみデータを保存
+  db_writer.save_module_files(module_meta, data.files, data.header_details)
 
   -- オンメモリキャッシュ更新
   local context_key = get_context_key(module_meta)
