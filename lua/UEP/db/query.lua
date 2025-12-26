@@ -271,4 +271,36 @@ function M.find_symbol_in_module(db, module_name, symbol_name)
   return nil
 end
 
+-- クラス名でクラス情報を検索 (完全一致)
+function M.find_class_by_name(db, class_name)
+  local sql = [[
+    SELECT c.name as class_name, c.base_class, c.line_number, f.path as file_path, f.filename, c.symbol_type, m.name as module_name, m.root_path as module_root
+    FROM classes c
+    JOIN files f ON c.file_id = f.id
+    JOIN modules m ON f.module_id = m.id
+    WHERE c.name = ?
+    LIMIT 1
+  ]]
+  local rows = db:eval(sql, { class_name })
+  if rows and #rows > 0 then
+    return rows[1]
+  end
+  return nil
+end
+
+-- パスの一部でファイルを検索 (open_file フォールバック用)
+function M.search_files_by_path_part(db, partial_path)
+  -- partial_path は / 区切りであることを想定
+  -- SQLite の LIKE は大文字小文字を区別しない (デフォルト設定の場合)
+  local sql = [[
+    SELECT f.path, f.filename, m.root_path as module_root
+    FROM files f
+    JOIN modules m ON f.module_id = m.id
+    WHERE f.path LIKE ?
+    LIMIT 50
+  ]]
+  -- パスのどこかに含まれるか
+  return db:eval(sql, { "%" .. partial_path .. "%" })
+end
+
 return M

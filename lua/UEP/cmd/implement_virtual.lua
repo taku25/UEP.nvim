@@ -1,7 +1,6 @@
--- lua/UEP/cmd/implement_virtual.lu-- lua/UEP/cmd/implement_virtual.lua
+-- lua/UEP/cmd/implement_virtual.lua
 local uep_log = require("UEP.logger")
 local derived_core = require("UEP.cmd.core.derived")
-local parents_core = require("UEP.cmd.core.parents")
 local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
 
@@ -123,16 +122,9 @@ function M.execute(opts)
     
     log.info("Context: Class '%s' (Base: %s)", current_class_name, tostring(current_class_info.base_class))
 
-    -- 3. 全クラス情報を取得
-    derived_core.get_all_classes({ scope = "Full" }, function(all_symbols)
-        if not all_symbols or #all_symbols == 0 then
-             log.warn("No class info found in cache. Please run :UEP refresh.")
-             return
-        end
-
-        -- 4. 継承チェーンを取得
-        local parents_chain = parents_core.get_inheritance_chain(current_class_name, all_symbols)
-        
+    -- 3. 継承チェーンを取得 (DB CTE)
+    derived_core.get_inheritance_chain(current_class_name, { scope = "Full" }, function(parents_chain)
+        if not parents_chain then return log.error("Failed to get inheritance chain.") end
         if #parents_chain == 0 then
             log.warn("No parent classes found for '%s' in cache.", current_class_name)
             return

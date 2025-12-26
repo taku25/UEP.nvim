@@ -1,7 +1,6 @@
 -- lua/UEP/cmd/find_parents.lua (完成版)
 
 local derived_core = require("UEP.cmd.core.derived")
--- local parents_core = require("UEP.cmd.core.parents") -- Unused
 local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
 local unl_buf_open = require("UNL.buf.open")

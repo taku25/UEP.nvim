@@ -1,5 +1,4 @@
 local derived_core = require("UEP.cmd.core.derived")
-local parents_core = require("UEP.cmd.core.parents")
 local uep_log = require("UEP.logger").get()
 
 local M = {}
@@ -18,65 +17,52 @@ function M.request(opts)
 
     uep_log.debug("Provider 'uep.get_inheritance_chain' called for: %s", class_name)
 
-    -- 1. 全クラス情報を取得 (find_parents と同じ opts={scope="Full"} )
-    derived_core.get_all_classes({ scope = "Full", deps_flag = "--deep-deps" }, function(all_classes)
-        if not all_classes then
-            uep_log.warn("Could not retrieve class info. Cache might be empty.")
-            on_complete(false, nil)
-            return
-        end
+    -- 1. 継承チェーンを取得 (DB CTE)
+    local function try_get_chain(name, callback)
+        derived_core.get_inheritance_chain(name, { scope = "Full" }, callback)
+    end
 
-        -- 2. ターゲットクラス自身の情報を特定
-        local target_info = nil
-        for _, info in ipairs(all_classes) do
-            if info.class_name == class_name then
-                target_info = info
-                break
+    try_get_chain(class_name, function(chain)
+        if chain and #chain > 0 then
+            -- Found exact match
+            local target_info = chain[1]
+            local parents = {}
+            for i = 2, #chain do 
+                table.insert(parents, { name = chain[i].class_name, header = chain[i].file_path }) 
             end
-        end
-
-        -- ヒットしなければプレフィックス付き (ACharacter, UObject etc) も試す
-        if not target_info then
-            local prefixes = { "U", "A", "F", "E", "I", "S" }
-            for _, prefix in ipairs(prefixes) do
-                local candidate = prefix .. class_name
-                for _, info in ipairs(all_classes) do
-                    if info.class_name == candidate then
-                        target_info = info
-                        break
-                    end
-                end
-                if target_info then break end
-            end
-        end
-
-        if not target_info then
-            uep_log.warn("Class '%s' not found in project cache.", class_name)
-            on_complete(false, nil)
-            return
-        end
-
-        -- 3. 継承チェーンを取得 (find_parents と同じコアロジック)
-        local chain = parents_core.get_inheritance_chain(target_info.class_name, all_classes)
-
-        -- 4. UNXのパーサーが期待する形式 ({ current=..., parents={...} }) に整形
-        local result = {
-            current = {
-                name = target_info.class_name,
-                header = target_info.file_path,
-            },
-            parents = {}
-        }
-
-        for _, parent_info in ipairs(chain) do
-            table.insert(result.parents, {
-                name = parent_info.class_name,
-                header = parent_info.file_path,
+            on_complete(true, { 
+                current = { name = target_info.class_name, header = target_info.file_path },
+                parents = parents 
             })
+            return
         end
 
-        uep_log.info("Inheritance resolved for %s. Found %d parents.", target_info.class_name, #result.parents)
-        on_complete(true, result)
+        -- 2. プレフィックス付きを試す
+        local prefixes = { "U", "A", "F", "E", "I", "S" }
+        local function try_next_prefix(idx)
+            if idx > #prefixes then
+                uep_log.warn("Class '%s' (and variants) not found in cache.", class_name)
+                on_complete(false, nil)
+                return
+            end
+            local candidate = prefixes[idx] .. class_name
+            try_get_chain(candidate, function(chain2)
+                if chain2 and #chain2 > 0 then
+                    local target_info = chain2[1]
+                    local parents = {}
+                    for i = 2, #chain2 do 
+                        table.insert(parents, { name = chain2[i].class_name, header = chain2[i].file_path }) 
+                    end
+                    on_complete(true, { 
+                        current = { name = target_info.class_name, header = target_info.file_path },
+                        parents = parents 
+                    })
+                    return
+                end
+                try_next_prefix(idx + 1)
+            end)
+        end
+        try_next_prefix(1)
     end)
 end
 

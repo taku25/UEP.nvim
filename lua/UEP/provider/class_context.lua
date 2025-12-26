@@ -1,8 +1,7 @@
 -- lua/UEP/provider/class_context.lua
-local parents_core = require("UEP.cmd.core.parents")
+local derived_core = require("UEP.cmd.core.derived")
 local uep_log = require("UEP.logger").get()
 local unl_api = require("UNL.api")
-local class_provider = require("UEP.provider.class")
 
 local M = {}
 
@@ -16,61 +15,6 @@ local function process_request_async(opts, on_complete)
     
     uep_log.debug("Provider 'uep.get_class_context' (Async) called for: %s", raw_class_name)
 
-    -- 1. 全クラス情報を取得 (確実に動く以前のロジックを採用)
-    -- (内部でキャッシュのロードやマージが行われるため、少し重いが確実)
-    local header_details_map = class_provider.request({
-        scope = "Full", 
-        deps_flag = "--deep-deps",
-        project_root = opts.project_root
-    })
-
-    if not header_details_map then 
-        uep_log.warn("Could not retrieve project classes. Run :UEP refresh.")
-        on_complete(false, "No header details found")
-        return 
-    end
-
-    -- 2. 検索用にリスト化 & マップ化
-    local all_classes_list = {}
-    local target_class_info = nil
-    local class_map = {}
-
-    for file_path, details in pairs(header_details_map) do
-        if details.classes then
-            for _, cls in ipairs(details.classes) do
-                cls.file_path = file_path
-                table.insert(all_classes_list, cls)
-                class_map[cls.class_name] = cls
-
-                if cls.class_name == raw_class_name then
-                    target_class_info = cls
-                end
-            end
-        end
-    end
-
-    -- 3. プレフィックス対応 (MyActor -> AMyActor)
-    if not target_class_info then
-        local prefixes = { "U", "A", "F", "E", "I", "S" }
-        for _, prefix in ipairs(prefixes) do
-            local candidate = prefix .. raw_class_name
-            if class_map[candidate] then
-                target_class_info = class_map[candidate]
-                uep_log.debug("Resolved class name '%s' -> '%s'", raw_class_name, candidate)
-                break
-            end
-        end
-    end
-
-    if not target_class_info then 
-        uep_log.debug("Class '%s' not found in project.", raw_class_name)
-        on_complete(false, "Class not found")
-        return 
-    end
-
-    -- 4. 継承チェーン取得
-    local parents = parents_core.get_inheritance_chain(target_class_info.class_name, all_classes_list)
-    
     -- ヘルパー: .h / .cpp 解決
     local function resolve_paths(info)
         local header_path = info.file_path
@@ -87,17 +31,52 @@ local function process_request_async(opts, on_complete)
         return { name = info.class_name, header = header_path, cpp = cpp_path }
     end
 
-    local result = {
-        current = resolve_paths(target_class_info),
-        parents = {}
-    }
+    -- ヘルパー: チェーン処理
+    local function process_chain(chain)
+        local target_info = chain[1]
+        local result = {
+            current = resolve_paths(target_info),
+            parents = {}
+        }
 
-    for _, parent_info in ipairs(parents) do
-        table.insert(result.parents, resolve_paths(parent_info))
+        for i = 2, #chain do
+            table.insert(result.parents, resolve_paths(chain[i]))
+        end
+
+        on_complete(true, result)
     end
 
-    -- 成功通知
-    on_complete(true, result)
+    -- 1. 継承チェーンを取得 (DB CTE)
+    local function try_get_chain(name, callback)
+        derived_core.get_inheritance_chain(name, { scope = "Full" }, callback)
+    end
+
+    try_get_chain(raw_class_name, function(chain)
+        if chain and #chain > 0 then
+            process_chain(chain)
+            return
+        end
+
+        -- 2. プレフィックス対応
+        local prefixes = { "U", "A", "F", "E", "I", "S" }
+        local function try_next_prefix(idx)
+            if idx > #prefixes then
+                uep_log.debug("Class '%s' not found in project.", raw_class_name)
+                on_complete(false, "Class not found")
+                return
+            end
+            local candidate = prefixes[idx] .. raw_class_name
+            try_get_chain(candidate, function(chain2)
+                if chain2 and #chain2 > 0 then
+                    uep_log.debug("Resolved class name '%s' -> '%s'", raw_class_name, candidate)
+                    process_chain(chain2)
+                    return
+                end
+                try_next_prefix(idx + 1)
+            end)
+        end
+        try_next_prefix(1)
+    end)
 end
 
 function M.request(opts)
