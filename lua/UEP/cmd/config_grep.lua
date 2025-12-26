@@ -12,7 +12,6 @@ function M.execute(opts)
   local log = uep_log.get()
   opts = opts or {}
 
-  -- (スコープ解析ロジックは grep.lua と同じ - 変更なし)
   local requested_scope = "runtime"
   local valid_scopes = { game=true, engine=true, runtime=true, developer=true, editor=true, full=true }
   if opts.scope then
@@ -25,7 +24,6 @@ function M.execute(opts)
   end
   log.info("Executing :UEP config_grep with scope=%s", requested_scope)
 
-  -- (検索パスの決定ロジック - ほぼ同じ)
   core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
     if not ok then
       log.error("config_grep: Failed to get project maps: %s", tostring(maps))
@@ -35,61 +33,69 @@ function M.execute(opts)
     local search_paths = {}
     local project_root = maps.project_root
     local engine_root = maps.engine_root
+    local all_components = maps.all_components_map or {}
+    local game_name = maps.game_component_name
+    local engine_name = maps.engine_component_name
 
-    if not project_root then
-        return log.error("config_grep: Project root not found in maps.")
+    -- Helper to add Config dir if exists
+    local function add_config_dir(root_path, sub_path)
+        local p = sub_path and fs.joinpath(root_path, sub_path, "Config") or fs.joinpath(root_path, "Config")
+        if vim.fn.isdirectory(p) == 1 then
+            table.insert(search_paths, p)
+        end
     end
 
-    -- ▼▼▼ [修正箇所 1] ▼▼▼
-    -- 検索するサブディレクトリを "Config" のみに限定する
-    local function add_standard_dirs(root)
-        local base = (root == engine_root) and fs.joinpath(engine_root, "Engine") or project_root
-        
-        -- ★ "Source", "Plugins" などを削除し、"Config" のみに！
-        local subdirs = {"Config"} 
-        
-        for _, subdir in ipairs(subdirs) do
-            local path = fs.joinpath(base, subdir)
-            if vim.fn.isdirectory(path) == 1 then
-                table.insert(search_paths, path)
+    -- 1. Project Config
+    if requested_scope == "game" or requested_scope == "full" or requested_scope == "runtime" or requested_scope == "developer" or requested_scope == "editor" then
+        if project_root then add_config_dir(project_root) end
+    end
+
+    -- 2. Engine Config
+    if requested_scope == "engine" or requested_scope == "full" or requested_scope == "runtime" or requested_scope == "developer" or requested_scope == "editor" then
+        if engine_root then add_config_dir(engine_root, "Engine") end
+    end
+
+    -- 3. Plugin Configs
+    for _, comp in pairs(all_components) do
+        if comp.type == "Plugin" and comp.root_path then
+            local should_add = false
+            
+            -- Determine if we should include this plugin based on scope
+            if requested_scope == "full" or requested_scope == "runtime" or requested_scope == "developer" or requested_scope == "editor" then
+                should_add = true
+            elseif requested_scope == "game" then
+                should_add = (comp.owner_name == game_name)
+            elseif requested_scope == "engine" then
+                should_add = (comp.owner_name == engine_name)
+            end
+
+            if should_add then
+                add_config_dir(comp.root_path)
             end
         end
     end
-    -- ▲▲▲ 修正完了 1 ▲▲▲
 
-    -- (スコープ別のパス追加ロジック - 変更なし)
-    if requested_scope == "game" then
-      add_standard_dirs(project_root)
-    elseif requested_scope == "engine" then
-      if engine_root then add_standard_dirs(engine_root)
-      else log.warn("config_grep: Engine root not found for Engine scope.") end
-    elseif requested_scope == "full" or requested_scope == "runtime" or requested_scope == "developer" or requested_scope == "editor" then
-       -- .ini ファイルはスコープに関わらず Game/Engine 両方探すのが親切
-       add_standard_dirs(project_root)
-       if engine_root then add_standard_dirs(engine_root)
-       else log.warn("config_grep: Engine root not found.") end
+    -- Remove duplicates
+    local seen = {}
+    local unique_paths = {}
+    for _, path in ipairs(search_paths) do
+        if not seen[path] then
+            table.insert(unique_paths, path)
+            seen[path] = true
+        end
     end
-
-    -- (重複削除ロジック - 変更なし)
-    local seen = {}; local unique_paths = {}
-    for _, path in ipairs(search_paths) do if not seen[path] then table.insert(unique_paths, path); seen[path] = true end end
     search_paths = unique_paths
 
     if #search_paths == 0 then
         return log.warn("config_grep: No valid 'Config' directories found for scope '%s'.", requested_scope)
     end
 
-    -- ▼▼▼ [修正箇所 2] ▼▼▼
-    -- grep_core を呼び出す際に、拡張子を上書きする
     grep_core.start_live_grep({
       search_paths = search_paths,
       title = string.format("Live Grep Config (%s)", requested_scope:gsub("^%l", string.upper)),
       initial_query = "",
-      
-      -- ★ 拡張子を "ini" のみに限定する
       include_extensions = { "ini" }, 
     })
-    -- ▲▲▲ 修正完了 2 ▲▲▲
   end)
 end
 
