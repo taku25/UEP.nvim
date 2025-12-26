@@ -232,4 +232,43 @@ function M.get_recursive_parent_classes(db, child_class_name)
   return db:eval(sql, { child_class_name })
 end
 
+-- プログラムモジュールのファイルを取得
+function M.get_program_files(db)
+  local sql = [[
+    SELECT f.path, m.name as module_name, m.root_path as module_root
+    FROM files f
+    JOIN modules m ON f.module_id = m.id
+    WHERE m.type = 'Program'
+  ]]
+  return db:eval(sql)
+end
+
+-- 全てのINIファイルを取得 (モジュール内)
+function M.get_all_ini_files(db)
+  local sql = [[
+    SELECT f.path, m.name as module_name, m.root_path as module_root
+    FROM files f
+    JOIN modules m ON f.module_id = m.id
+    WHERE f.extension = 'ini'
+  ]]
+  return db:eval(sql)
+end
+
+-- 特定のモジュール内でシンボルを検索
+function M.find_symbol_in_module(db, module_name, symbol_name)
+  local sql = [[
+    SELECT f.path as file_path, c.line_number
+    FROM classes c
+    JOIN files f ON c.file_id = f.id
+    JOIN modules m ON f.module_id = m.id
+    WHERE m.name = ? AND c.name = ?
+    LIMIT 1
+  ]]
+  local rows = db:eval(sql, { module_name, symbol_name })
+  if rows and #rows > 0 then
+    return rows[1]
+  end
+  return nil
+end
+
 return M

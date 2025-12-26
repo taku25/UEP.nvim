@@ -137,7 +137,7 @@ function M.execute(opts)
 
   -- 1. スコープをパース (デフォルト: runtime)
   local requested_scope = "runtime"
-  local valid_scopes = { game=true, engine=true, runtime=true, developer=true, editor=true, full=true, programs=true }
+  local valid_scopes = { game=true, engine=true, runtime=true, developer=true, editor=true, full=true, programs=true, config=true }
   if opts.scope then
       local scope_lower = opts.scope:lower()
       if valid_scopes[scope_lower] then

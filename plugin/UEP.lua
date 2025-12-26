@@ -80,7 +80,7 @@ local command_spec = { -- line 10: 開始の '{'
     grep = {
       handler = uep_api.grep,
       bang = true,
-      desc = "Live grep files. Scope: Game|Engine|Runtime(default)|Developer|Editor|Full.",
+      desc = "Live grep files. Scope: Game|Engine|Runtime(default)|Developer|Editor|Full|Programs|Config.",
       args = {
         { name = "scope", required = false },
       },
@@ -92,21 +92,6 @@ local command_spec = { -- line 10: 開始の '{'
       args = {
         { name = "module_name", required = false },
       },
-    },
-    program_grep = {
-      handler = uep_api.program_grep,
-      desc = "Live grep within all Program modules.",
-      args = {},
-    },
-    program_files = {
-      handler = uep_api.program_files,
-      desc = "Find all files in Program modules.",
-      args = {},
-    },
-    config_files = {
-      handler = uep_api.config_files,
-      desc = "Find all config files (.ini) in the project.",
-      args = {},
     },
     find_derived = {
       handler = uep_api.find_derived,
@@ -185,14 +170,6 @@ local command_spec = { -- line 10: 開始の '{'
       args = {
         { name = "scope", required = false },
         { name = "deps_flag", required = false },
-      },
-    },
-    config_grep = {
-      handler = uep_api.config_grep,
-      bang = true,
-      desc = "Live grep .ini files. Scope: Game|Engine|Full.",
-      args = {
-        { name = "scope", required = false },
       },
     },
     ["system_open"] = {

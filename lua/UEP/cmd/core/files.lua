@@ -138,6 +138,11 @@ function M.get_files(opts, on_complete)
           seed_modules[n] = true
         end
       end
+    elseif requested_scope == "config" then
+      -- Config scope: Include ALL modules to scan for .ini files later
+      for n, m in pairs(all_modules_map) do
+          seed_modules[n] = true
+      end
     elseif requested_scope == "editor" then
       for n, m in pairs(all_modules_map) do
         if m.type and m.type ~= "Program" then
@@ -228,7 +233,12 @@ function M.get_files(opts, on_complete)
 
         if files_from_db then
           for category, files in pairs(files_from_db) do
-            if allow_programs_category or category ~= "programs" then
+            -- Configスコープの場合はConfigファイルのみ、それ以外はConfig以外（または全部）
+            local should_include = true
+            if requested_scope == "config" and category ~= "config" then should_include = false end
+            if not allow_programs_category and category == "programs" then should_include = false end
+
+            if should_include then
               for _, file_path in ipairs(files) do
                 table.insert(merged_files_with_context, {
                   file_path = file_path, module_name = mod_name, module_root = mod_meta.module_root, category = category
@@ -304,7 +314,14 @@ function M.get_files(opts, on_complete)
             if pseudo_files then
               for category, files in pairs(pseudo_files) do
                 local allow_programs = (requested_scope == "programs" or requested_scope == "full")
-                if category ~= "programs" or allow_programs then
+                local allow_config = (requested_scope == "config" or requested_scope == "full")
+                
+                -- Filter logic
+                local should_include = true
+                if category == "programs" and not allow_programs then should_include = false end
+                if requested_scope == "config" and category ~= "config" then should_include = false end
+
+                if should_include then
                   for _, file_path in ipairs(files) do
                     table.insert(merged_files_with_context, {
                       file_path = file_path, module_name = pseudo_name, module_root = data.root, category = category

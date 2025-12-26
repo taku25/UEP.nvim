@@ -15,7 +15,7 @@ function M.execute(opts)
 
   -- ▼▼▼ Parse new scope argument (Default: runtime) ▼▼▼
   local requested_scope = "runtime"
-  local valid_scopes = { game=true, engine=true, runtime=true, developer=true, editor=true, full=true }
+  local valid_scopes = { game=true, engine=true, runtime=true, developer=true, editor=true, full=true, programs=true, config=true }
   if opts.scope then
       local scope_lower = opts.scope:lower()
       if valid_scopes[scope_lower] then
@@ -43,17 +43,6 @@ function M.execute(opts)
         return log.error("grep: Project root not found in maps.")
     end
 
-    -- Helper to add existing directories under a root path
-    local function add_pseudo_dirs(root, subdirs)
-        local base = (root == engine_root) and fs.joinpath(engine_root, "Engine") or project_root
-        for _, subdir in ipairs(subdirs) do
-            local path = fs.joinpath(base, subdir)
-            if vim.fn.isdirectory(path) == 1 then
-                table.insert(search_paths, path)
-            end
-        end
-    end
-
     -- 1. Add Module Roots based on Scope
     local all_modules = maps.all_modules_map
     local all_components = maps.all_components_map or {}
@@ -75,6 +64,10 @@ function M.execute(opts)
                 local ct = mod_meta.type:match("^%s*(.-)%s*$"):lower()
                 should_add = (ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly")
             end
+        elseif requested_scope == "programs" then
+            should_add = (mod_meta.type == "Program")
+        elseif requested_scope == "config" then
+            should_add = false
         elseif requested_scope == "full" then
             should_add = true
         end
@@ -84,28 +77,34 @@ function M.execute(opts)
         end
     end
 
-    -- 2. Add Pseudo-Module Roots (Config, Shaders)
-    -- Helper to add dirs
-    local function add_dirs(root, subdirs)
-        for _, subdir in ipairs(subdirs) do
-            local path = fs.joinpath(root, subdir)
-            if vim.fn.isdirectory(path) == 1 then
-                table.insert(search_paths, path)
-            end
+    -- 2. Add Pseudo-Module Roots (Config, Shaders, Programs)
+    local function add_dir_if_exists(path)
+        if vim.fn.isdirectory(path) == 1 then
+            table.insert(search_paths, path)
         end
     end
 
-    -- Collect roots to check for Config/Shaders
-    local roots_to_check = {}
+    -- Define what to look for based on scope
+    local target_dirs = {} 
+    if requested_scope == "config" then
+        table.insert(target_dirs, "Config")
+    elseif requested_scope == "programs" then
+        -- Programs are handled specially below
+    else
+        table.insert(target_dirs, "Config")
+        table.insert(target_dirs, "Shaders")
+    end
+
+    -- Collect roots
+    local roots = {}
+    -- Project
+    if requested_scope == "game" or requested_scope == "full" or requested_scope == "runtime" or requested_scope == "developer" or requested_scope == "editor" or requested_scope == "config" or requested_scope == "programs" then
+        table.insert(roots, { path = project_root, is_engine = false })
+    end
     
-    -- Project & Engine
-    if requested_scope == "game" then
-        table.insert(roots_to_check, project_root)
-    elseif requested_scope == "engine" then
-        if engine_root then table.insert(roots_to_check, fs.joinpath(engine_root, "Engine")) end
-    else -- full, runtime, developer, editor
-        table.insert(roots_to_check, project_root)
-        if engine_root then table.insert(roots_to_check, fs.joinpath(engine_root, "Engine")) end
+    -- Engine
+    if engine_root and (requested_scope == "engine" or requested_scope == "full" or requested_scope == "runtime" or requested_scope == "developer" or requested_scope == "editor" or requested_scope == "config" or requested_scope == "programs") then
+        table.insert(roots, { path = fs.joinpath(engine_root, "Engine"), is_engine = true })
     end
 
     -- Plugins
@@ -114,16 +113,29 @@ function M.execute(opts)
              local should_add = false
              if requested_scope == "game" then should_add = (comp.owner_name == game_name)
              elseif requested_scope == "engine" then should_add = (comp.owner_name == engine_name)
+             elseif requested_scope == "programs" or requested_scope == "config" or requested_scope == "full" then should_add = true
              else should_add = true end 
              
              if should_add then
-                 table.insert(roots_to_check, comp.root_path)
+                 table.insert(roots, { path = comp.root_path, is_engine = false })
              end
         end
     end
 
-    for _, root in ipairs(roots_to_check) do
-        add_dirs(root, {"Config", "Shaders"})
+    for _, root_info in ipairs(roots) do
+        -- Add standard targets (Config, Shaders)
+        for _, subdir in ipairs(target_dirs) do
+            add_dir_if_exists(fs.joinpath(root_info.path, subdir))
+        end
+
+        -- Special handling for Programs
+        if requested_scope == "programs" then
+            if root_info.is_engine then
+                add_dir_if_exists(fs.joinpath(root_info.path, "Source", "Programs"))
+            else
+                add_dir_if_exists(fs.joinpath(root_info.path, "Programs"))
+            end
+        end
     end
 
     -- Remove duplicates (though unlikely with this approach)
