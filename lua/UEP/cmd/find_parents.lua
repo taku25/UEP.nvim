@@ -1,7 +1,7 @@
 -- lua/UEP/cmd/find_parents.lua (完成版)
 
 local derived_core = require("UEP.cmd.core.derived")
-local parents_core = require("UEP.cmd.core.parents")
+-- local parents_core = require("UEP.cmd.core.parents") -- Unused
 local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
 local unl_buf_open = require("UNL.buf.open")
@@ -13,14 +13,8 @@ local M = {}
 -- 指定されたクラスの継承チェーンを検索し、結果をPickerで表示するヘルパー関数
 -- @param child_class_name string 起点となるクラスの名前
 local function find_and_show_parents(child_class_name)
-  -- 継承チェーンの検索には全クラスの情報が必要
-  derived_core.get_all_classes({},function(all_classes)
-    if not all_classes then
-      return log.get().error("Could not retrieve class information for parent search.")
-    end
-
-    local chain = parents_core.get_inheritance_chain(child_class_name, all_classes)
-
+  -- Use optimized DB query via derived_core
+  derived_core.get_inheritance_chain(child_class_name, {}, function(chain)
     if not chain or #chain == 0 then
       local msg = "No parent classes found for: " .. child_class_name
       log.get().info(msg)

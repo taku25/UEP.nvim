@@ -191,4 +191,45 @@ function M.get_classes_in_modules(db, module_names)
   return all_results
 end
 
+-- 再帰的に派生クラスを取得 (CTE使用)
+function M.get_recursive_derived_classes(db, base_class_name)
+  local sql = [[
+    WITH RECURSIVE derived_cte AS (
+      SELECT name, base_class, file_id, line_number, symbol_type
+      FROM classes
+      WHERE base_class = ?
+      UNION ALL
+      SELECT c.name, c.base_class, c.file_id, c.line_number, c.symbol_type
+      FROM classes c
+      JOIN derived_cte p ON c.base_class = p.name
+    )
+    SELECT d.name as class_name, d.base_class, d.line_number, f.path as file_path, f.filename, d.symbol_type, m.name as module_name
+    FROM derived_cte d
+    JOIN files f ON d.file_id = f.id
+    JOIN modules m ON f.module_id = m.id
+  ]]
+  return db:eval(sql, { base_class_name })
+end
+
+-- 再帰的に親クラス(継承チェーン)を取得 (CTE使用)
+function M.get_recursive_parent_classes(db, child_class_name)
+  local sql = [[
+    WITH RECURSIVE parents_cte AS (
+      SELECT name, base_class, file_id, line_number, symbol_type, 0 as level
+      FROM classes
+      WHERE name = ?
+      UNION ALL
+      SELECT c.name, c.base_class, c.file_id, c.line_number, c.symbol_type, p.level + 1
+      FROM classes c
+      JOIN parents_cte p ON p.base_class = c.name
+    )
+    SELECT d.name as class_name, d.base_class, d.line_number, f.path as file_path, f.filename, d.symbol_type, m.name as module_name
+    FROM parents_cte d
+    JOIN files f ON d.file_id = f.id
+    JOIN modules m ON f.module_id = m.id
+    ORDER BY level ASC
+  ]]
+  return db:eval(sql, { child_class_name })
+end
+
 return M
