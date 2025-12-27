@@ -3,7 +3,7 @@
 
 local core_utils = require("UEP.cmd.core.utils")
 -- local files_cache_manager = require("UEP.cache.files") -- [!] 削除
-local module_cache = require("UEP.cache.module") -- [!] 追加
+local uep_db = require("UEP.db.init") -- [!] DB追加
 local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
 local uep_log = require("UEP.logger")
@@ -37,12 +37,12 @@ local function purge_component_module_caches(component)
 
   log.info("Purging %d module caches for component: %s", #modules_to_delete, component.display_name)
 
+  local db = uep_db.get()
   local success_count = 0
-  for _, mod_meta in ipairs(modules_to_delete) do
-    if module_cache.delete(mod_meta) then
+  if db then
+    for _, mod_meta in ipairs(modules_to_delete) do
+      db:eval("DELETE FROM modules WHERE name = ? AND root_path = ?", { mod_meta.name, mod_meta.module_root })
       success_count = success_count + 1
-    else
-      log.warn("Failed to delete module cache for: %s", mod_meta.name)
     end
   end
 

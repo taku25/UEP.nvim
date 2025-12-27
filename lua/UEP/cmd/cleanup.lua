@@ -2,9 +2,8 @@
 -- lua/UEP/cmd/cleanup.lua (モジュールキャッシュ・レジストリ削除対応 最終版)
 
 local core_utils = require("UEP.cmd.core.utils")
-local project_cache = require("UEP.cache.project")
-local module_cache = require("UEP.cache.module")
 local projects_cache = require("UEP.cache.projects")
+local uep_db = require("UEP.db.init") -- [!] DB追加
 local uep_log = require("UEP.logger")
 local unl_progress = require("UNL.backend.progress")
 local uep_config = require("UEP.config")
@@ -71,56 +70,22 @@ local function execute_project_cleanup(maps)
   end
 
   local function run_cleanup_async()
-    -- A. 全コンポーネントの「構造キャッシュ (*.project.json)」を削除
-    for _, component in ipairs(components_to_clean) do
-      local project_cache_filename = component.name .. ".project.json"
-      update_progress(component.display_name, "Project Structural")
-      if project_cache.delete_component_cache_file(project_cache_filename) then
-        deleted_count = deleted_count + 1
-      end
-    end
-
-    -- B. 全モジュールの「モジュールキャッシュ (*.module.json)」を削除
-    for mod_name, mod_meta in pairs(maps.all_modules_map) do
-      update_progress(mod_name, "Module")
-      if module_cache.delete(mod_meta) then
-        deleted_count = deleted_count + 1
-      end
-    end
-
-    -- C. 疑似モジュール (Config/Shaders/Programs) のキャッシュを削除
-    log.debug("Cleaning up pseudo-module caches...")
-    
-    local pseudo_modules_to_delete = {}
-    
-    -- C-1: Engine の疑似モジュール
-    if maps.engine_root then
-        local engine_root = maps.engine_root
-        table.insert(pseudo_modules_to_delete, { name = "_EngineConfig", module_root = fs.joinpath(engine_root, "Engine", "Config") })
-        table.insert(pseudo_modules_to_delete, { name = "_EngineShaders", module_root = fs.joinpath(engine_root, "Engine", "Shaders") })
-        table.insert(pseudo_modules_to_delete, { name = "_EnginePrograms", module_root = fs.joinpath(engine_root, "Engine", "Source", "Programs") })
-    end
-    
-    -- C-2: Game および Plugin の疑似モジュール
-    for comp_name_hash, comp_meta in pairs(maps.all_components_map) do
-      if comp_meta.type == "Game" or comp_meta.type == "Plugin" then
-        -- refresh_modules_core と同じ命名規則 (Type_DisplayName)
-        local pseudo_name = comp_meta.type .. "_" .. comp_meta.display_name
-        local pseudo_root = comp_meta.root_path
-        if pseudo_root then
-            table.insert(pseudo_modules_to_delete, { name = pseudo_name, module_root = pseudo_root })
-        end
-      end
-    end
-
-    -- C-3: 削除実行
-    for _, mod_meta in ipairs(pseudo_modules_to_delete) do
-        update_progress(mod_meta.name, "Pseudo Module")
-        if module_cache.delete(mod_meta) then
-            deleted_count = deleted_count + 1
-        else
-            log.warn("Failed to delete pseudo-module cache for: %s (Root: %s)", mod_meta.name, mod_meta.module_root or "NIL")
-        end
+    local db = uep_db.get()
+    if db then
+        -- A. DBから全データを削除 (CASCADE設定により関連テーブルも削除されるはず)
+        update_progress("All Components", "DB Cleanup")
+        db:eval("DELETE FROM components")
+        
+        update_progress("All Modules", "DB Cleanup")
+        db:eval("DELETE FROM modules")
+        
+        -- files, classes, directories は modules 削除時に CASCADE される想定だが
+        -- 念のため明示的に削除しても良い (が、CASCADEなら不要)
+        -- db:eval("DELETE FROM files")
+        
+        deleted_count = total_components + total_modules + pseudo_module_count
+    else
+        log.error("Could not open DB for cleanup.")
     end
 
     -- D. マスターレジストリからこのプロジェクトを削除
@@ -140,7 +105,7 @@ local function execute_project_cleanup(maps)
 
     -- 3. 終了処理
     progress:finish(true)
-    log.info("Cleanup completed for project '%s'. %d cache files were cleared. Please run :UEP refresh.", project_display_name, deleted_count)
+    log.info("Cleanup completed for project '%s'. DB records were cleared. Please run :UEP refresh.", project_display_name)
     vim.notify(string.format("Cleanup complete. Run :UEP refresh to rebuild caches."), vim.log.levels.INFO)
   end
 

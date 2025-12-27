@@ -2,7 +2,6 @@
 
 local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
-local symbol_cache = require("UEP.cache.symbols")
 local files_cmd = require("UEP.cmd.files") -- picker cache clear
 
 local M = {}
@@ -32,8 +31,7 @@ M.setup = function()
       if ok then
         uep_log.info("Lightweight cache update for module '%s' succeeded.", module_name)
         
-        uep_log.debug("Purging derived caches (symbols and files) due to lightweight refresh...")
-        symbol_cache.delete()
+        uep_log.debug("Purging derived caches (files) due to lightweight refresh...")
         files_cmd.delete_all_picker_caches()
         uep_log.debug("Derived caches purged.")
 

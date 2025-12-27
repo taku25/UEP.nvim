@@ -3,8 +3,7 @@
 local uep_log = require("UEP.logger").get()
 local fs = require("vim.fs")
 local unl_parser_ini = require("UNL.parser.ini")
-local projects_cache = require("UEP.cache.projects")
-local project_cache = require("UEP.cache.project")
+local uep_db = require("UEP.db.init")
 local unl_finder = require("UNL.finder")
 
 local M = {}
@@ -14,20 +13,26 @@ local M = {}
 -- =====================================================================
 
 local function get_project_maps_sync()
-    local cwd = vim.loop.cwd()
-    local project_root = unl_finder.project.find_project_root(cwd)
-    if not project_root then return nil, "No project root found" end
-
-    local project_display_name = vim.fn.fnamemodify(project_root, ":t")
-    local registry_info = projects_cache.get_project_info(project_display_name)
+    local db = uep_db.get()
+    if not db then return nil, "DB not available" end
     
-    if not registry_info then return nil, "Project not registered" end
-
-    local maps = { project_root = project_root, engine_root = nil }
-    if registry_info.engine_association then
-        local engine_info = projects_cache.get_engine_info(registry_info.engine_association)
-        if engine_info then maps.engine_root = engine_info.engine_root end
+    local components = db:eval("SELECT * FROM components")
+    if not components then return nil, "No components in DB" end
+    
+    local maps = { project_root = nil, engine_root = nil }
+    for _, comp in ipairs(components) do
+        if comp.type == "Game" then
+            if comp.uproject_path then
+                maps.project_root = vim.fn.fnamemodify(comp.uproject_path, ":h")
+            else
+                maps.project_root = comp.root_path
+            end
+        elseif comp.type == "Engine" then
+            maps.engine_root = comp.root_path
+        end
     end
+    
+    if not maps.project_root then return nil, "Project root not found in DB" end
     return maps, nil
 end
 

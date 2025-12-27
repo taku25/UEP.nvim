@@ -1,8 +1,6 @@
 -- lua/UEP/provider/class.lua (最終版: deps_flag 対応)
 
-local projects_cache = require("UEP.cache.projects")
-local project_cache = require("UEP.cache.project")
-local module_cache = require("UEP.cache.module")
+local uep_db = require("UEP.db.init")
 local unl_finder = require("UNL.finder")
 local uep_log = require("UEP.logger").get()
 
@@ -10,34 +8,32 @@ local M = {}
 
 function M.request(opts)
   opts = opts or {}
-  uep_log.debug("--- UEP Provider 'get_project_classes' CALLED ---")
+  uep_log.debug("--- UEP Provider 'get_project_classes' CALLED (DB) ---")
   
-  -- 1. Depsフラグの決定 (デフォルトをどうするかはここで決める)
-  -- "smart" な挙動にするなら、デフォルトを --shallow-deps にするのも手です
   local deps_flag = opts.deps_flag or "--deep-deps" 
 
-  -- STEP 1: プロジェクト情報のロード (変更なし)
-  local project_root = opts.project_root or unl_finder.project.find_project_root(vim.loop.cwd())
-  if not project_root then return nil end
-  local project_display_name = vim.fn.fnamemodify(project_root, ":t")
-  local project_registry_info = projects_cache.get_project_info(project_display_name)
-  if not project_registry_info or not project_registry_info.components then return nil end
-  
+  local db = uep_db.get()
+  if not db then return nil end
+
+  -- Load all modules from DB
+  local modules_rows = db:eval("SELECT * FROM modules")
+  if not modules_rows then return nil end
+
   local all_modules_map = {}
-  local all_components_map = {}
-  
-  for _, comp_name in ipairs(project_registry_info.components) do
-    local p_cache = project_cache.load(comp_name .. ".project.json")
-    if p_cache then
-      all_components_map[comp_name] = p_cache
-      for _, type_key in ipairs({"runtime_modules", "developer_modules", "editor_modules", "programs_modules"}) do
-        if p_cache[type_key] then
-          for mod_name, mod_data in pairs(p_cache[type_key]) do
-            all_modules_map[mod_name] = mod_data
-          end
-        end
+  for _, row in ipairs(modules_rows) do
+      local deep_deps = nil
+      if row.deep_dependencies and row.deep_dependencies ~= "" then
+          local ok, res = pcall(vim.json.decode, row.deep_dependencies)
+          if ok then deep_deps = res end
       end
-    end
+      
+      all_modules_map[row.name] = {
+          name = row.name,
+          type = row.type,
+          category = row.scope, 
+          deep_dependencies = deep_deps,
+          shallow_dependencies = {} 
+      }
   end
 
   -- STEP 2: 対象モジュールのフィルタリング (Depsフラグを考慮)
@@ -83,23 +79,35 @@ function M.request(opts)
     end
   end
   
-  -- STEP 3: キャッシュのマージ (変更なし)
+  -- STEP 3: Query Classes from DB
+  local mod_names = {}
+  for name, _ in pairs(target_module_names) do table.insert(mod_names, "'" .. name .. "'") end
+  
+  if #mod_names == 0 then return {} end
+  
+  local sql = string.format([[
+        SELECT c.name, c.base_class, c.line_number, c.symbol_type, f.path 
+        FROM classes c 
+        JOIN files f ON c.file_id = f.id 
+        JOIN modules m ON f.module_id = m.id 
+        WHERE m.name IN (%s)
+    ]], table.concat(mod_names, ","))
+    
+  local rows = db:eval(sql)
   local merged_header_details = {}
-  for comp_name, component_meta in pairs(all_components_map) do
-    for _, type_key in ipairs({"runtime_modules", "developer_modules", "editor_modules", "programs_modules"}) do
-      if component_meta[type_key] then
-        for mod_name, mod_meta in pairs(component_meta[type_key]) do
-          if target_module_names[mod_name] then
-            local mod_cache = module_cache.load(mod_meta)
-            if mod_cache and mod_cache.header_details then
-              for file_path, details in pairs(mod_cache.header_details) do
-                merged_header_details[file_path] = details
-              end
-            end
-          end
+  
+  if rows then
+      for _, row in ipairs(rows) do
+        if not merged_header_details[row.path] then
+            merged_header_details[row.path] = { classes = {} }
         end
+        table.insert(merged_header_details[row.path].classes, {
+            name = row.name,
+            base_class = row.base_class,
+            line = row.line_number,
+            type = row.symbol_type
+        })
       end
-    end
   end
 
   local final_count = vim.tbl_count(merged_header_details)

@@ -108,7 +108,10 @@ local function generate_and_load_cache(scope, deps_flag, on_complete)
           end
       end
     else
-        log.error("Failed to get files from core logic: %s", tostring(result_files_with_context))
+        -- エラーメッセージが "No components in DB" の場合はログを出さない
+        if not (type(result_files_with_context) == "string" and result_files_with_context:find("No components in DB")) then
+            log.error("Failed to get files from core logic: %s", tostring(result_files_with_context))
+        end
         -- ok が false でも空のキャッシュを保存する？ -> 今回はしない
     end
 

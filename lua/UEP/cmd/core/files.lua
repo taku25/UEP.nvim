@@ -82,8 +82,11 @@ function M.get_files(opts, on_complete)
   -- STEP 1: プロジェクトの全体マップを取得
   core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
     if not ok then
-      log.error("core_files.get_files: Failed to get project maps: %s", tostring(maps))
-      return on_complete(false, "Failed to get project maps.")
+      -- エラーメッセージが "No components in DB" の場合はログを出さない (utils側で出ているため)
+      if not (type(maps) == "string" and maps:find("No components in DB")) then
+        log.error("core_files.get_files: Failed to get project maps: %s", tostring(maps))
+      end
+      return on_complete(false, maps)
     end
 
     local all_modules_map = maps.all_modules_map

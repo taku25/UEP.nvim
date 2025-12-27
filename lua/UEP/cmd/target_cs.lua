@@ -1,5 +1,5 @@
 local core_utils = require("UEP.cmd.core.utils")
-local project_cache = require("UEP.cache.project")
+local uep_db = require("UEP.db.init")
 local unl_picker = require("UNL.backend.picker")
 local uep_log = require("UEP.logger")
 local uep_config = require("UEP.config")
@@ -67,12 +67,23 @@ function M.execute(opts)
       return log.error("Failed to get project maps or game component name.")
     end
 
-    local game_cache = project_cache.load(maps.game_component_name .. ".project.json")
-    if not game_cache or not game_cache.build_targets then
-      return log.warn("No build targets found in cache. Run :UEP refresh.")
+    local db = uep_db.get()
+    if not db then return log.error("DB not available") end
+
+    local rows = db:eval("SELECT path, filename FROM files WHERE filename LIKE '%.Target.cs'")
+    if not rows or #rows == 0 then
+      return log.warn("No build targets found in DB. Run :UEP refresh.")
     end
 
-    local all_targets = game_cache.build_targets
+    local all_targets = {}
+    for _, row in ipairs(rows) do
+      local name = row.filename:gsub("%.Target%.cs$", "")
+      table.insert(all_targets, {
+        name = name,
+        path = row.path,
+        type = "Target"
+      })
+    end
     local filtered_targets = {}
     local project_root = maps.project_root
 

@@ -57,13 +57,14 @@ M.get_project_maps = function(start_path, on_complete)
     return on_complete(false, "DB not available.")
   end
 
-  local components = db:eval("SELECT * FROM components") or {}
-  if #components == 0 then
+  local components = db:eval("SELECT * FROM components")
+  if type(components) ~= "table" or #components == 0 then
     log.warn("get_project_maps: No components in DB. Run :UEP refresh.")
     return on_complete(false, "No components in DB.")
   end
 
-  local modules_rows = db:eval("SELECT * FROM modules") or {}
+  local modules_rows = db:eval("SELECT * FROM modules")
+  if type(modules_rows) ~= "table" then modules_rows = {} end
 
   local all_components_map = {}
   local all_modules_map = {}

@@ -4,12 +4,11 @@
 local uep_log = require("UEP.logger").get()
 local unl_finder = require("UNL.finder")
 local unl_context = require("UNL.context")
-local project_cache = require("UEP.cache.project") -- ★ project_cache を使うように戻す
+local uep_db = require("UEP.db.init")
 local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
 local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
-local projects_cache = require("UEP.cache.projects") -- ★ projects_cache を追加
 local cmd_tree_provider = require("UEP.provider.tree") -- [! 1. provider を require]
 local ui_control = require("UEP.cmd.core.ui_control") -- ★ 追記
 
@@ -54,33 +53,23 @@ function M.execute(opts)
     -- モジュール名が指定されていなければ、ピッカーで選択させる
     uep_log.info("Fetching module list for picker...")
 
-    -- ▼▼▼ モジュールリスト取得ロジック修正 ▼▼▼
-    -- (core.utils.get_project_maps を使う代わりに、ここで直接キャッシュを読む)
-    local project_display_name = vim.fn.fnamemodify(project_root, ":t")
-    local project_registry_info = projects_cache.get_project_info(project_display_name)
-    if not project_registry_info or not project_registry_info.components then
-        return uep_log.error("Module list fetch failed: Project not in registry.")
+    -- ▼▼▼ モジュールリスト取得ロジック修正 (DB) ▼▼▼
+    local db = uep_db.get()
+    if not db then return uep_log.error("DB not available") end
+
+    local rows = db:eval("SELECT name, owner_name FROM modules")
+    if not rows or #rows == 0 then
+        return uep_log.error("Module list fetch failed: No modules found in DB.")
     end
 
     local all_modules_picker = {}
-    for _, comp_name in ipairs(project_registry_info.components) do
-        local p_cache = project_cache.load(comp_name .. ".project.json")
-        if p_cache then
-             for _, mtype in ipairs({"runtime_modules", "developer_modules", "editor_modules", "programs_modules"}) do
-                 if p_cache[mtype] then
-                     for mod_name, mod_meta in pairs(p_cache[mtype]) do
-                         -- owner_name が mod_meta に含まれている前提 (graph.lua でコピー済み)
-                         local owner_display = (mod_meta.owner_name == engine_name and "Engine") or (mod_meta.owner_name == game_name and "Game") or "Plugin"
-                         table.insert(all_modules_picker, {
-                             label = string.format("%s (%s)", mod_name, owner_display),
-                             value = mod_name
-                         })
-                     end
-                 end
-             end
-        end
+    for _, row in ipairs(rows) do
+        local owner_display = row.owner_name or "Unknown"
+        table.insert(all_modules_picker, {
+            label = string.format("%s (%s)", row.name, owner_display),
+            value = row.name
+        })
     end
-    if #all_modules_picker == 0 then return uep_log.error("Module list fetch failed: No modules found in cache.") end
     table.sort(all_modules_picker, function(a, b) return a.label < b.label end)
     -- ▲▲▲ モジュールリスト取得ロジック修正ここまで ▲▲▲
 
