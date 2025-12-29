@@ -187,19 +187,41 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
   local success, err = pcall(function()
     -- トランザクション処理
     uep_db.transaction(function(db, insert_fn_base)
-      -- 既存のモジュールデータを削除 (name + root_path で特定)
-      local delete_module_sql = "DELETE FROM modules WHERE name = ? AND root_path = ?"
-      db:eval(delete_module_sql, { module_meta.name, module_meta.module_root })
+      -- 既存のモジュールIDを取得 (name + root_path で特定)
+      local rows = db:eval("SELECT id FROM modules WHERE name = ? AND root_path = ?", { module_meta.name, module_meta.module_root })
+      local module_id = (type(rows) == "table" and rows[1]) and rows[1].id or nil
+
+      if module_id then
+        -- 既存モジュールを更新
+        db:eval([[UPDATE modules SET type = ?, scope = ?, build_cs_path = ?, owner_name = ?, component_name = ?, deep_dependencies = ? WHERE id = ?]], {
+          module_meta.type or "Runtime",
+          module_meta.scope or "Individual",
+          (module_meta.path or ""):gsub("\\", "/"),
+          module_meta.owner_name,
+          module_meta.component_name,
+          module_meta.deep_dependencies and vim.json.encode(module_meta.deep_dependencies) or nil,
+          module_id
+        })
+      else
+        -- 新規モジュールを登録
+        module_id = insert_fn_base("modules", {
+          name = module_meta.name,
+          type = module_meta.type or "Runtime",
+          scope = module_meta.scope or "Individual",
+          root_path = (module_meta.module_root or ""):gsub("\\", "/"),
+          build_cs_path = (module_meta.path or ""):gsub("\\", "/"),
+          owner_name = module_meta.owner_name,
+          component_name = module_meta.component_name,
+          deep_dependencies = module_meta.deep_dependencies and vim.json.encode(module_meta.deep_dependencies) or nil
+        })
+      end
       
-      -- モジュールを登録
-      local module_id = insert_fn_base("modules", {
-        name = module_meta.name,
-        type = module_meta.type or "Runtime",
-        scope = module_meta.scope or "Individual", -- refresh_modulesから呼ばれる場合
-        root_path = (module_meta.module_root or ""):gsub("\\", "/"),
-        build_cs_path = (module_meta.path or ""):gsub("\\", "/")
-      })
-      
+      -- モジュール内の既存ファイル・ディレクトリを全削除（削除されたファイルを反映するため）
+      if module_id then
+        db:eval("DELETE FROM files WHERE module_id = ?", { module_id })
+        db:eval("DELETE FROM directories WHERE module_id = ?", { module_id })
+      end
+
       if module_id and files_data then
         -- パス重複による UNIQUE(path) 衝突を避けるため、1モジュール内で重複排除してから挿入。
         -- 既存行が他モジュールにある場合は先に DELETE してから挿入する。
@@ -225,7 +247,8 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
             for _, dir_path in ipairs(dir_list) do
               if dir_path and not seen_dirs[dir_path] then
                 seen_dirs[dir_path] = true
-                db:eval("DELETE FROM directories WHERE path = ? AND module_id = ?", { dir_path, module_id })
+                -- 他モジュールからの移動を考慮してDELETE (自モジュール分は上で削除済みだが念のため)
+                db:eval("DELETE FROM directories WHERE path = ?", { dir_path })
                 insert_fn_base("directories", {
                   path = dir_path,
                   category = category,
@@ -275,7 +298,7 @@ function M.save_project_scan(components_data)
               comp_name, comp_data.type or "unknown", runtime_count, editor_count, dev_count, prog_count, comp_total)
   end
   
-  log.info("[UEP.db] Processing %d components with %d total modules...", comp_count, total_modules)
+  log.debug("[UEP.db] Processing %d components with %d total modules...", comp_count, total_modules)
 
   -- トランザクション処理
   uep_db.transaction(function(db, insert_fn_base)
@@ -300,10 +323,10 @@ function M.save_project_scan(components_data)
       local row_id = nil
       if table_name == "modules" then
         local rows = db:eval("SELECT id FROM modules WHERE name = ? AND root_path = ?", { data.name, data.root_path })
-        row_id = rows and rows[1] and rows[1].id or nil
+        row_id = (type(rows) == "table" and rows[1]) and rows[1].id or nil
       else
         local rows = db:eval("SELECT last_insert_rowid() as id")
-        row_id = rows and rows[1] and rows[1].id or nil
+        row_id = (type(rows) == "table" and rows[1]) and rows[1].id or nil
       end
 
       -- modulesテーブルの場合のみ、type/scope/build_cs_path/owner_name/component_name/deep_dependencies を更新
@@ -376,7 +399,7 @@ function M.save_project_scan(components_data)
   end)
 
   local ms = (vim.loop.hrtime() - start_t) / 1e6
-  log.info("[UEP.db] Saved project data to DB in %.2f ms.", ms)
+  log.debug("[UEP.db] Saved project data to DB in %.2f ms.", ms)
 end
 
 return M

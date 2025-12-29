@@ -46,7 +46,10 @@ function M.get()
     return nil
   end
 
-  local ok, err = pcall(function() db_instance:open() end)
+  local ok, err = pcall(function() 
+    db_instance:open()
+    db_instance:eval("PRAGMA foreign_keys = ON;")
+  end)
   if not ok then
     uep_log.get().error("Failed to open DB: %s", err)
     return nil
@@ -99,7 +102,7 @@ function M.transaction(func)
     local res = db:eval(sql, vals)
     if res == false then error(string.format("Insert failed for table '%s'", table_name)) end
     local rows = db:eval("SELECT last_insert_rowid() as id")
-    if rows and rows[1] then return rows[1].id end
+    if type(rows) == "table" and rows[1] then return rows[1].id end
     return nil
   end
 

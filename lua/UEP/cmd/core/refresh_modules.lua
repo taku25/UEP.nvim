@@ -319,7 +319,7 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
                 table.insert(headers_to_parse, file)
               end
             end
-            log.info("Identified %d header files to parse out of %d total files found.", #headers_to_parse, #all_found_files)
+            log.debug("Identified %d header files to parse out of %d total files found.", #headers_to_parse, #all_found_files)
 
             class_parser.parse_headers_async(all_existing_header_details, headers_to_parse, progress, function(ok, header_details_by_file)
               if not ok then log.error("Header parsing failed, aborting module cache save."); if on_done then on_done(false) end; return end
@@ -349,7 +349,7 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
                   local data_to_save = { files = module_files_data, directories = module_dirs_data, header_details = module_header_details }
                   
                   db_writer.save_module_files(module_meta, module_files_data, module_header_details, module_dirs_data)
-                  if module_name == "Engine" then log.info("create_module_caches_for: module_cache.save SUCCEEDED for 'Engine'") end
+                  if module_name == "Engine" then log.debug("create_module_caches_for: module_cache.save SUCCEEDED for 'Engine'") end
                 else
                   log.debug("create_module_caches_for: Saving empty cache for '%s' (data missing in map)", module_name)
                   db_writer.save_module_files(module_meta, {}, {}, {})
@@ -465,13 +465,6 @@ function M.update_single_module_cache(module_name, on_complete)
                   return
                 end
                 local data_to_save = { files = files_by_category, directories = dirs_by_category, header_details = header_details_by_file or {}, }
-                if unl_events_ok and unl_types_ok then
-                  log.debug("Firing ON_AFTER_UEP_LIGHTWEIGHT_REFRESH event from refresh_modules.")
-                  unl_events.publish(unl_event_types.ON_AFTER_UEP_LIGHTWEIGHT_REFRESH, {
-                    status = "success", event_type = "refresh_module", updated_module = module_name,
-                  })
-                end
-                
                 db_writer.save_module_files(module_meta, files_by_category, header_details_by_file or {}, dirs_by_category)
                 log.info("Lightweight cache update for module '%s' succeeded.", module_name)
                 if on_complete then on_complete(true) end

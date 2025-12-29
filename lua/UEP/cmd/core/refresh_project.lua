@@ -70,7 +70,7 @@ local function load_component_from_db(component_name)
   }
   
   local mod_rows = db:eval("SELECT * FROM modules WHERE component_name = ?", { component_name })
-  if mod_rows then
+  if type(mod_rows) == "table" then
     for _, row in ipairs(mod_rows) do
       local deep_deps = nil
       if row.deep_dependencies and row.deep_dependencies ~= "" then
@@ -102,7 +102,7 @@ local function module_exists_in_db(mod_meta)
   local db = uep_db.get()
   if not db then return false end
   local rows = db:eval("SELECT id FROM modules WHERE name = ? AND root_path = ?", { mod_meta.name, mod_meta.module_root })
-  return rows and #rows > 0
+  return (type(rows) == "table") and #rows > 0
 end
 
 local function parse_component_build_cs_async(component, build_cs_files, module_type_map, old_component_data, on_done)
@@ -279,7 +279,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       files_processed = files_processed + 1
       
       if files_processed > files_total then
-        log.info("Finished parsing %d project/plugin definitions.", files_total)
+        log.debug("Finished parsing %d project/plugin definitions.", files_total)
         
         table.insert(all_components, { name = game_name, display_name = vim.fn.fnamemodify(game_root, ":t"), type = "Game", root_path = game_root, owner_name = game_name })
         table.insert(all_components, { name = engine_name, display_name = "Engine", type = "Engine", root_path = engine_root, owner_name = engine_name })
@@ -342,7 +342,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       vim.schedule(parse_defs_loop)
     end
     
-    log.info("Found %d .uplugin files. Parsing project and plugin definitions (async)...", #all_uplugin_files)
+    log.debug("Found %d .uplugin files. Parsing project and plugin definitions (async)...", #all_uplugin_files)
     parse_defs_loop()
     
   end
@@ -421,7 +421,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       if not db then return 0, 0 end
       local m = db:eval("SELECT count(*) as c FROM modules")
       local f = db:eval("SELECT count(*) as c FROM files")
-      return (m and m[1] and m[1].c or 0), (f and f[1] and f[1].c or 0)
+      return (type(m) == "table" and m[1] and m[1].c or 0), (type(f) == "table" and f[1] and f[1].c or 0)
     end
 
     local modules_before, files_before = db_counts()
@@ -606,11 +606,11 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
           local is_cached = false
           if db then
             local rows = db:eval("SELECT 1 FROM modules WHERE name = ? AND root_path = ? LIMIT 1", { mod_meta.name, mod_meta.module_root })
-            if rows and #rows > 0 then is_cached = true end
+            if (type(rows) == "table") and #rows > 0 then is_cached = true end
           end
 
           if not is_cached then
-            log.info("Module cache for '%s' (at %s) not found. Adding to scan queue.", mod_meta.name, path)
+            log.debug("Module cache for '%s' (at %s) not found. Adding to scan queue.", mod_meta.name, path)
             add_module_to_scan_list(mod_meta)
           end
         end
@@ -622,7 +622,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
     
     -- (モジュールキャッシュスキャン実行 ... 変更なし)
     if modules_to_scan_count > 0 or (refresh_opts.bang or refresh_opts.force) then
-      log.info("Starting file scan for %d module(s) (and component roots)...", modules_to_scan_count)
+      log.debug("Starting file scan for %d module(s) (and component roots)...", modules_to_scan_count)
       refresh_modules_core.create_module_caches_for(
         modules_to_scan_meta,
         all_modules_meta_map_by_path,
@@ -634,9 +634,9 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
             
             -- SQLiteに変更されたコンポーネントのデータを一括保存
             if #result_data.changed_components > 0 then
-              log.info("Saving %d changed component(s) to SQLite database...", #result_data.changed_components)
+              log.debug("Saving %d changed component(s) to SQLite database...", #result_data.changed_components)
               db_writer.save_project_scan(result_data.all_data)
-              log.info("SQLite database update completed.")
+              log.debug("SQLite database update completed.")
             end
             
             on_done(files_ok, result_data) 
@@ -647,9 +647,9 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       
       -- SQLiteに変更されたコンポーネントのデータを一括保存
       if #result_data.changed_components > 0 then
-        log.info("Saving %d changed component(s) to SQLite database...", #result_data.changed_components)
+        log.debug("Saving %d changed component(s) to SQLite database...", #result_data.changed_components)
         db_writer.save_project_scan(result_data.all_data)
-        log.info("SQLite database update completed.")
+        log.debug("SQLite database update completed.")
       end
       
       on_done(true, result_data)

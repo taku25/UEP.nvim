@@ -31,6 +31,27 @@ end
 -- ▲▲▲ キャッシュパス/コンテキストキー修正ここまで ▲▲▲
 
 
+-- ★追加: 全てのピッカーキャッシュを削除する関数 (hub.luaから呼ばれる)
+function M.delete_all_picker_caches()
+  local log = uep_log.get()
+  local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
+  if not project_root then return end
+
+  -- コンテキストキーのプレフィックスで検索して削除
+  -- UEP.context は単純なキーバリューストアなので、キーのパターンマッチ削除機能が必要だが、
+  -- 現状は主要な組み合わせを列挙して削除する
+  local scopes = { "runtime", "game", "engine", "developer", "editor", "full", "programs", "config" }
+  local deps = { "--deep-deps", "--shallow-deps", "--no-deps" }
+
+  for _, s in ipairs(scopes) do
+    for _, d in ipairs(deps) do
+      local key = get_context_key(s, d)
+      if key then uep_context.set(key, nil) end
+    end
+  end
+  log.debug("All file picker caches cleared.")
+end
+
 -- (show_picker, load_cache_from_file は引数に scope を追加)
 local function show_picker(scope, deps_flag)
   local log = uep_log.get()
