@@ -56,6 +56,7 @@
   * [**UNL.nvim**](https://www.google.com/search?q=https://github.com/taku25/UNL.nvim) (**必須**)
   * [fd](https://github.com/sharkdp/fd) (**プロジェクトのスキャンに必須**)
   * [rg](https://github.com/BurntSushi/ripgrep) (**プロジェクトのGrepに必須**)
+  * [**sqlite.lua**](https://github.com/kkharji/sqlite.lua) (**データベース機能に必須**)
   * **オプション (完全な体験のために、導入を強く推奨):**
       * **UI (Picker):**
           * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
@@ -77,6 +78,7 @@ return {
   -- UNL.nvim は必須の依存関係です
   dependencies = {
      'taku25/UNL.nvim',
+     'kkharji/sqlite.lua', --必須
      'nvim-telescope/telescope.nvim', --オプション
   },
   -- 全ての設定はUNL.nvimから継承されますが、ここで上書きも可能です
