@@ -34,6 +34,9 @@ local function get_module_files_from_db(module_name, module_root)
       table.insert(files.config, path)
     elseif ext == "usf" or ext == "ush" then
       table.insert(files.shader, path)
+      -- Shader files are also source files in a broad sense, but we keep them separate in 'shader' category.
+      -- However, if 'source' mode is requested, we might want to exclude them or include them depending on policy.
+      -- Current policy: 'source' mode excludes shaders. 'shader' mode includes ONLY shaders.
     else
       table.insert(files.other, path)
     end
@@ -294,7 +297,7 @@ function M.get_files(opts, on_complete)
                 if requested_mode == "config" then
                     should_include = (category == "config")
                 elseif requested_mode == "shader" then
-                    should_include = (category == "source" or category == "shaders")
+                    should_include = (category == "shader")
                 elseif requested_mode == "programs" then
                     should_include = (category == "source" or category == "programs")
                 elseif requested_mode == "source" then
@@ -408,7 +411,7 @@ function M.get_files(opts, on_complete)
                 
                 if requested_mode then
                     if requested_mode == "config" then should_include = (category == "config")
-                    elseif requested_mode == "shader" then should_include = (category == "source" or category == "shaders")
+                    elseif requested_mode == "shader" then should_include = (category == "shader")
                     elseif requested_mode == "programs" then should_include = (category == "source" or category == "programs")
                     elseif requested_mode == "source" then should_include = (category == "source")
                     end

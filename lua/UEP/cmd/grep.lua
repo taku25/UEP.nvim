@@ -26,14 +26,15 @@ function M.execute(opts)
   end
 
   -- 2. Parse Deps
-  local requested_deps = "--deep-deps"
+  -- Default to --no-deps for grep to avoid searching the entire engine when only game code is requested.
+  local requested_deps = "--no-deps"
   local valid_deps = { ["--deep-deps"]=true, ["--shallow-deps"]=true, ["--no-deps"]=true }
   if opts.deps_flag then
       local deps_lower = opts.deps_flag:lower()
       if valid_deps[deps_lower] then
           requested_deps = deps_lower
       else
-          log.warn("Invalid deps flag '%s'. Defaulting to '--deep-deps'.", opts.deps_flag)
+          log.warn("Invalid deps flag '%s'. Defaulting to '--no-deps'.", opts.deps_flag)
       end
   end
 
@@ -149,6 +150,7 @@ function M.execute(opts)
         local m = all_modules[mod_name]
         if m.module_root then
             -- Add Source Path if mode is source or nil
+            -- ★ FIX: If mode is 'shader' or 'config', we should NOT add module source root.
             if not requested_mode or requested_mode == "source" then
                 table.insert(search_paths, m.module_root)
             end
@@ -170,6 +172,28 @@ function M.execute(opts)
                 end
             end
         end
+    end
+
+    -- Ensure Project and Engine roots are involved if scope permits, 
+    -- to catch Shaders/Config even if no specific module matched or was found.
+    
+    -- Project Root
+    if requested_scope == "game" or requested_scope == "full" or requested_scope == "runtime" or requested_scope == "developer" or requested_scope == "editor" then
+        if project_root then involved_components[project_root] = true end
+    end
+
+    -- Engine Root
+    -- Only if deps are included or scope is explicitly engine-related
+    local include_engine = (requested_scope == "engine" or requested_scope == "full" or requested_scope == "programs")
+    if not include_engine and requested_deps ~= "--no-deps" then
+        if requested_scope == "runtime" or requested_scope == "developer" or requested_scope == "editor" then
+            include_engine = true
+        end
+    end
+
+    if include_engine and engine_root then
+        local e_root = fs.joinpath(engine_root, "Engine")
+        involved_components[e_root] = true
     end
 
     -- Add Config/Shader/Programs dirs from Involved Components
