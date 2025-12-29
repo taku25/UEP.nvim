@@ -85,6 +85,16 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
     uep_log.error("Could not find worker script. Aborting parallel parse.")
     return on_complete(false, "Worker script path not found.")
   end
+
+  -- Treesitterパーサーのパスを収集してワーカーに渡す準備
+  local parser_paths = vim.api.nvim_get_runtime_file("parser/cpp.*", true)
+  local rtp_list = {}
+  for _, p in ipairs(parser_paths) do
+      local parser_dir = vim.fn.fnamemodify(p, ":h")
+      local root_dir = vim.fn.fnamemodify(parser_dir, ":h")
+      table.insert(rtp_list, root_dir)
+  end
+  local ts_rtp_env = table.concat(rtp_list, ",")
   
   local nvim_cmd = {
       vim.v.progpath,
@@ -125,6 +135,7 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
         local job_stderr = {}
         
         local job_id = vim.fn.jobstart(nvim_cmd, {
+          env = { ["UEP_TS_RTP"] = ts_rtp_env },
           rpc = false,
           stdout_buffered = true,
           stderr_buffered = true,
@@ -154,6 +165,9 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
                               file_hash = res.data.new_hash,
                               mtime = res.mtime
                           }
+                          if res.data.parser then
+                              uep_log.debug("Parsed %s using %s", res.path, res.data.parser)
+                          end
                         end
                         -- ▲▲▲ 処理完了 ▲▲▲
                       else

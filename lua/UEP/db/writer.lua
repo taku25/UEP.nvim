@@ -58,13 +58,21 @@ local function insert_file_and_classes(insert_fn, module_id, file_path, header_d
         local sym_type = cls.symbol_type or "class"
 
         if class_name and class_name ~= "" and type(class_name) == "string" then
-          insert_fn("classes", {
+          -- Debug logging for problematic classes
+          if class_name == "None" or class_name:match("^%s*$") then
+             uep_log.get().warn("[UEP.db] Suspicious class name '%s' in file %s", class_name, file_path)
+          end
+
+          local status, err = pcall(insert_fn, "classes", {
             name = class_name,
             base_class = base_class,
             file_id = file_id,
             line_number = line_no,
             symbol_type = sym_type
           })
+          if not status then
+             uep_log.get().error("[UEP.db] Insert class failed for '%s' in %s: %s", class_name, file_path, tostring(err))
+          end
         else
           -- 無効なクラスデータをログに出力（デバッグ用）
           uep_log.get().debug("Skipping invalid class data in file %s: name=%s, type=%s", 

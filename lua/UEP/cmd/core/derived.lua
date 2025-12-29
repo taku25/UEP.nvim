@@ -24,13 +24,20 @@ local function get_target_modules(opts, on_complete)
     local all_modules_map = maps.all_modules_map
     local game_name = maps.game_component_name
     local engine_name = maps.engine_component_name
+    
+    log.info("derived: game_name=%s, engine_name=%s, total_modules=%d", 
+              tostring(game_name), tostring(engine_name), vim.tbl_count(all_modules_map))
 
     local target_module_names = {}
     local seed_modules = {}
 
     -- 1. Determine seed modules based on scope
     if requested_scope == "game" then
-      for n, m in pairs(all_modules_map) do if m.owner_name == game_name then seed_modules[n] = true end end
+      for n, m in pairs(all_modules_map) do 
+          if m.owner_name == game_name then 
+              seed_modules[n] = true 
+          end 
+      end
     elseif requested_scope == "engine" then
       for n, m in pairs(all_modules_map) do if m.owner_name == engine_name then seed_modules[n] = true end end
     elseif requested_scope == "runtime" then
@@ -59,6 +66,8 @@ local function get_target_modules(opts, on_complete)
       local deps_key = (deps_flag == "--deep-deps") and "deep_dependencies" or "shallow_dependencies"
       local modules_to_process = vim.tbl_keys(seed_modules)
       local processed = {}
+      
+      log.debug("derived: Seed modules count: %d", #modules_to_process)
 
       while #modules_to_process > 0 do
         local current_name = table.remove(modules_to_process)
@@ -107,7 +116,7 @@ function M.get_all_classes(opts, on_complete)
   
   get_target_modules(opts, function(target_module_names)
     if not target_module_names or vim.tbl_count(target_module_names) == 0 then
-      log.warn("derived.get_all_classes: No modules matched the filter.")
+      log.warn("derived.get_all_classes: No modules matched the filter (scope=%s).", opts.scope)
       if on_complete then on_complete({}) end
       return
     end
@@ -120,6 +129,8 @@ function M.get_all_classes(opts, on_complete)
     end
 
     local target_module_list = vim.tbl_keys(target_module_names)
+    log.debug("derived: Querying DB for classes in %d modules...", #target_module_list)
+    
     local raw_classes = db_query.get_classes_in_modules(db, target_module_list)
     
     local all_symbols = {}

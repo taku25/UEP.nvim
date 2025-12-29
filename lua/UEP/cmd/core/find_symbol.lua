@@ -23,7 +23,20 @@ local function process_symbol_list(all_symbols_data, opts)
 
   local filtered_list = {}
   for _, info in ipairs(all_symbols_data) do
-    if info.symbol_type == symbol_type then
+    local st = info.symbol_type
+    local is_match = false
+    
+    if symbol_type == "class" then
+        is_match = (st == "class" or st == "UCLASS" or st == "UINTERFACE")
+    elseif symbol_type == "struct" then
+        is_match = (st == "struct" or st == "USTRUCT")
+    elseif symbol_type == "enum" then
+        is_match = (st == "enum" or st == "UENUM")
+    else
+        is_match = (st == symbol_type)
+    end
+
+    if is_match then
       table.insert(filtered_list, info)
     end
   end
