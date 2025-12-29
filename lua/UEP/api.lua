@@ -6,7 +6,7 @@ local cmd_delete = require("UEP.cmd.delete")
 local cmd_reload_config = require("UEP.cmd.reload_config")
 local cmd_files = require("UEP.cmd.files")
 local cmd_module_files = require("UEP.cmd.module_files")
-local cmd_module_tree = require("UEP.cmd.module_tree")
+-- local cmd_module_tree = require("UEP.cmd.module_tree") -- Removed
 local cmd_tree = require("UEP.cmd.tree")
 local cmd_grep = require("UEP.cmd.grep")
 local cmd_module_grep = require("UEP.cmd.module_grep")
@@ -67,9 +67,9 @@ function M.module_files(opts)
 end
 
 
-function M.module_tree(opts)
-  cmd_module_tree.execute(opts or {})
-end
+-- function M.module_tree(opts)
+--   cmd_module_tree.execute(opts or {})
+-- end
 
 function M.tree(opts)
   cmd_tree.execute(opts or {})

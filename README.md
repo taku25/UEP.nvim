@@ -25,7 +25,7 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
       * Ensures the file list is always in sync with the module structure through a `generation` hash system.
   * **Powerful File Searching**:
       * Provides a flexible `:UEP files` command to find your most-used source and config files instantly.
-      * Offers specialized commands for targeted searches within a single module (`:UEP module_files`) or across all `Programs` directories (`:UEP program_files`).
+      * Offers specialized commands for targeted searches within a single module (`:UEP module_files`).
       * Allows filtering files by scope (**Game**, **Engine**, **Runtime**, **Editor**, **Full**).
       * Supports including module dependencies in the search (**--no-deps**, **--shallow-deps**, **--deep-deps**).
       * Instantly search for all classes, structs, or enums within the specified scope (:UEP classes, :UEP structs, :UEP enums).
@@ -39,8 +39,6 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
       * Performs high-speed content searches across the entire project and engine source code (requires ripgrep).
       * The `:UEP grep` command lets you specify the search scope (**Game**, **Engine**, **Runtime**, **Editor**, **Full**).
       * The `:UEP module_grep` command enables focused, noise-free searches within a specific module (`<module_name>`).
-      * The `:UEP program_grep` command allows for targeted searches within all `Programs` directories.
-      * The `:UEP config_grep` command for targeted searches within `.ini` configuration files.
   * **UI Integration**:
       * Leverages `UNL.nvim`'s UI abstraction layer to automatically use UI frontends like [Telescope](https://github.com/nvim-telescope/telescope.nvim) and [fzf-lua](https://github.com/ibhagwan/fzf-lua).
       * Falls back to the native Neovim UI if no UI plugin is installed.
@@ -151,32 +149,17 @@ All commands start with `:UEP`.
 " Search for files belonging to a specific module.
 :UEP module_files[!] [ModuleName]
 
-" Search for files within Programs directories.
-:UEP program_files
-
-" Search for all config files (.ini).
-:UEP config_files
-
 " LiveGrep across the project or engine source code.
 :UEP grep [Game|Engine|Runtime|Editor|Full]
 
 " LiveGrep files belonging to a specific module.
 :UEP module_grep [ModuleName]
 
-" LiveGrep for files within Programs directories.
-:UEP program_grep
-
-" LiveGrep for content within .ini configuration files.
-:UEP config_grep [Game|Engine|Full]
-
 " Open an include file by searching the project cache.
 :UEP open_file [Path]
 
 " Find and insert an #include directive for a class.
 :UEP add_include[!] [ClassName]
-
-" Delete the file cache for a specified component (Game/Engine/Plugin).
-:UEP purge [ComponentName]
 
 " Delete ALL structural (*.project.json) and file (*.files.json) caches for the current project.
 :UEP cleanup

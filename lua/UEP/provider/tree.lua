@@ -158,25 +158,7 @@ local function build_module_nodes(filtered_modules_meta)
     local top_nodes = {}
     
     for mod_name, mod_meta in pairs(filtered_modules_meta) do
-        local mod_cache_data = module_cache.load(mod_meta)
-        local source_files = {}
-        local source_dirs = {}
-        if mod_cache_data then
-            if mod_cache_data.files then
-                for cat, files in pairs(mod_cache_data.files) do
-                    if cat ~= "programs" then
-                        vim.list_extend(source_files, files)
-                    end
-                end
-            end
-            if mod_cache_data.directories then
-                for cat, dirs in pairs(mod_cache_data.directories) do
-                    if cat ~= "programs" then
-                        vim.list_extend(source_dirs, dirs)
-                    end
-                end
-            end
-        end
+        local source_files, source_dirs = load_files_from_db(mod_name)
 
         local children_nodes = build_fs_hierarchy(mod_meta.module_root, source_files, source_dirs, true) 
 
@@ -219,8 +201,10 @@ end
 function M.build_tree_model(opts)
   local log = uep_log.get()
   
+  -- [Fix] Always merge pending request payload to ensure target_module is preserved.
+  -- The consumer might call this with empty opts or partial opts.
   local request_payload = M.get_pending_tree_request({ consumer = "neo-tree-uproject" }) or {} 
-  opts = vim.tbl_deep_extend("force", opts or {}, request_payload)
+  opts = vim.tbl_deep_extend("force", request_payload, opts or {})
   
   local project_root = opts.project_root
   local engine_root = opts.engine_root
@@ -355,6 +339,11 @@ function M.build_tree_model(opts)
   
   if not next(top_level_nodes) then
     return {{ id = "_message_", name = "No components/files to display.", type = "message" }}
+  end
+
+  -- ★ 修正: モジュールツリーの場合は、ルートノードを作らずに直接モジュールノードを返す
+  if opts.target_module then
+      return top_level_nodes
   end
 
   return {{
@@ -571,6 +560,16 @@ function M.load_children(node)
 
     table.sort(children, directory_first_sorter)
     return children
+end
+
+function M.get_pending_tree_request(opts)
+    local key = "pending_request:" .. (opts and opts.consumer or "neo-tree-uproject")
+    return uep_context.get(key)
+end
+
+function M.clear_tree_state()
+    uep_context.set(EXPANDED_STATE_KEY, {})
+    return true
 end
 
 function M.request(opts)

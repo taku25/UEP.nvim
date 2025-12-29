@@ -27,7 +27,7 @@
       * ファイルを即座に見つけるための柔軟な`:UEP files`コマンドを提供します。
       * スコープ（**Game**, **Engine**, **Runtime**, **Editor**, **Full**）でファイルをフィルタリングできます。
       * モジュールの依存関係（**--no-deps**, **--shallow-deps**, **--deep-deps**）を検索に含めることが可能です。
-      * モジュールや`Programs`ディレクトリに特化した検索コマンドを提供します。
+      * モジュールに特化した検索コマンドを提供します。
       * 指定されたスコープ内の全てのクラス、構造体、またはEnum（列挙型）を即座に検索します（:UEP classes, :UEP structs, :UEP enums）。
   * **インテリジェントなコードナビゲーション**:
       * `:UEP find_derived` コマンドで、指定した基底クラスを継承する全ての子クラスを瞬時に発見します。
@@ -39,8 +39,6 @@
       * プロジェクトとエンジンのソースコード全体を横断して、ファイルの中身を高速に検索します (ripgrepが必須)。
       * :UEP grep コマンドで、検索範囲をスコープ (Game, Engine, Runtimeなど) で指定できます。
       * :UEP module_grep コマンドで、特定のモジュール (<module_name>) 内に限定した、ノイズのない集中検索が可能です。
-      * :UEP program_grep コマンドで、全ての`Programs`ディレクトリ内に限定した検索が可能です。
-      * :UEP config_grep コマンドで、.ini設定ファイル内に限定した検索が可能です。
   * **UI統合**:
       * `UNL.nvim`のUI抽象化レイヤーを活用し、[Telescope](https://github.com/nvim-telescope/telescope.nvim)や[fzf-lua](https://github.com/ibhagwan/fzf-lua)のようなUIフロントエンドを自動的に使用します。
       * UIプラグインがインストールされていない場合でも、NeovimネイティブのUIにフォールバックします。
@@ -151,32 +149,17 @@ opts = {
 " 特定のモジュールに属するファイルを検索します。
 :UEP module_files[!] [ModuleName]
 
-" Programsディレクトリ内のファイルを検索します。
-:UEP program_files
-
-" すべてのコンフィグファイル (.ini) を検索します。
-:UEP config_files
-
 " プロジェクトまたはエンジンのソースコード全体からLiveGrepします。
 :UEP grep [Game|Engine|Runtime|Editor|Full]
 
 " 特定のモジュールに属するファイルをLiveGrepします。
 :UEP module_grep [ModuleName]
 
-" Programsディレクトリ内のファイルをLiveGrepします。
-:UEP program_grep
-
-" .ini 設定ファイル内をLiveGrepします。
-:UEP config_grep [Game|Engine|Full]
-
 " プロジェクトキャッシュを検索して、インクルードファイルを開きます。
 :UEP open_file [Path]
 
 " クラスの#includeディレクティブを検索し、挿入します。
 :UEP add_include[!] [ClassName]
-
-" 特定のコンポーネント(Game/Engine/Plugin)のファイルキャッシュのみを削除します。
-:UEP purge [ComponentName]
 
 " 現在のプロジェクトの全ての構造キャッシュとファイルキャッシュを削除します。
 :UEP cleanup

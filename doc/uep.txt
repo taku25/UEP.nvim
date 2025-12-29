@@ -55,20 +55,12 @@ Command List                                           *UEP-commands-list*
     Searches for common source and config files using a UI.
 :UEP module_files[!] [ModuleName]
     Searches for files belonging to a specific module.
-:UEP program_files
-    Searches for files within Programs directories.
-:UEP config_files
-    Searches for all config files (.ini).
 :UEP shaders[!] [Scope]
     Searches for shader files (.usf, .ush).
 :UEP grep [Game|Engine|Runtime|Editor|Full]
     LiveGrep across the project or engine source code.
 :UEP module_grep [ModuleName]
     LiveGrep within a specific module.
-:UEP program_grep
-    LiveGrep for files within Programs directories.
-:UEP config_grep [Game|Engine|Full]
-    LiveGrep for content within .ini configuration files.
 :UEP open_file [Path]
     Open an include file by searching the project cache.
 :UEP add_include[!] [ClassName]
@@ -83,15 +75,10 @@ Command List                                           *UEP-commands-list*
     Searches for C++ structs within the specified scope.
 :UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Searches for C++ enums within the specified scope.
-:UEP purge [ComponentName]
-    Delete the file cache for a specified component (Game/Engine/Plugin).
 :UEP cleanup
     Delete ALL structural and file caches for the current project.
 :UEP tree [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Displays a logical tree of the entire project.
-    (Requires neo-tree-unl.nvim)
-:UEP module_tree [ModuleName] [--no-deps|--shallow-deps|--deep-deps]
-    Displays a logical tree focused on a specific module.
     (Requires neo-tree-unl.nvim)
 :UEP cd
     Selects a destination from a list of known projects to change to.
@@ -153,13 +140,6 @@ Command Details                                     *UEP-commands-detail*
       If omitted, a UI will open to select from all modules, and then the
       files for the selected module will be displayed.
 
-:UEP program_files
-    Searches for files within all Programs directories related to the
-    project and engine (e.g., UnrealBuildTool, AutomationTool).
-
-:UEP config_files
-    Searches for all configuration files (.ini) across the project and engine.
-
 :UEP shaders[!] [Scope]
     Searches for shader files (`.usf`, `.ush`) within the specified scope.
     - `[!](bang)`: (Optional) Forces cache regeneration.
@@ -177,19 +157,6 @@ Command Details                                     *UEP-commands-detail*
     Performs a live grep limited to the directory of a specific module.
     - `[ModuleName]`: (Optional)
       If omitted, a UI will open to select a module.
-
-:UEP program_grep
-    Performs a live grep for files within all `Programs` directories related to
-    the project and engine. Useful for investigating the code of build tools
-    and automation scripts.
-
-:UEP config_grep [Game|Engine|Full]
-    LiveGreps for content within `.ini` configuration files.
-    - `[Game|Engine|Full]`: (Optional, default: `runtime` which aliases to
-      `Full`).
-      - `Game`: Searches only your project's `Config/` directory.
-      - `Engine`: Searches only the engine's `Config/` directory.
-      - `Full` / `Runtime` / etc.: Searches both project and engine.
 
 :UEP open_file [Path]
     Finds and opens a file based on an include path.
@@ -215,11 +182,6 @@ Command Details                                     *UEP-commands-detail*
       - In header files (`.h`), it is inserted before the `.generated.h` line.
       - In source files (`.cpp`), it is inserted after the last existing
         `#include` statement.
-
-:UEP purge [ComponentName]
-    Deletes only the **file cache** (`*.files.json`) for the specified component
-    (Game, Engine, or a specific Plugin).
-    This command runs asynchronously and requires confirmation.
 
 :UEP cleanup
     DANGEROUS: Permanently deletes ALL structural caches
@@ -268,17 +230,9 @@ Command Details                                     *UEP-commands-detail*
 :UEP tree [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Opens a logical project explorer in neo-tree.
     Requires neo-tree-unl.nvim.
-    The view includes Game, Plugins, and Engine components.
     - `[Game|...|Full]`: (Optional, default: `runtime`) Controls the scope.
     - `[--no-deps|...]`: (Optional, default: `--deep-deps`) Controls which
       dependent modules are displayed within the tree.
-
-:UEP module_tree [ModuleName] [--no-deps|--shallow-deps|--deep-deps]
-    Opens a logical tree focused on a single module or its dependencies.
-    Requires neo-tree-unl.nvim.
-    - `[ModuleName]`: (Optional) If omitted, a UI will open to select a module.
-    - `[--no-deps|...]`: (Optional, default: `--deep-deps`) Controls dependency
-      display.
 
 :UEP cd
     Displays a UI with a list of known cached projects and changes the current
@@ -472,13 +426,6 @@ Require the API module:
     Opens the live grep UI for a specific module.
     `opts` can specify module_name.
 
-*uep_api.program_grep({opts})*
-    Opens the live grep UI for `Programs` directories.
-
-*uep_api.config_grep({opts})*
-    Opens the live grep UI for `.ini` files.
-    `opts` can specify scope ("Game", "Engine", "runtime", etc.).
-
 *uep_api.tree({opts})*
     Opens the logical project tree.
     `opts` can specify scope and deps_flag.
@@ -518,9 +465,6 @@ Require the API module:
     `opts` table:
       - `has_bang` (boolean, optional): `true` forces the file picker UI.
       - `path` (string, optional): The file path to open.
-
-*uep_api.config_files({opts})*
-    Opens the config file search UI.
 
 *uep_api.shaders({opts})*
     Opens the shader file search UI.
