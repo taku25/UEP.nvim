@@ -71,17 +71,25 @@ local function execute_project_cleanup(maps)
 
   local function run_cleanup_async()
     local db = uep_db.get()
+    local db_path = uep_db.get_path() -- DBパスを取得
+
     if db then
-        -- A. DBから全データを削除 (CASCADE設定により関連テーブルも削除されるはず)
-        update_progress("All Components", "DB Cleanup")
-        db:eval("DELETE FROM components")
+        -- A. DB接続を閉じる
+        uep_db.close()
         
-        update_progress("All Modules", "DB Cleanup")
-        db:eval("DELETE FROM modules")
-        
-        -- files, classes, directories は modules 削除時に CASCADE される想定だが
-        -- 念のため明示的に削除しても良い (が、CASCADEなら不要)
-        -- db:eval("DELETE FROM files")
+        -- B. DBファイルを削除
+        if db_path and vim.fn.filereadable(db_path) == 1 then
+            local ok, err = os.remove(db_path)
+            if ok then
+                update_progress("Database File", "File Deletion")
+                log.info("Deleted DB file: %s", db_path)
+            else
+                log.error("Failed to delete DB file: %s (%s)", db_path, tostring(err))
+            end
+            -- WALファイルなどもあれば削除 (SQLiteの仕様)
+            os.remove(db_path .. "-wal")
+            os.remove(db_path .. "-shm")
+        end
         
         deleted_count = total_components + total_modules + pseudo_module_count
     else

@@ -117,13 +117,6 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "path", required = false },
       },
     },
-    purge = {
-      handler = uep_api.purge,
-      desc = "Purge the file cache for a specified component (Game/Engine/Plugin).",
-      args = {
-        { name = "component_name", required = false }, -- ★ 注意: これはコンポーネントキャッシュ用。モジュールキャッシュ移行後は削除 or 変更が必要
-      },
-    },
     cleanup = {
       handler = uep_api.cleanup,
       desc = "Delete all structural and file caches for the current project.",
