@@ -13,7 +13,7 @@ function M.execute(opts)
   local log = uep_log.get()
   opts = opts or {}
 
-  -- ▼▼▼ Parse new scope argument (Default: runtime) ▼▼▼
+  -- 1. Parse Scope
   local requested_scope = "runtime"
   local valid_scopes = { game=true, engine=true, runtime=true, developer=true, editor=true, full=true, programs=true, config=true }
   if opts.scope then
@@ -22,13 +22,36 @@ function M.execute(opts)
           requested_scope = scope_lower
       else
           log.warn("Invalid scope argument '%s' for grep. Defaulting to 'runtime'.", opts.scope)
-          -- Keep default "runtime"
       end
   end
-  log.info("Executing :UEP grep with scope=%s", requested_scope)
-  -- ▲▲▲ Scope parsing complete ▲▲▲
 
-  -- ▼▼▼ Determine search paths based on scope ▼▼▼
+  -- 2. Parse Deps
+  local requested_deps = "--deep-deps"
+  local valid_deps = { ["--deep-deps"]=true, ["--shallow-deps"]=true, ["--no-deps"]=true }
+  if opts.deps_flag then
+      local deps_lower = opts.deps_flag:lower()
+      if valid_deps[deps_lower] then
+          requested_deps = deps_lower
+      else
+          log.warn("Invalid deps flag '%s'. Defaulting to '--deep-deps'.", opts.deps_flag)
+      end
+  end
+
+  -- 3. Parse Mode
+  local requested_mode = nil
+  local valid_modes = { source=true, config=true, programs=true, shader=true }
+  if opts.mode then
+      local mode_lower = opts.mode:lower()
+      if valid_modes[mode_lower] then
+          requested_mode = mode_lower
+      else
+          log.warn("Invalid mode argument '%s'. Ignoring.", opts.mode)
+      end
+  end
+
+  log.info("Executing :UEP grep with scope=%s, mode=%s, deps=%s", requested_scope, tostring(requested_mode), requested_deps)
+
+  -- 4. Get Project Maps
   core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
     if not ok then
       log.error("grep: Failed to get project maps: %s", tostring(maps))
@@ -38,107 +61,130 @@ function M.execute(opts)
     local search_paths = {}
     local project_root = maps.project_root
     local engine_root = maps.engine_root
-
-    if not project_root then
-        return log.error("grep: Project root not found in maps.")
-    end
-
-    -- 1. Add Module Roots based on Scope
     local all_modules = maps.all_modules_map
-    local all_components = maps.all_components_map or {}
     local game_name = maps.game_component_name
     local engine_name = maps.engine_component_name
 
-    for _, mod_meta in pairs(all_modules) do
-        local should_add = false
+    -- Helper: Check if path is under root
+    local function path_under_root(path, root)
+      if not path or not root then return false end
+      local p = path:gsub("\\", "/")
+      local r = root:gsub("\\", "/")
+      if not r:match("/$") then r = r .. "/" end
+      return p:sub(1, #r):lower() == r:lower()
+    end
+
+    local game_root = (maps.all_components_map[game_name] or {}).root_path
+    local engine_root_path = (maps.all_components_map[engine_name] or {}).root_path
+
+    -- 5. Determine Seed Modules
+    local seed_modules = {}
+    for n, m in pairs(all_modules) do
+        local is_match = false
+        
+        -- Scope Logic
         if requested_scope == "game" then
-            should_add = (mod_meta.owner_name == game_name)
+            is_match = (m.owner_name == game_name or m.component_name == game_name) or path_under_root(m.module_root, game_root)
         elseif requested_scope == "engine" then
-            should_add = (mod_meta.owner_name == engine_name)
+            is_match = (m.owner_name == engine_name or m.component_name == engine_name) or path_under_root(m.module_root, engine_root_path)
         elseif requested_scope == "runtime" then
-            should_add = (mod_meta.type == "Runtime")
+            is_match = (m.type == "Runtime")
         elseif requested_scope == "developer" then
-            should_add = (mod_meta.type == "Runtime" or mod_meta.type == "Developer")
+            is_match = (m.type == "Runtime" or m.type == "Developer")
         elseif requested_scope == "editor" then
-            if mod_meta.type and mod_meta.type ~= "Program" then
-                local ct = mod_meta.type:match("^%s*(.-)%s*$"):lower()
-                should_add = (ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly")
-            end
+             if m.type and m.type ~= "Program" then
+                local ct = m.type:match("^%s*(.-)%s*$"):lower()
+                is_match = (ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly")
+             end
         elseif requested_scope == "programs" then
-            should_add = (mod_meta.type == "Program")
+            is_match = (m.type == "Program")
         elseif requested_scope == "config" then
-            should_add = false
+            is_match = true 
         elseif requested_scope == "full" then
-            should_add = true
+            is_match = true
         end
 
-        if should_add and mod_meta.module_root then
-            table.insert(search_paths, mod_meta.module_root)
+        if is_match then
+            -- Mode Logic (Filter modules by type if mode is specific)
+            if requested_mode == "programs" then
+                if m.type ~= "Program" then is_match = false end
+            elseif requested_mode == "source" then
+                if m.type == "Program" then is_match = false end
+            end
+        end
+
+        if is_match then
+            seed_modules[n] = true
         end
     end
 
-    -- 2. Add Pseudo-Module Roots (Config, Shaders, Programs)
-    local function add_dir_if_exists(path)
-        if vim.fn.isdirectory(path) == 1 then
-            table.insert(search_paths, path)
+    -- 6. Expand Dependencies
+    local target_modules = seed_modules
+    if requested_deps ~= "--no-deps" then
+        local deps_key = (requested_deps == "--deep-deps") and "deep_dependencies" or "shallow_dependencies"
+        for mod_name, _ in pairs(seed_modules) do
+            local mod_meta = all_modules[mod_name]
+            if mod_meta and mod_meta[deps_key] then
+                for _, dep_name in ipairs(mod_meta[deps_key]) do
+                    local dep_meta = all_modules[dep_name]
+                    if dep_meta then
+                        -- Apply Mode Logic to dependencies too
+                        local should_add = true
+                        if requested_mode == "programs" and dep_meta.type ~= "Program" then should_add = false end
+                        if requested_mode == "source" and dep_meta.type == "Program" then should_add = false end
+                        
+                        if should_add then
+                            target_modules[dep_name] = true
+                        end
+                    end
+                end
+            end
         end
     end
 
-    -- Define what to look for based on scope
-    local target_dirs = {} 
-    if requested_scope == "config" then
-        table.insert(target_dirs, "Config")
-    elseif requested_scope == "programs" then
-        -- Programs are handled specially below
-    else
-        table.insert(target_dirs, "Config")
-        table.insert(target_dirs, "Shaders")
+    -- 7. Collect Paths
+    local involved_components = {} -- Set of root paths for Config/Shader lookup
+
+    for mod_name, _ in pairs(target_modules) do
+        local m = all_modules[mod_name]
+        if m.module_root then
+            -- Add Source Path if mode is source or nil
+            if not requested_mode or requested_mode == "source" then
+                table.insert(search_paths, m.module_root)
+            end
+            
+            -- Track Component Root
+            if m.owner_name and maps.all_components_map[m.owner_name] then
+                local comp_root = maps.all_components_map[m.owner_name].root_path
+                if comp_root then involved_components[comp_root] = true end
+            elseif m.component_name and maps.all_components_map[m.component_name] then
+                 local comp_root = maps.all_components_map[m.component_name].root_path
+                 if comp_root then involved_components[comp_root] = true end
+            else
+                -- Fallback
+                if path_under_root(m.module_root, project_root) then involved_components[project_root] = true end
+                if path_under_root(m.module_root, engine_root) then 
+                    -- Assuming Engine component root is Engine/
+                    local e_root = fs.joinpath(engine_root, "Engine")
+                    involved_components[e_root] = true 
+                end
+            end
+        end
     end
 
-    -- Collect roots
-    local roots = {}
-    -- Project
-    if requested_scope == "game" or requested_scope == "full" or requested_scope == "runtime" or requested_scope == "developer" or requested_scope == "editor" or requested_scope == "config" or requested_scope == "programs" then
-        table.insert(roots, { path = project_root, is_engine = false })
+    -- Add Config/Shader/Programs dirs from Involved Components
+    for comp_root, _ in pairs(involved_components) do
+        if requested_mode == "config" or (not requested_mode and requested_scope ~= "programs") then
+             local p = fs.joinpath(comp_root, "Config")
+             if vim.fn.isdirectory(p) == 1 then table.insert(search_paths, p) end
+        end
+        if requested_mode == "shader" or (not requested_mode and requested_scope ~= "programs") then
+             local p = fs.joinpath(comp_root, "Shaders")
+             if vim.fn.isdirectory(p) == 1 then table.insert(search_paths, p) end
+        end
     end
     
-    -- Engine
-    if engine_root and (requested_scope == "engine" or requested_scope == "full" or requested_scope == "runtime" or requested_scope == "developer" or requested_scope == "editor" or requested_scope == "config" or requested_scope == "programs") then
-        table.insert(roots, { path = fs.joinpath(engine_root, "Engine"), is_engine = true })
-    end
-
-    -- Plugins
-    for _, comp in pairs(all_components) do
-        if comp.type == "Plugin" and comp.root_path then
-             local should_add = false
-             if requested_scope == "game" then should_add = (comp.owner_name == game_name)
-             elseif requested_scope == "engine" then should_add = (comp.owner_name == engine_name)
-             elseif requested_scope == "programs" or requested_scope == "config" or requested_scope == "full" then should_add = true
-             else should_add = true end 
-             
-             if should_add then
-                 table.insert(roots, { path = comp.root_path, is_engine = false })
-             end
-        end
-    end
-
-    for _, root_info in ipairs(roots) do
-        -- Add standard targets (Config, Shaders)
-        for _, subdir in ipairs(target_dirs) do
-            add_dir_if_exists(fs.joinpath(root_info.path, subdir))
-        end
-
-        -- Special handling for Programs
-        if requested_scope == "programs" then
-            if root_info.is_engine then
-                add_dir_if_exists(fs.joinpath(root_info.path, "Source", "Programs"))
-            else
-                add_dir_if_exists(fs.joinpath(root_info.path, "Programs"))
-            end
-        end
-    end
-
-    -- Remove duplicates (though unlikely with this approach)
+    -- Remove duplicates
     local seen = {}; local unique_paths = {}
     for _, path in ipairs(search_paths) do if not seen[path] then table.insert(unique_paths, path); seen[path] = true end end
     search_paths = unique_paths
@@ -150,9 +196,6 @@ function M.execute(opts)
         for _, p in ipairs(paths) do total_len = total_len + #p + 1 end
         
         if total_len < limit then return paths end
-        
-        -- Log suppressed to avoid spam/errors during rapid calls
-        -- log.info("grep: Search paths too long (%d chars). Optimizing...", total_len)
         
         -- Define aggregation groups
         local groups = {}
@@ -213,8 +256,12 @@ function M.execute(opts)
     -- Call the core grep function
     grep_core.start_live_grep({
       search_paths = search_paths,
-      title = string.format("Live Grep (%s)", requested_scope:gsub("^%l", string.upper)),
-      initial_query = "", -- Could add argument parsing for initial query later
+      title = string.format("Live Grep (%s%s%s)", 
+        requested_scope:gsub("^%l", string.upper),
+        requested_mode and (" ["..requested_mode:gsub("^%l", string.upper).."]") or "",
+        requested_deps ~= "--deep-deps" and (" ("..requested_deps..")") or ""
+      ),
+      initial_query = "", 
     })
   end)
 end

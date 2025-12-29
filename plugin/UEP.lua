@@ -76,6 +76,8 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Live grep files. Scope: Game|Engine|Runtime(default)|Developer|Editor|Full|Programs|Config.",
       args = {
         { name = "scope", required = false },
+        { name = "mode", required = false },
+        { name = "deps_flag", required = false },
       },
     },
     module_grep = {
