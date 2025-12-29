@@ -41,9 +41,10 @@ local command_spec = { -- line 10: 開始の '{'
     files = {
       handler = uep_api.files,
       bang = true,
-      desc = ":UEP files [Scope] [DepsFlag]",
+      desc = ":UEP files [Scope] [Mode] [DepsFlag]",
       args = {
         { name = "scope", required = false },
+        { name = "mode", required = false },
         { name = "deps_flag", required = false },
       },
     },

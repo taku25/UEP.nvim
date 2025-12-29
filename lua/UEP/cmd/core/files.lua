@@ -75,9 +75,10 @@ function M.get_files(opts, on_complete)
   local start_time = os.clock()
   opts = opts or {}
   local requested_scope = opts.scope or "runtime"
+  local requested_mode = opts.mode -- nil if not provided
   local deps_flag = opts.deps_flag or "--deep-deps"
 
-  log.debug("core_files.get_files called with scope=%s, deps_flag=%s", requested_scope, deps_flag)
+  log.debug("core_files.get_files called with scope=%s, mode=%s, deps_flag=%s", requested_scope, tostring(requested_mode), deps_flag)
 
   -- STEP 1: プロジェクトの全体マップを取得
   core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
@@ -110,64 +111,94 @@ function M.get_files(opts, on_complete)
     local seed_modules = {}
     
     -- 2a: スコープに基づいて起点モジュールを決定
-    if requested_scope == "game" then
-      for n, m in pairs(all_modules_map) do 
-        -- owner/component が一致、もしくはモジュールルートがゲームルート配下
-        if m.type ~= "Program" and ((m.owner_name == game_name or m.component_name == game_name) or path_under_root(m.module_root, game_root)) then 
-          seed_modules[n] = true 
-        end 
-      end
-    elseif requested_scope == "engine" then
+    if requested_mode then
+      -- ★★★ 新モードロジック ★★★
       for n, m in pairs(all_modules_map) do
-        if m.type ~= "Program" and ((m.owner_name == engine_name or m.component_name == engine_name) or path_under_root(m.module_root, engine_root)) then
-          seed_modules[n] = true
+        local is_owner_match = false
+        if requested_scope == "game" then
+          is_owner_match = (m.owner_name == game_name or m.component_name == game_name) or path_under_root(m.module_root, game_root)
+        elseif requested_scope == "engine" then
+          is_owner_match = (m.owner_name == engine_name or m.component_name == engine_name) or path_under_root(m.module_root, engine_root)
+        else -- full, all, etc.
+          is_owner_match = true
         end
-      end
-    elseif requested_scope == "runtime" then
-      for n, m in pairs(all_modules_map) do
-        if m.type == "Runtime" then
-          seed_modules[n] = true
-        end
-      end
-    elseif requested_scope == "developer" then
-      for n, m in pairs(all_modules_map) do
-        if m.type == "Runtime" or m.type == "Developer" then
-          seed_modules[n] = true
-        end
-      end
-    elseif requested_scope == "programs" then
-      for n, m in pairs(all_modules_map) do
-        if m.type == "Program" then
-          seed_modules[n] = true
-        end
-      end
-    elseif requested_scope == "config" then
-      -- Config scope: Include ALL modules to scan for .ini files later
-      for n, m in pairs(all_modules_map) do
-          seed_modules[n] = true
-      end
-    elseif requested_scope == "editor" then
-      for n, m in pairs(all_modules_map) do
-        if m.type and m.type ~= "Program" then
-          local ct = m.type:match("^%s*(.-)%s*$"):lower()
-          if ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly" then
+
+        if is_owner_match then
+          local is_type_match = false
+          if requested_mode == "programs" then
+            is_type_match = (m.type == "Program")
+          elseif requested_mode == "source" then
+            is_type_match = (m.type ~= "Program") -- Source usually means non-program source
+          else -- config, shader
+            is_type_match = true -- Config/Shader can be anywhere
+          end
+
+          if is_type_match then
             seed_modules[n] = true
           end
         end
       end
-    
-    elseif requested_scope == "full" then
-      for n, m in pairs(all_modules_map) do
-        if m.type ~= "Program" then 
-          seed_modules[n] = true
+    else
+      -- ★★★ 既存ロジック (Legacy) ★★★
+      if requested_scope == "game" then
+        for n, m in pairs(all_modules_map) do 
+          -- owner/component が一致、もしくはモジュールルートがゲームルート配下
+          if m.type ~= "Program" and ((m.owner_name == game_name or m.component_name == game_name) or path_under_root(m.module_root, game_root)) then 
+            seed_modules[n] = true 
+          end 
         end
-      end
+      elseif requested_scope == "engine" then
+        for n, m in pairs(all_modules_map) do
+          if m.type ~= "Program" and ((m.owner_name == engine_name or m.component_name == engine_name) or path_under_root(m.module_root, engine_root)) then
+            seed_modules[n] = true
+          end
+        end
+      elseif requested_scope == "runtime" then
+        for n, m in pairs(all_modules_map) do
+          if m.type == "Runtime" then
+            seed_modules[n] = true
+          end
+        end
+      elseif requested_scope == "developer" then
+        for n, m in pairs(all_modules_map) do
+          if m.type == "Runtime" or m.type == "Developer" then
+            seed_modules[n] = true
+          end
+        end
+      elseif requested_scope == "programs" then
+        for n, m in pairs(all_modules_map) do
+          if m.type == "Program" then
+            seed_modules[n] = true
+          end
+        end
+      elseif requested_scope == "config" then
+        -- Config scope: Include ALL modules to scan for .ini files later
+        for n, m in pairs(all_modules_map) do
+            seed_modules[n] = true
+        end
+      elseif requested_scope == "editor" then
+        for n, m in pairs(all_modules_map) do
+          if m.type and m.type ~= "Program" then
+            local ct = m.type:match("^%s*(.-)%s*$"):lower()
+            if ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly" then
+              seed_modules[n] = true
+            end
+          end
+        end
+      
+      elseif requested_scope == "full" then
+        for n, m in pairs(all_modules_map) do
+          if m.type ~= "Program" then 
+            seed_modules[n] = true
+          end
+        end
 
-    else -- Unknown scope defaults to runtime
-      requested_scope = "runtime"
-      for n, m in pairs(all_modules_map) do
-        if m.type == "Runtime" then
-          seed_modules[n] = true
+      else -- Unknown scope defaults to runtime
+        requested_scope = "runtime"
+        for n, m in pairs(all_modules_map) do
+          if m.type == "Runtime" then
+            seed_modules[n] = true
+          end
         end
       end
     end
@@ -186,26 +217,46 @@ function M.get_files(opts, on_complete)
                     local dep_meta = all_modules_map[dep_name]
                     if dep_meta then
                         local should_add = false
-                        if requested_scope == "game" then
-                          if dep_meta.type and dep_meta.type ~= "Program" and ((dep_meta.owner_name == game_name or dep_meta.component_name == game_name) or path_under_root(dep_meta.module_root, game_root)) then
-                            should_add = true
+                        
+                        if requested_mode then
+                          -- ★★★ 新モードロジック (依存関係も厳密にフィルタ) ★★★
+                          local is_owner_match = false
+                          if requested_scope == "game" then
+                            is_owner_match = (dep_meta.owner_name == game_name or dep_meta.component_name == game_name) or path_under_root(dep_meta.module_root, game_root)
+                          elseif requested_scope == "engine" then
+                            is_owner_match = (dep_meta.owner_name == engine_name or dep_meta.component_name == engine_name) or path_under_root(dep_meta.module_root, engine_root)
+                          else
+                            is_owner_match = true
                           end
-                        elseif requested_scope == "engine" then
-                          if dep_meta.type and dep_meta.type ~= "Program" and ((dep_meta.owner_name == engine_name or dep_meta.component_name == engine_name) or path_under_root(dep_meta.module_root, engine_root)) then
-                            should_add = true
+                          
+                          if is_owner_match then
+                             if requested_mode == "programs" then should_add = (dep_meta.type == "Program")
+                             elseif requested_mode == "source" then should_add = (dep_meta.type ~= "Program")
+                             else should_add = true end
                           end
-                        elseif requested_scope == "editor" or requested_scope == "full" then
-                          if dep_meta.type and dep_meta.type ~= "Program" then
-                            should_add = true
+                        else
+                          -- ★★★ 既存ロジック (Legacy) ★★★
+                          if requested_scope == "game" then
+                            if dep_meta.type and dep_meta.type ~= "Program" and ((dep_meta.owner_name == game_name or dep_meta.component_name == game_name) or path_under_root(dep_meta.module_root, game_root)) then
+                              should_add = true
+                            end
+                          elseif requested_scope == "engine" then
+                            if dep_meta.type and dep_meta.type ~= "Program" and ((dep_meta.owner_name == engine_name or dep_meta.component_name == engine_name) or path_under_root(dep_meta.module_root, engine_root)) then
+                              should_add = true
+                            end
+                          elseif requested_scope == "editor" or requested_scope == "full" then
+                            if dep_meta.type and dep_meta.type ~= "Program" then
+                              should_add = true
+                            end
+                          elseif requested_scope == "programs" then
+                            if dep_meta.type == "Program" then
+                              should_add = true
+                            end
+                          elseif requested_scope == "runtime" then 
+                              should_add = (dep_meta.type == "Runtime")
+                          elseif requested_scope == "developer" then 
+                              should_add = (dep_meta.type == "Runtime" or dep_meta.type == "Developer")
                           end
-                        elseif requested_scope == "programs" then
-                          if dep_meta.type == "Program" then
-                            should_add = true
-                          end
-                        elseif requested_scope == "runtime" then 
-                            should_add = (dep_meta.type == "Runtime")
-                        elseif requested_scope == "developer" then 
-                            should_add = (dep_meta.type == "Runtime" or dep_meta.type == "Developer")
                         end
                         
                         if should_add then
@@ -231,21 +282,48 @@ function M.get_files(opts, on_complete)
     local allow_programs_category = (requested_scope == "programs")
     for mod_name, _ in pairs(target_module_names) do
       local mod_meta = all_modules_map[mod_name]
-      if mod_meta and (requested_scope == "programs" or mod_meta.type ~= "Program") then
+      if mod_meta then
         local files_from_db = get_module_files_from_db(mod_name, mod_meta.module_root)
 
         if files_from_db then
           for category, files in pairs(files_from_db) do
-            -- Configスコープの場合はConfigファイルのみ、それ以外はConfig以外（または全部）
-            local should_include = true
-            if requested_scope == "config" and category ~= "config" then should_include = false end
-            if not allow_programs_category and category == "programs" then should_include = false end
+            local should_include = false
+
+            if requested_mode then
+                -- ★★★ 新モードロジック ★★★
+                if requested_mode == "config" then
+                    should_include = (category == "config")
+                elseif requested_mode == "shader" then
+                    should_include = (category == "source" or category == "shaders")
+                elseif requested_mode == "programs" then
+                    should_include = (category == "source" or category == "programs")
+                elseif requested_mode == "source" then
+                    should_include = (category == "source")
+                end
+            else
+                -- ★★★ 既存ロジック (Legacy) ★★★
+                should_include = true
+                if requested_scope == "config" and category ~= "config" then should_include = false end
+                if not allow_programs_category and category == "programs" then should_include = false end
+            end
 
             if should_include then
               for _, file_path in ipairs(files) do
-                table.insert(merged_files_with_context, {
-                  file_path = file_path, module_name = mod_name, module_root = mod_meta.module_root, category = category
-                })
+                local add_file = true
+                
+                if requested_mode == "shader" then
+                    add_file = (file_path:match("%.usf$") or file_path:match("%.ush$"))
+                elseif requested_mode == "source" or requested_mode == "programs" then
+                    if file_path:match("%.usf$") or file_path:match("%.ush$") then
+                        add_file = false
+                    end
+                end
+
+                if add_file then
+                    table.insert(merged_files_with_context, {
+                      file_path = file_path, module_name = mod_name, module_root = mod_meta.module_root, category = category
+                    })
+                end
               end
             end
           end
@@ -266,12 +344,22 @@ function M.get_files(opts, on_complete)
     end
 
     if add_engine_pseudos and maps.engine_root then
-        if requested_scope ~= "programs" then
-            pseudo_module_files._EngineShaders = { root=fs.joinpath(maps.engine_root, "Engine", "Shaders") }
-            pseudo_module_files._EngineConfig  = { root=fs.joinpath(maps.engine_root, "Engine", "Config") }
-        end
-        if requested_scope == "programs" or requested_scope == "full" then
-            pseudo_module_files._EnginePrograms = { root=fs.joinpath(maps.engine_root, "Engine", "Source", "Programs") }
+        if requested_mode then
+            if requested_mode == "shader" then
+                pseudo_module_files._EngineShaders = { root=fs.joinpath(maps.engine_root, "Engine", "Shaders") }
+            elseif requested_mode == "config" then
+                pseudo_module_files._EngineConfig  = { root=fs.joinpath(maps.engine_root, "Engine", "Config") }
+            elseif requested_mode == "programs" then
+                pseudo_module_files._EnginePrograms = { root=fs.joinpath(maps.engine_root, "Engine", "Source", "Programs") }
+            end
+        else
+            if requested_scope ~= "programs" then
+                pseudo_module_files._EngineShaders = { root=fs.joinpath(maps.engine_root, "Engine", "Shaders") }
+                pseudo_module_files._EngineConfig  = { root=fs.joinpath(maps.engine_root, "Engine", "Config") }
+            end
+            if requested_scope == "programs" or requested_scope == "full" then
+                pseudo_module_files._EnginePrograms = { root=fs.joinpath(maps.engine_root, "Engine", "Source", "Programs") }
+            end
         end
     end
 
@@ -316,19 +404,38 @@ function M.get_files(opts, on_complete)
 
             if pseudo_files then
               for category, files in pairs(pseudo_files) do
-                local allow_programs = (requested_scope == "programs" or requested_scope == "full")
-                local allow_config = (requested_scope == "config" or requested_scope == "full")
+                local should_include = false
                 
-                -- Filter logic
-                local should_include = true
-                if category == "programs" and not allow_programs then should_include = false end
-                if requested_scope == "config" and category ~= "config" then should_include = false end
+                if requested_mode then
+                    if requested_mode == "config" then should_include = (category == "config")
+                    elseif requested_mode == "shader" then should_include = (category == "source" or category == "shaders")
+                    elseif requested_mode == "programs" then should_include = (category == "source" or category == "programs")
+                    elseif requested_mode == "source" then should_include = (category == "source")
+                    end
+                else
+                    -- Legacy
+                    should_include = true
+                    local allow_programs = (requested_scope == "programs" or requested_scope == "full")
+                    if category == "programs" and not allow_programs then should_include = false end
+                    if requested_scope == "config" and category ~= "config" then should_include = false end
+                end
 
                 if should_include then
                   for _, file_path in ipairs(files) do
-                    table.insert(merged_files_with_context, {
-                      file_path = file_path, module_name = pseudo_name, module_root = data.root, category = category
-                    })
+                    local add_file = true
+                    if requested_mode == "shader" then
+                        add_file = (file_path:match("%.usf$") or file_path:match("%.ush$"))
+                    elseif requested_mode == "source" or requested_mode == "programs" then
+                        if file_path:match("%.usf$") or file_path:match("%.ush$") then
+                            add_file = false
+                        end
+                    end
+                    
+                    if add_file then
+                        table.insert(merged_files_with_context, {
+                          file_path = file_path, module_name = pseudo_name, module_root = data.root, category = category
+                        })
+                    end
                   end
                 end
               end
