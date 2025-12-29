@@ -4,9 +4,7 @@
 
 local unl_context = require("UNL.context")
 local uep_log = require("UEP.logger") 
-local projects_cache = require("UEP.cache.projects")
-local project_cache = require("UEP.cache.project")
-local module_cache = require("UEP.cache.module")
+local uep_db = require("UEP.db.init")
 local fs = require("vim.fs")
 local uep_context = require("UEP.context")
 
@@ -17,6 +15,29 @@ local EXPANDED_STATE_KEY = "tree_expanded_state"
 -------------------------------------------------
 -- ヘルパー関数
 -------------------------------------------------
+
+local function load_files_from_db(module_name)
+    local db = uep_db.get()
+    if not db then return {}, {} end
+    
+    local mod_row = db:eval("SELECT id FROM modules WHERE name = ?", { module_name })
+    if type(mod_row) ~= "table" or #mod_row == 0 then return {}, {} end
+    local mod_id = mod_row[1].id
+    
+    local files = {}
+    local file_rows = db:eval("SELECT path FROM files WHERE module_id = ?", { mod_id })
+    if type(file_rows) == "table" then
+        for _, r in ipairs(file_rows) do table.insert(files, r.path) end
+    end
+    
+    local dirs = {}
+    local dir_rows = db:eval("SELECT path FROM directories WHERE module_id = ?", { mod_id })
+    if type(dir_rows) == "table" then
+        for _, r in ipairs(dir_rows) do table.insert(dirs, r.path) end
+    end
+    
+    return files, dirs
+end
 
 local function directory_first_sorter(a, b)
   if a.type == "directory" and b.type ~= "directory" then return true
@@ -137,25 +158,7 @@ local function build_module_nodes(filtered_modules_meta)
     local top_nodes = {}
     
     for mod_name, mod_meta in pairs(filtered_modules_meta) do
-        local mod_cache_data = module_cache.load(mod_meta)
-        local source_files = {}
-        local source_dirs = {}
-        if mod_cache_data then
-            if mod_cache_data.files then
-                for cat, files in pairs(mod_cache_data.files) do
-                    if cat ~= "programs" then
-                        vim.list_extend(source_files, files)
-                    end
-                end
-            end
-            if mod_cache_data.directories then
-                for cat, dirs in pairs(mod_cache_data.directories) do
-                    if cat ~= "programs" then
-                        vim.list_extend(source_dirs, dirs)
-                    end
-                end
-            end
-        end
+        local source_files, source_dirs = load_files_from_db(mod_name)
 
         local children_nodes = build_fs_hierarchy(mod_meta.module_root, source_files, source_dirs, true) 
 
@@ -198,45 +201,79 @@ end
 function M.build_tree_model(opts)
   local log = uep_log.get()
   
+  -- [Fix] Always merge pending request payload to ensure target_module is preserved.
+  -- The consumer might call this with empty opts or partial opts.
   local request_payload = M.get_pending_tree_request({ consumer = "neo-tree-uproject" }) or {} 
-  opts = vim.tbl_deep_extend("force", opts or {}, request_payload)
+  opts = vim.tbl_deep_extend("force", request_payload, opts or {})
   
   local project_root = opts.project_root
   local engine_root = opts.engine_root
   if not project_root then return nil end
   
-  local project_display_name = vim.fn.fnamemodify(project_root, ":t")
-  local project_registry_info = projects_cache.get_project_info(project_display_name)
-  if not project_registry_info or not project_registry_info.components then
-    return {{ id = "_message_", name = "Project not registered.", type = "message" }}
-  end
-  
+  local db = uep_db.get()
+  if not db then return {{ id = "_message_", name = "DB not available.", type = "message" }} end
+
+  local components = db:eval("SELECT * FROM components") or {}
+  local modules_rows = db:eval("SELECT * FROM modules") or {}
+
   local all_modules_map, module_to_component_name, all_components_map = {}, {}, {}
   local game_name, engine_name
   local game_owner, engine_owner
   
-  for _, comp_name in ipairs(project_registry_info.components) do
-    local p_cache = project_cache.load(comp_name .. ".project.json")
-    if p_cache then
-      all_components_map[comp_name] = p_cache
-      p_cache.uproject_path = (p_cache.type == "Game" and project_registry_info.uproject_path) or nil
-      for _, module_type in ipairs({ "runtime_modules", "developer_modules", "editor_modules", "programs_modules" }) do
-        if p_cache[module_type] then
-          for mod_name, mod_data in pairs(p_cache[module_type]) do
-            all_modules_map[mod_name] = mod_data
-            module_to_component_name[mod_name] = comp_name
+  for _, comp in ipairs(components) do
+      all_components_map[comp.name] = {
+          name = comp.name,
+          display_name = comp.display_name,
+          type = comp.type,
+          owner_name = comp.owner_name,
+          root_path = comp.root_path,
+          uplugin_path = comp.uplugin_path,
+          uproject_path = comp.uproject_path,
+          engine_association = comp.engine_association,
+          runtime_modules = {},
+          developer_modules = {},
+          editor_modules = {},
+          programs_modules = {}
+      }
+      if comp.type == "Game" then 
+          game_name = comp.display_name
+          game_owner = comp.owner_name 
+      end
+      if comp.type == "Engine" then 
+          engine_name = comp.display_name
+          engine_owner = comp.owner_name
+      end
+  end
+
+  for _, row in ipairs(modules_rows) do
+      local deep_deps = nil
+      if row.deep_dependencies and row.deep_dependencies ~= "" then
+          local ok, res = pcall(vim.json.decode, row.deep_dependencies)
+          if ok then deep_deps = res end
+      end
+
+      local mod_meta = {
+          name = row.name,
+          type = row.type,
+          scope = row.scope,
+          module_root = row.root_path,
+          path = row.build_cs_path,
+          owner_name = row.owner_name,
+          component_name = row.component_name,
+          deep_dependencies = deep_deps
+      }
+      all_modules_map[row.name] = mod_meta
+      module_to_component_name[row.name] = row.component_name
+      
+      if row.component_name and all_components_map[row.component_name] then
+          local comp = all_components_map[row.component_name]
+          local mtype = row.type
+          if mtype == "Runtime" then comp.runtime_modules[row.name] = mod_meta
+          elseif mtype == "Developer" then comp.developer_modules[row.name] = mod_meta
+          elseif mtype == "Editor" then comp.editor_modules[row.name] = mod_meta
+          elseif mtype == "Program" then comp.programs_modules[row.name] = mod_meta
           end
-        end
       end
-      if p_cache.type == "Game" then 
-          game_name = p_cache.display_name
-          game_owner = p_cache.owner_name 
-      end
-      if p_cache.type == "Engine" then 
-          engine_name = p_cache.display_name
-          engine_owner = p_cache.owner_name
-      end
-    end
   end
   
   if not next(all_modules_map) then return {{ id = "_message_", name = "No modules in cache.", type = "message" }} end
@@ -304,6 +341,11 @@ function M.build_tree_model(opts)
     return {{ id = "_message_", name = "No components/files to display.", type = "message" }}
   end
 
+  -- ★ 修正: モジュールツリーの場合は、ルートノードを作らずに直接モジュールノードを返す
+  if opts.target_module then
+      return top_level_nodes
+  end
+
   return {{
     id = "logical_root",
     name = project_display_name or "Logical View",
@@ -358,13 +400,10 @@ function M.load_children(node)
             end
             
             for pseudo_name, data in pairs(pseudo_module_files) do
-                local pseudo_meta = { name = pseudo_name, module_root = data.root }
-                local pseudo_cache = module_cache.load(pseudo_meta)
+                local f, d = load_files_from_db(pseudo_name)
+                vim.list_extend(data.files, f)
+                vim.list_extend(data.dirs, d)
                 
-                if pseudo_cache then
-                    if pseudo_cache.files then for cat, files in pairs(pseudo_cache.files) do if files and #files > 0 then vim.list_extend(data.files, files) end end end
-                    if pseudo_cache.directories then for cat, dirs in pairs(pseudo_cache.directories) do if dirs and #dirs > 0 then vim.list_extend(data.dirs, dirs) end end end
-                end
                 vim.list_extend(child_files, data.files or {})
                 vim.list_extend(child_dirs, data.dirs or {})
             end
@@ -379,31 +418,19 @@ function M.load_children(node)
                     -- Pluginの疑似モジュール (Shaders/Config等) をロード
                     if component.type == "Plugin" then
                         local pseudo_name = component.type .. "_" .. component.display_name
-                        local pseudo_meta = { name = pseudo_name, module_root = component.root_path }
-                        local pseudo_cache = module_cache.load(pseudo_meta)
+                        local f, d = load_files_from_db(pseudo_name)
 
-                        if pseudo_cache then
-                            local function is_excluded(cat, path)
-                                if cat == "content" then return true end
-                                if path:find("/Content/", 1, true) or path:match("/Content$") then return true end
-                                if path:find("/Resources/", 1, true) or path:match("/Resources$") then return true end
-                                return false
-                            end
+                        local function is_excluded(path)
+                            if path:find("/Content/", 1, true) or path:match("/Content$") then return true end
+                            if path:find("/Resources/", 1, true) or path:match("/Resources$") then return true end
+                            return false
+                        end
 
-                            if pseudo_cache.files then
-                                for cat, files in pairs(pseudo_cache.files) do
-                                    for _, f in ipairs(files or {}) do
-                                        if not is_excluded(cat, f) then table.insert(child_files, f) end
-                                    end
-                                end
-                            end
-                            if pseudo_cache.directories then
-                                for cat, dirs in pairs(pseudo_cache.directories) do
-                                    for _, d in ipairs(dirs or {}) do
-                                        if not is_excluded(cat, d) then table.insert(child_dirs, d) end
-                                    end
-                                end
-                            end
+                        for _, file in ipairs(f) do
+                            if not is_excluded(file) then table.insert(child_files, file) end
+                        end
+                        for _, dir in ipairs(d) do
+                            if not is_excluded(dir) then table.insert(child_dirs, dir) end
                         end
                     end
 
@@ -419,23 +446,9 @@ function M.load_children(node)
                     end
                     
                     for mod_name, mod_meta in pairs(relevant_modules) do
-                        local mod_cache_data = module_cache.load(mod_meta)
-                        if mod_cache_data then
-                            if mod_cache_data.files then 
-                              for cat, files in pairs(mod_cache_data.files) do 
-                                if files and #files > 0 and cat ~= "programs" then 
-                                  vim.list_extend(child_files, files) 
-                                end 
-                              end 
-                            end
-                            if mod_cache_data.directories then 
-                              for cat, dirs in pairs(mod_cache_data.directories) do 
-                                if dirs and #dirs > 0 and cat ~= "programs" then 
-                                  vim.list_extend(child_dirs, dirs) 
-                                end 
-                              end 
-                            end
-                        end
+                        local f, d = load_files_from_db(mod_name)
+                        vim.list_extend(child_files, f)
+                        vim.list_extend(child_dirs, d)
                     end
                 end
             end
@@ -547,6 +560,16 @@ function M.load_children(node)
 
     table.sort(children, directory_first_sorter)
     return children
+end
+
+function M.get_pending_tree_request(opts)
+    local key = "pending_request:" .. (opts and opts.consumer or "neo-tree-uproject")
+    return uep_context.get(key)
+end
+
+function M.clear_tree_state()
+    uep_context.set(EXPANDED_STATE_KEY, {})
+    return true
 end
 
 function M.request(opts)

@@ -1,7 +1,6 @@
 -- lua/UEP/cmd/goto_super.lua
 local uep_log = require("UEP.logger")
 local derived_core = require("UEP.cmd.core.derived")
-local parents_core = require("UEP.cmd.core.parents")
 local unl_parser = require("UNL.parser.cpp")
 local unl_buf_open = require("UNL.buf.open")
 local unl_api = require("UNL.api")
@@ -96,12 +95,9 @@ function M.execute(opts)
 
     log.info("Looking for Super::%s (Base of %s) [%s]...", func_name, class_name, mode)
 
-    -- 2. 親クラス情報を取得
-    derived_core.get_all_classes({ scope = "Full" }, function(all_symbols)
-        if not all_symbols then return log.error("Failed to get class cache. Run :UEP refresh.") end
-
-        -- 3. 継承チェーンを取得
-        local parents_chain = parents_core.get_inheritance_chain(class_name, all_symbols)
+    -- 2. 親クラス情報を取得 (DB CTE)
+    derived_core.get_inheritance_chain(class_name, { scope = "Full" }, function(parents_chain)
+        if not parents_chain then return log.error("Failed to get inheritance chain. Run :UEP refresh.") end
         if #parents_chain == 0 then return log.warn("Class '%s' has no known parent classes in cache.", class_name) end
 
         -- 4. 親クラスを近い順に走査

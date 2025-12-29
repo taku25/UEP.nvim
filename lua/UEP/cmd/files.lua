@@ -3,12 +3,10 @@
 local uep_log = require("UEP.logger")
 local uep_config = require("UEP.config")
 local uep_context = require("UEP.context")
-local unl_cache_core = require("UNL.cache.core")
 local unl_finder = require("UNL.finder")
 local unl_picker = require("UNL.backend.picker")
-local core_files = require("UEP.cmd.core.files") -- ★ このコアロジックを後で修正する必要あり
-local core_utils = require("UEP.cmd.core.utils") -- ★ このコアロジックも後で修正する必要あり
-local unl_path = require("UNL.path")
+local core_files = require("UEP.cmd.core.files")
+local core_utils = require("UEP.cmd.core.utils")
 
 local M = {}
 
@@ -18,51 +16,61 @@ local is_generating_shallowdeps = false -- --shallow-deps 用
 local is_generating_deepdeps = false -- --deep-deps 用
 
 -- ▼▼▼ キャッシュパス/コンテキストキー生成関数を修正 ▼▼▼
-local function get_cache_filepath(scope, deps_flag)
-  local cache_dir = unl_cache_core.get_cache_dir(uep_config.get())
-  if not cache_dir then return nil end
-  local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
-  if not project_root then return nil end
-  local project_name = unl_path.normalize(project_root):gsub("[\\/:]", "_")
-
-  -- ファイル名: [プロジェクト名].picker_files_[scope]_[deps].cache.json
-  local scope_suffix = "_" .. scope:lower()
-  local deps_suffix = ""
-  if deps_flag == "--shallow-deps" then deps_suffix = "_shallowdeps"
-  elseif deps_flag == "--no-deps" then deps_suffix = "_nodeps"
-  else deps_suffix = "_deepdeps" end -- デフォルトは deep
-
-  local filename = project_name .. ".picker_files" .. scope_suffix .. deps_suffix .. ".cache.json"
-  return vim.fs.joinpath(cache_dir, "cmd", filename)
-end
-
-local function get_context_key(scope, deps_flag)
+local function get_context_key(scope, deps_flag, mode)
   local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
   if not project_root then return nil end
 
   local scope_suffix = scope:lower()
+  local mode_suffix = mode and ("::" .. mode:lower()) or ""
   local deps_suffix = ""
   if deps_flag == "--shallow-deps" then deps_suffix = "shallow"
   elseif deps_flag == "--no-deps" then deps_suffix = "no"
   else deps_suffix = "deep" end
 
-  return "files_picker_cache::" .. project_root .. "::" .. scope_suffix .. "::" .. deps_suffix
+  return "files_picker_cache::" .. project_root .. "::" .. scope_suffix .. mode_suffix .. "::" .. deps_suffix
 end
 -- ▲▲▲ キャッシュパス/コンテキストキー修正ここまで ▲▲▲
 
 
--- (show_picker, load_cache_from_file は引数に scope を追加)
-local function show_picker(scope, deps_flag)
+-- ★追加: 全てのピッカーキャッシュを削除する関数 (hub.luaから呼ばれる)
+function M.delete_all_picker_caches()
   local log = uep_log.get()
-  local context_key = get_context_key(scope, deps_flag)
+  local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
+  if not project_root then return end
+
+  -- コンテキストキーのプレフィックスで検索して削除
+  local scopes = { "runtime", "game", "engine", "developer", "editor", "full" }
+  local modes = { "source", "config", "programs", "shader" }
+  local deps = { "--deep-deps", "--shallow-deps", "--no-deps" }
+
+  for _, s in ipairs(scopes) do
+    for _, d in ipairs(deps) do
+      -- モードなし
+      local key = get_context_key(s, d, nil)
+      if key then uep_context.set(key, nil) end
+      -- モードあり
+      for _, m in ipairs(modes) do
+        local key_mode = get_context_key(s, d, m)
+        if key_mode then uep_context.set(key_mode, nil) end
+      end
+    end
+  end
+  log.debug("All file picker caches cleared.")
+end
+
+-- (show_picker, load_cache_from_file は引数に scope を追加)
+local function show_picker(scope, deps_flag, mode)
+  local log = uep_log.get()
+  local context_key = get_context_key(scope, deps_flag, mode)
   if not context_key then return log.error("Could not determine context key for picker.") end
 
   local picker_items = uep_context.get(context_key)
   if not picker_items or #picker_items == 0 then
-    return log.warn("File cache is empty or not loaded for scope=%s, deps=%s.", scope, deps_flag)
+    return log.info("UEP files: no items for scope=%s, deps=%s, mode=%s (cache empty).", scope, deps_flag, tostring(mode))
   end
 
   local scope_display = scope:gsub("^%l", string.upper) -- Runtime -> Runtime
+  local mode_display = mode and (" [" .. mode:gsub("^%l", string.upper) .. "]") or ""
   local deps_display = ""
   if deps_flag == "--shallow-deps" then deps_display = " (Shallow Deps)"
   elseif deps_flag == "--no-deps" then deps_display = " (No Deps)"
@@ -70,7 +78,7 @@ local function show_picker(scope, deps_flag)
 
   unl_picker.pick({
     kind = "uep_file_picker",
-    title = (" Files [%s%s]"):format(scope_display, deps_display),
+    title = (" Files [%s%s]%s"):format(scope_display, mode_display, deps_display),
     items = picker_items,
     conf = uep_config.get(),
     preview_enabled = true, devicons_enabled = true,
@@ -82,38 +90,8 @@ local function show_picker(scope, deps_flag)
   })
 end
 
-local function load_cache_from_file(scope, deps_flag, on_complete)
-  local log = uep_log.get()
-  local cache_path = get_cache_filepath(scope, deps_flag)
-  local context_key = get_context_key(scope, deps_flag)
-  if not (cache_path and context_key) then if on_complete then on_complete(false) end; return end
-
-  -- ファイルが存在しない場合は失敗として扱う
-  if vim.fn.filereadable(cache_path) == 0 then
-      log.debug("Cache file not found: %s", cache_path)
-      if on_complete then on_complete(false) end
-      return
-  end
-
-  vim.schedule(function()
-    local json_string = table.concat(vim.fn.readfile(cache_path), "")
-    if vim.v.shell_error ~= 0 or json_string == "" then
-      log.warn("Failed to read cache file or file is empty: %s", cache_path)
-      if on_complete then on_complete(false) end; return
-    end
-    local ok, items_table = pcall(vim.json.decode, json_string)
-    if not ok or type(items_table) ~= "table" then
-      log.warn("Failed to decode JSON from cache file: %s", cache_path)
-      if on_complete then on_complete(false) end; return
-    end
-    uep_context.set(context_key, items_table)
-    log.debug("Loaded %d items from file cache: %s", #items_table, cache_path)
-    if on_complete then on_complete(true) end
-  end)
-end
-
 -- (generate_and_load_cache は引数に scope を追加、コアロジック呼び出しを修正)
-local function generate_and_load_cache(scope, deps_flag, on_complete)
+local function generate_and_load_cache(scope, deps_flag, mode, on_complete)
   local log = uep_log.get()
 
   -- スコープとDepsフラグの組み合わせで生成中フラグを管理 (より複雑になる)
@@ -134,11 +112,11 @@ local function generate_and_load_cache(scope, deps_flag, on_complete)
   elseif deps_flag == "--shallow-deps" then is_generating_shallowdeps = true
   else is_generating_deepdeps = true end
 
-  vim.notify(("UEP: Generating file list cache (Scope: %s, Deps: %s)..."):format(scope, deps_flag))
-  log.info("Generating file list cache (Scope: %s, Deps: %s)...", scope, deps_flag)
+  vim.notify(("UEP: Generating file list cache (Scope: %s, Mode: %s, Deps: %s)..."):format(scope, tostring(mode), deps_flag))
+  log.info("Generating file list cache (Scope: %s, Mode: %s, Deps: %s)...", scope, tostring(mode), deps_flag)
 
   -- ★★★ コアロジック呼び出し (後で core_files.get_files を修正する必要あり) ★★★
-  core_files.get_files({ scope = scope, deps_flag = deps_flag }, function(ok, result_files_with_context)
+  core_files.get_files({ scope = scope, deps_flag = deps_flag, mode = mode }, function(ok, result_files_with_context)
     local items_to_cache = {} -- 先に初期化
     if ok and result_files_with_context then
       log.debug("Received %d files from core logic.", #result_files_with_context)
@@ -154,29 +132,18 @@ local function generate_and_load_cache(scope, deps_flag, on_complete)
                 filename = file_data.file_path,
               })
           else
-              log.warn("Skipping file due to missing data: %s", vim.inspect(file_data))
+              log.debug("UEP files: skipping entry with missing data: %s", vim.inspect(file_data))
           end
       end
     else
-        log.error("Failed to get files from core logic: %s", tostring(result_files_with_context))
+        -- エラーメッセージが "No components in DB" の場合はログを出さない
+        if not (type(result_files_with_context) == "string" and result_files_with_context:find("No components in DB")) then
+            log.error("Failed to get files from core logic: %s", tostring(result_files_with_context))
+        end
         -- ok が false でも空のキャッシュを保存する？ -> 今回はしない
     end
 
-    local cache_path = get_cache_filepath(scope, deps_flag)
-    if cache_path then
-      vim.fn.mkdir(vim.fn.fnamemodify(cache_path, ":h"), "p")
-      -- ★ pcall で書き込みエラーをキャッチ
-      local write_ok, write_err = pcall(vim.fn.writefile, { vim.json.encode(items_to_cache) }, cache_path)
-      if not write_ok then
-          log.error("Failed to write cache file %s: %s", cache_path, tostring(write_err))
-          ok = false -- 書き込み失敗も失敗扱い
-      end
-    else
-        log.error("Could not generate cache filepath for scope=%s, deps=%s", scope, deps_flag)
-        ok = false -- パス生成失敗も失敗扱い
-    end
-
-    local context_key = get_context_key(scope, deps_flag)
+    local context_key = get_context_key(scope, deps_flag, mode)
     if context_key then uep_context.set(context_key, items_to_cache) end
 
     -- 生成中フラグを解除
@@ -185,12 +152,12 @@ local function generate_and_load_cache(scope, deps_flag, on_complete)
     else is_generating_deepdeps = false end
 
     if ok then
-        log.info("Cache generation complete for scope=%s, deps=%s. Found %d items.", scope, deps_flag, #items_to_cache)
-    else
-        vim.notify(("UEP: Failed to generate file list cache (Scope: %s, Deps: %s). Check logs."):format(scope, deps_flag), vim.log.levels.ERROR)
-    end
+        log.info("Cache generation complete for scope=%s, mode=%s, deps=%s. Found %d items.", scope, tostring(mode), deps_flag, #items_to_cache)
+      else
+        vim.notify(("UEP: Failed to generate file list cache (Scope: %s, Mode: %s, Deps: %s). Check logs."):format(scope, tostring(mode), deps_flag), vim.log.levels.ERROR)
+      end
 
-    if on_complete then on_complete(ok) end
+      if on_complete then on_complete(ok) end
   end)
 end
 
@@ -223,89 +190,44 @@ function M.execute(opts)
       end
   end
 
-  log.info("Executing :UEP files with scope=%s, deps_flag=%s, bang=%s",
-           requested_scope, requested_deps, tostring(opts.has_bang))
+  -- 3. Modeをパース (デフォルト: nil)
+  local requested_mode = nil
+  local valid_modes = { source=true, config=true, programs=true, shader=true }
+  if opts.mode then
+      local mode_lower = opts.mode:lower()
+      if valid_modes[mode_lower] then
+          requested_mode = mode_lower
+      else
+          log.warn("Invalid mode argument '%s'. Ignoring.", opts.mode)
+      end
+  end
 
-  -- 3. Bang (!) 処理 (全キャッシュ再生成は複雑なので、指定されたスコープ/Depsのみ再生成)
+  log.info("Executing :UEP files with scope=%s, mode=%s, deps_flag=%s, bang=%s",
+           requested_scope, tostring(requested_mode), requested_deps, tostring(opts.has_bang))
+
+  -- 4. Bang (!) 処理 (全キャッシュ再生成は複雑なので、指定されたスコープ/Depsのみ再生成)
   if opts.has_bang then
-    log.info("Bang detected. Regenerating cache for scope=%s, deps=%s...", requested_scope, requested_deps)
-    generate_and_load_cache(requested_scope, requested_deps, function(ok)
-      if ok then show_picker(requested_scope, requested_deps) end
+    log.info("Bang detected. Regenerating cache for scope=%s, mode=%s, deps=%s...", requested_scope, tostring(requested_mode), requested_deps)
+    generate_and_load_cache(requested_scope, requested_deps, requested_mode, function(ok)
+      if ok then show_picker(requested_scope, requested_deps, requested_mode) end
     end)
     return
   end
 
-  -- 4. 通常実行: オンメモリ -> ディスク -> 生成 の順で試行
-  local context_key = get_context_key(requested_scope, requested_deps)
+  -- 5. 通常実行: オンメモリ -> ディスク -> 生成 の順で試行
+  local context_key = get_context_key(requested_scope, requested_deps, requested_mode)
   if not context_key then return log.error("Not in a UEP-indexed project.") end
 
   if uep_context.get(context_key) then
-    log.debug("Using in-memory cache for scope=%s, deps=%s.", requested_scope, requested_deps)
-    return show_picker(requested_scope, requested_deps)
+    log.debug("Using in-memory cache for scope=%s, mode=%s, deps=%s.", requested_scope, tostring(requested_mode), requested_deps)
+    return show_picker(requested_scope, requested_deps, requested_mode)
   end
 
-  log.debug("In-memory cache miss. Trying to load from disk for scope=%s, deps=%s...", requested_scope, requested_deps)
-  load_cache_from_file(requested_scope, requested_deps, function(ok)
-    if ok then
-      show_picker(requested_scope, requested_deps)
-    else
-      log.info("Disk cache miss or invalid. Generating cache for scope=%s, deps=%s...", requested_scope, requested_deps)
-      generate_and_load_cache(requested_scope, requested_deps, function(gen_ok)
-        if gen_ok then show_picker(requested_scope, requested_deps) end
-      end)
-    end
+  log.debug("In-memory cache miss. Generating cache for scope=%s, mode=%s, deps=%s...", requested_scope, tostring(requested_mode), requested_deps)
+  generate_and_load_cache(requested_scope, requested_deps, requested_mode, function(gen_ok)
+    if gen_ok then show_picker(requested_scope, requested_deps, requested_mode) end
   end)
 end
 -- ▲▲▲ execute 関数修正ここまで ▲▲▲
-function M.delete_all_picker_caches()
-  local log = uep_log.get()
-  local conf = uep_config.get()
-  local base_dir = unl_cache_core.get_cache_dir(conf)
-  if not base_dir then return false end
-  local cmd_cache_dir = vim.fs.joinpath(base_dir, "cmd")
-  if vim.fn.isdirectory(cmd_cache_dir) == 0 then return true end
-
-  local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
-  if not project_root then return false end
-  
-  -- .picker_files_ で始まるキャッシュファイルにマッチ
-  local project_prefix = unl_path.normalize(project_root):gsub("[\\/:]", "_") .. ".picker_files_"
-  
-  local deleted_any = false
-  local errors = {}
-  
-  -- glob を使って関連するキャッシュファイルを検索
-  local files_to_delete = vim.fn.glob(vim.fs.joinpath(cmd_cache_dir, project_prefix .. "*.cache.json"), true, true)
-
-  for _, path in ipairs(files_to_delete) do
-      local ok, err = pcall(vim.loop.fs_unlink, path)
-      if ok then
-          log.info("Deleted stale file picker cache: %s", path)
-          deleted_any = true
-          
-          -- 対応するオンメモリキャッシュも削除 (ファイル名からキーを再構築)
-          local filename = vim.fn.fnamemodify(path, ":t")
-          local scope_deps_ext = filename:match(project_prefix .. "(.*).cache.json")
-          if scope_deps_ext then
-              local parts = vim.split(scope_deps_ext, "_", { plain = true })
-              if #parts >= 1 then
-                  local scope = parts[1]
-                  local deps_str = table.concat(parts, "_", 2)
-                  local deps_flag = "--deep-deps" -- デフォルト
-                  if deps_str == "shallowdeps" then deps_flag = "--shallow-deps"
-                  elseif deps_str == "nodeps" then deps_flag = "--no-deps" end
-                  
-                  local context_key = get_context_key(scope, deps_flag)
-                  if context_key then uep_context.del(context_key) end
-              end
-          end
-      else
-          table.insert(errors, ("Failed to delete %s: %s"):format(path, tostring(err)))
-      end
-  end
-  
-  if #errors > 0 then log.error("Errors during file picker cache deletion:\n%s", table.concat(errors, "\n")) end
-  return #errors == 0
-end
 
 return M

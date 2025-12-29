@@ -1,32 +1,23 @@
--- lua/UEP/cmd/goto_definition.lua (共通化対応版)
+-- lua/UEP/cmd/goto_definition.lua (DB一元化版)
 
-local core_utils = require("UEP.cmd.core.utils") -- [!] 修正: この関数を使用
-local module_cache = require("UEP.cache.module")
+local core_utils = require("UEP.cmd.core.utils")
 local uep_log = require("UEP.logger")
 local derived_core = require("UEP.cmd.core.derived")
 local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
+local uep_db = require("UEP.db.init")
+local db_query = require("UEP.db.query")
 
 local M = {}
 
 ----------------------------------------------------------------------
--- ヘルパー関数 (find_symbol_in_module_cache - 変更なし)
+-- ヘルパー関数 (DB検索)
 ----------------------------------------------------------------------
-local function find_symbol_in_module_cache(module_meta, symbol_name)
-  if not module_meta then return nil end
-  local mod_cache = module_cache.load(module_meta)
-  
-  if mod_cache and mod_cache.header_details then
-    for file_path, details in pairs(mod_cache.header_details) do
-      if details.symbols then
-        for _, symbol_info in ipairs(details.symbols) do
-          if symbol_info.class_name == symbol_name then
-            return file_path
-          end
-        end
-      end
-    end
-  end
+local function find_symbol_in_module_db(module_name, symbol_name)
+  local db = uep_db.get()
+  if not db then return nil end
+  local result = db_query.find_symbol_in_module(db, module_name, symbol_name)
+  if result then return result.file_path end
   return nil
 end
 
@@ -55,9 +46,7 @@ function M.execute(opts)
         preview_enabled = true,
         on_submit = function(selected_symbol)
           if selected_symbol and selected_symbol.file_path and selected_symbol.class_name then
-            -- ▼▼▼ [修正] core_utils の関数を呼び出す ▼▼▼
             core_utils.open_file_and_jump(selected_symbol.file_path, selected_symbol.class_name)
-            -- ▲▲▲ 修正完了 ▲▲▲
           end
         end,
       })
@@ -88,12 +77,10 @@ function M.execute(opts)
 
     -- 【検索順序 1】現在のモジュール
     searched_modules[current_module.name] = true
-    local found_path = find_symbol_in_module_cache(current_module, symbol_name)
+    local found_path = find_symbol_in_module_db(current_module.name, symbol_name)
     if found_path then
       log.info("Found in current module: %s", current_module.name)
-      -- ▼▼▼ [修正] core_utils の関数を呼び出す ▼▼▼
       return core_utils.open_file_and_jump(found_path, symbol_name)
-      -- ▲▲▲ 修正完了 ▲▲▲
     end
 
     -- 【検索順序 2】浅い依存関係 (Shallow Dependencies)
@@ -101,13 +88,10 @@ function M.execute(opts)
     for _, mod_name in ipairs(current_module.shallow_dependencies or {}) do
       if not searched_modules[mod_name] then
         searched_modules[mod_name] = true
-        local dep_module = maps.all_modules_map[mod_name]
-        found_path = find_symbol_in_module_cache(dep_module, symbol_name)
+        found_path = find_symbol_in_module_db(mod_name, symbol_name)
         if found_path then
           log.info("Found in shallow dependency module: %s", mod_name)
-          -- ▼▼▼ [修正] core_utils の関数を呼び出す ▼▼▼
           return core_utils.open_file_and_jump(found_path, symbol_name)
-          -- ▲▲▲ 修正完了 ▲▲▲
         end
       end
     end
@@ -117,13 +101,10 @@ function M.execute(opts)
     for _, mod_name in ipairs(current_module.deep_dependencies or {}) do
       if not searched_modules[mod_name] then
         searched_modules[mod_name] = true
-        local dep_module = maps.all_modules_map[mod_name]
-        found_path = find_symbol_in_module_cache(dep_module, symbol_name)
+        found_path = find_symbol_in_module_db(mod_name, symbol_name)
         if found_path then
           log.info("Found in deep dependency module: %s", mod_name)
-          -- ▼▼▼ [修正] core_utils の関数を呼び出す ▼▼▼
           return core_utils.open_file_and_jump(found_path, symbol_name)
-          -- ▲▲▲ 修正完了 ▲▲▲
         end
       end
     end

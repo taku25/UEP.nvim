@@ -56,16 +56,10 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
   日常的に使うソースや設定ファイルをUIで検索します。
 :UEP module_files[!] [ModuleName]
   指定したモジュールに属するファイルを検索します。
-:UEP program_files
-  Programsディレクトリ内のファイルを検索します。
 :UEP grep [Game|Engine|Runtime|Editor|Full]
   プロジェクトまたはエンジン全体からLiveGrepします。
 :UEP module_grep [ModuleName]
   特定のモジュール内をLiveGrepします。
-:UEP program_grep
-  Programsディレクトリ内のファイルをLiveGrepします。
-:UEP config_grep [Game|Engine|Full]
-  .ini 設定ファイル内をLiveGrepします。
 :UEP open_file [Path]
   プロジェクトキャッシュを検索して、インクルードファイルを開きます。
 :UEP add_include[!] [ClassName]
@@ -80,14 +74,10 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
   指定したスコープ内のC++構造体を検索します。
 :UEP enums[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
   指定したスコープ内のC++ Enum（列挙型）を検索します。
-:UEP purge [ComponentName]
-  特定のコンポーネントのファイルキャッシュのみを削除します。
 :UEP cleanup
   現在のプロジェクトの全ての構造キャッシュとファイルキャッシュを削除します。
 :UEP tree [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
   プロジェクト全体の論理ツリーを表示します。(neo-tree-unl.nvim が必要)
-:UEP module_tree [ModuleName] [--no-deps|--shallow-deps|--deep-deps]
-  特定のモジュールにフォーカスした論理ツリーを表示します。(neo-tree-unl.nvim が必要)
 :UEP cd
   既知のプロジェクト一覧から移動先を選択します。
 :UEP delete
@@ -152,14 +142,6 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
       省略した場合、全モジュールを選択するUIが開き、選択後にそのモジュー
       ルのファイルが表示されます。
 
-:UEP program_files
-    プロジェクトとエンジンに関連する全てのProgramsディレクトリ
-    （例: UnrealBuildTool, AutomationTool）内のファイルを検索します。
-
-:UEP config_files
-    プロジェクトとエンジンに関連するすべてのコンフィグファイル (.ini) を検索
-    します。
-
 :UEP shaders[!] [Scope]
     指定されたスコープ内のシェーダーファイル (.usf, .ush) を検索します。
     - `[!](bang)`: (省略可) キャッシュを強制的に再生成します。
@@ -176,18 +158,6 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
 :UEP module_grep [ModuleName]
     特定のモジュールのディレクトリ内に限定してLiveGrepします。
     - `[ModuleName]`: (省略可) 省略した場合、モジュールを選択するUIが開きます。
-
-:UEP program_grep
-    プロジェクトとエンジンに関連する全てのProgramsディレクトリ内のファイルを
-    LiveGrepします。ビルドツールや自動化スクリプトのコードを調査する際に
-    便利です。
-
-:UEP config_grep [Game|Engine|Full]
-    `.ini` 設定ファイル内をLiveGrepします。
-    - `[Game|Engine|Full]`: (省略可、デフォルト: `runtime` で `Full` と同様)
-      - `Game`: プロジェクトの `Config/` ディレクトリのみを検索します。
-      - `Engine`: エンジンの `Config/` ディレクトリのみを検索します。
-      - `Full` / `Runtime` / etc.: プロジェクトとエンジンの両方を検索します。
 
 :UEP open_file [Path]
     インクルードパスに基づいてファイルを検索し、開きます。
@@ -210,11 +180,6 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
     このコマンドは、以下のルールでインテリジェントにディレクティブを挿入します:
       - ヘッダーファイル(`.h`)の場合: `.generated.h` の行の前。
       - ソースファイル(`.cpp`)の場合: 既存の最後の `#include` 文の後。
-
-:UEP purge [ComponentName]
-    指定されたコンポーネント（Game/Engine/Plugin）の**ファイルキャッシュ**
-    （`*.files.json`）のみを削除します。
-    このコマンドは非同期で実行され、実行には確認が必要です。
 
 :UEP cleanup
     危険: 現在のプロジェクトに関連する**全て**の構造キャッシュ 
@@ -269,12 +234,6 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
     - `[--no-deps|...]`: (省略可、デフォルト: `--deep-deps`) 表示される
       依存モジュールを制御します。
 
-:UEP module_tree [ModuleName] [--no-deps|--shallow-deps|--deep-deps]
-    単一のモジュールまたはその依存関係にフォーカスした論理ツリーを開きます。
-    neo-tree-unl.nvim が必要です。
-    - `[ModuleName]`: (省略可) 省略した場合、モジュールを選択するUIが開きます。
-    - `[--no-deps|...]`: (省略可、デフォルト: `--deep-deps`) 依存関係の表示
-      を制御します。
 
 :UEP cd
     キャッシュされている既知のプロジェクト一覧をUIで表示し、選択したプロジェ
@@ -461,9 +420,6 @@ APIモジュールを`require`する:
       - `has_bang` (boolean, optional): `true`でモジュールキャッシュを軽量更新。
       - `module_name` (string, optional): モジュール名を直接指定。
 
-*uep_api.program_files({opts})*
-    プログラムファイル検索UIを開きます。optsは現在使用されません。
-
 *uep_api.grep({opts})*
     LiveGrepのUIを開きます。optsでscope ("Game", "Engine", "runtime"など)
     を指定できます。
@@ -471,20 +427,9 @@ APIモジュールを`require`する:
 *uep_api.module_grep({opts})*
     特定モジュールのLiveGGrep UIを開きます。optsでmodule_nameを指定できます。
 
-*uep_api.program_grep({opts})*
-    Programsディレクトリを対象としたLiveGrep UIを開きます。optsは現在使用
-    されません。
-
-*uep_api.config_grep({opts})*
-    .iniファイル用のLiveGrep UIを開きます。
-    `opts`でscope ("Game", "Engine", "runtime"など) を指定できます。
-
 *uep_api.tree({opts})*
     論理プロジェクトツリーを開きます。optsでscopeとdeps_flagを指定できます。
 
-*uep_api.module_tree({opts})*
-    論理モジュールツリーを開きます。optsでmodule_nameとdeps_flagを
-    指定できます。
 
 *uep_api.cd({opts})*
     プロジェクト選択UIを開きます。optsは現在使用されません。
@@ -520,9 +465,6 @@ APIモジュールを`require`する:
       - `has_bang` (boolean, optional): `true`でファイルピッカーUIを
         強制的に開きます。
       - `path` (string, optional): 開く対象のファイルパス。
-
-*uep_api.config_files({opts})*
-    コンフィグファイル検索UIを開きます。optsは現在使用されません。
 
 *uep_api.shaders({opts})*
     シェーダーファイル検索UIを開きます。

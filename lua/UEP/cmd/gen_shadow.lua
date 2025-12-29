@@ -3,9 +3,7 @@ local uep_log = require("UEP.logger")
 local uep_config = require("UEP.config")
 local unl_progress = require("UNL.backend.progress")
 local unl_picker = require("UNL.backend.picker")
-local module_cache = require("UEP.cache.module")
-local projects_cache = require("UEP.cache.projects")
-local project_cache = require("UEP.cache.project")
+local uep_db = require("UEP.db.init")
 local unl_finder = require("UNL.finder")
 local fs = require("vim.fs")
 
@@ -244,22 +242,31 @@ local function run_job(opts)
         end
         progress:stage_update("scan", 1, ("Total %d RSPs found."):format(final_count))
 
-        -- 3. Cache Load (Sync is fine here, it's fast)
+        -- 3. DB Load
         progress:stage_define("fetch", 1)
-        progress:stage_update("fetch", 0, "Loading module cache...")
+        progress:stage_update("fetch", 0, "Loading file map from DB...")
         
+        local db = uep_db.get()
         local module_file_lookup = {}
-        for mod_name, mod_meta in pairs(maps.all_modules_map) do
-            local cache = module_cache.load(mod_meta)
-            if cache and cache.files and cache.files.source then
-                module_file_lookup[mod_name] = {}
-                for _, src in ipairs(cache.files.source) do
-                    local fname = vim.fn.fnamemodify(src, ":t")
-                    module_file_lookup[mod_name][fname] = src
+        
+        if db then
+            local rows = db:eval([[
+                SELECT f.filename, f.path, m.name as module_name 
+                FROM files f 
+                JOIN modules m ON f.module_id = m.id
+            ]])
+            if rows then
+                for _, row in ipairs(rows) do
+                    if not module_file_lookup[row.module_name] then
+                        module_file_lookup[row.module_name] = {}
+                    end
+                    module_file_lookup[row.module_name][row.filename] = row.path
                 end
             end
+        else
+             log.error("DB not available")
         end
-        progress:stage_update("fetch", 1, "Cache loaded.")
+        progress:stage_update("fetch", 1, "DB loaded.")
 
         -- 4. Process (Chunked Async Loop)
         progress:stage_define("process", final_count)

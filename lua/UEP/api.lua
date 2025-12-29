@@ -6,24 +6,20 @@ local cmd_delete = require("UEP.cmd.delete")
 local cmd_reload_config = require("UEP.cmd.reload_config")
 local cmd_files = require("UEP.cmd.files")
 local cmd_module_files = require("UEP.cmd.module_files")
-local cmd_config_files = require("UEP.cmd.config_files")
-local cmd_module_tree = require("UEP.cmd.module_tree")
+-- local cmd_module_tree = require("UEP.cmd.module_tree") -- Removed
 local cmd_tree = require("UEP.cmd.tree")
 local cmd_grep = require("UEP.cmd.grep")
 local cmd_module_grep = require("UEP.cmd.module_grep")
-local cmd_program_files = require("UEP.cmd.program_files")
-local cmd_program_grep = require("UEP.cmd.program_grep")
 local cmd_find_derived = require("UEP.cmd.find_derived")
 local cmd_find_parents = require("UEP.cmd.find_parents")
 local cmd_open_file = require("UEP.cmd.open_file")
-local cmd_purge = require("UEP.cmd.purge")
+-- local cmd_purge = require("UEP.cmd.purge") -- 削除
 local cmd_cleanup = require("UEP.cmd.cleanup")
 local cmd_add_include = require("UEP.cmd.add_include")
 local cmd_goto_definition = require("UEP.cmd.goto_definition")
 local cmd_classes = require("UEP.cmd.classes")
 local cmd_structs = require("UEP.cmd.structs")
 local cmd_enums = require("UEP.cmd.enums")
-local cmd_config_grep = require("UEP.cmd.config_grep")
 local cmd_tree_provider = require("UEP.provider.tree")
 local cmd_system_open = require("UEP.cmd.system_open")
 local cmd_implement_virtual = require("UEP.cmd.implement_virtual")
@@ -71,9 +67,9 @@ function M.module_files(opts)
 end
 
 
-function M.module_tree(opts)
-  cmd_module_tree.execute(opts or {})
-end
+-- function M.module_tree(opts)
+--   cmd_module_tree.execute(opts or {})
+-- end
 
 function M.tree(opts)
   cmd_tree.execute(opts or {})
@@ -108,14 +104,6 @@ function M.module_grep(opts)
   cmd_module_grep.execute(opts or {})
 end
 
-function M.program_files(opts)
-  cmd_program_files.execute(opts or {})
-end
-
-function M.program_grep(opts)
-  cmd_program_grep.execute(opts or {})
-end
-
 function M.find_derived(opts)
   cmd_find_derived.execute(opts or {})
 end
@@ -128,9 +116,9 @@ function M.open_file(opts)
   cmd_open_file.execute(opts or {})
 end
 
-function M.purge(opts)
-  cmd_purge.execute(opts or {})
-end
+-- function M.purge(opts)
+--   cmd_purge.execute(opts or {})
+-- end
 
 function M.cleanup(opts)
   cmd_cleanup.execute(opts or {})
@@ -156,12 +144,6 @@ function M.enums(opts)
   cmd_enums.execute(opts or {})
 end
 
-function M.config_grep(opts)
-  cmd_config_grep.execute(opts or {})
-end
-function M.config_files(opts)
-  cmd_config_files.execute(opts or {})
-end
 function M.system_open(opts)
   cmd_system_open.execute(opts or {})
 end

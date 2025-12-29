@@ -41,9 +41,10 @@ local command_spec = { -- line 10: 開始の '{'
     files = {
       handler = uep_api.files,
       bang = true,
-      desc = ":UEP files [Scope] [DepsFlag]",
+      desc = ":UEP files [Scope] [Mode] [DepsFlag]",
       args = {
         { name = "scope", required = false },
+        { name = "mode", required = false },
         { name = "deps_flag", required = false },
       },
     },
@@ -69,18 +70,10 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Close neo-tree and clear the expanded state.",
       args = {},
     },
-    module_tree = {
-      handler = uep_api.module_tree,
-      desc = "Open filer focused on a module and its dependencies.",
-      args = {
-        { name = "module_name", required = false },
-        { name = "deps_flag", required = false },
-      },
-    },
     grep = {
       handler = uep_api.grep,
       bang = true,
-      desc = "Live grep files. Scope: Game|Engine|Runtime(default)|Developer|Editor|Full.",
+      desc = "Live grep files. Scope: Game|Engine|Runtime(default)|Developer|Editor|Full|Programs|Config.",
       args = {
         { name = "scope", required = false },
       },
@@ -92,21 +85,6 @@ local command_spec = { -- line 10: 開始の '{'
       args = {
         { name = "module_name", required = false },
       },
-    },
-    program_grep = {
-      handler = uep_api.program_grep,
-      desc = "Live grep within all Program modules.",
-      args = {},
-    },
-    program_files = {
-      handler = uep_api.program_files,
-      desc = "Find all files in Program modules.",
-      args = {},
-    },
-    config_files = {
-      handler = uep_api.config_files,
-      desc = "Find all config files (.ini) in the project.",
-      args = {},
     },
     find_derived = {
       handler = uep_api.find_derived,
@@ -129,13 +107,6 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Open an include file by searching the project cache.",
       args = {
         { name = "path", required = false },
-      },
-    },
-    purge = {
-      handler = uep_api.purge,
-      desc = "Purge the file cache for a specified component (Game/Engine/Plugin).",
-      args = {
-        { name = "component_name", required = false }, -- ★ 注意: これはコンポーネントキャッシュ用。モジュールキャッシュ移行後は削除 or 変更が必要
       },
     },
     cleanup = {
@@ -185,14 +156,6 @@ local command_spec = { -- line 10: 開始の '{'
       args = {
         { name = "scope", required = false },
         { name = "deps_flag", required = false },
-      },
-    },
-    config_grep = {
-      handler = uep_api.config_grep,
-      bang = true,
-      desc = "Live grep .ini files. Scope: Game|Engine|Full.",
-      args = {
-        { name = "scope", required = false },
       },
     },
     ["system_open"] = {

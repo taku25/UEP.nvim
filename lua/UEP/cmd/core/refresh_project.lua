@@ -9,11 +9,12 @@ local fs = require("vim.fs")
 local unl_analyzer = require("UNL.analyzer.build_cs")
 local uep_graph = require("UEP.graph")
 local uep_log = require("UEP.logger")
-local project_cache = require("UEP.cache.project")
 local uep_config = require("UEP.config")
-local module_cache = require("UEP.cache.module")
 local refresh_modules_core = require("UEP.cmd.core.refresh_modules")
 local refresh_target_core = require("UEP.cmd.core.refresh_target")
+local db_writer = require("UEP.db.writer")
+local uep_db = require("UEP.db.init")
+local db_writer = require("UEP.db.writer")
 
 local M = {}
 
@@ -43,6 +44,65 @@ local function parse_project_or_plugin_file(path)
     end
   end
   return type_map
+end
+
+local function load_component_from_db(component_name)
+  local db = uep_db.get()
+  if not db then return nil end
+  
+  local comp_rows = db:eval("SELECT * FROM components WHERE name = ?", { component_name })
+  if type(comp_rows) ~= "table" or #comp_rows == 0 then return nil end
+  local comp = comp_rows[1]
+  
+  local data = {
+    name = comp.name,
+    display_name = comp.display_name,
+    type = comp.type,
+    owner_name = comp.owner_name,
+    root_path = comp.root_path,
+    uplugin_path = comp.uplugin_path,
+    uproject_path = comp.uproject_path,
+    engine_association = comp.engine_association,
+    runtime_modules = {},
+    developer_modules = {},
+    editor_modules = {},
+    programs_modules = {}
+  }
+  
+  local mod_rows = db:eval("SELECT * FROM modules WHERE component_name = ?", { component_name })
+  if type(mod_rows) == "table" then
+    for _, row in ipairs(mod_rows) do
+      local deep_deps = nil
+      if row.deep_dependencies and row.deep_dependencies ~= "" then
+          pcall(function() deep_deps = vim.json.decode(row.deep_dependencies) end)
+      end
+      local mod_meta = {
+        name = row.name,
+        type = row.type,
+        scope = row.scope,
+        module_root = row.root_path,
+        path = row.build_cs_path,
+        owner_name = row.owner_name,
+        component_name = row.component_name,
+        deep_dependencies = deep_deps
+      }
+      
+      if row.type == "Runtime" then data.runtime_modules[row.name] = mod_meta
+      elseif row.type == "Developer" then data.developer_modules[row.name] = mod_meta
+      elseif row.type == "Editor" then data.editor_modules[row.name] = mod_meta
+      elseif row.type == "Program" then data.programs_modules[row.name] = mod_meta
+      end
+    end
+  end
+  
+  return data
+end
+
+local function module_exists_in_db(mod_meta)
+  local db = uep_db.get()
+  if not db then return false end
+  local rows = db:eval("SELECT id FROM modules WHERE name = ? AND root_path = ?", { mod_meta.name, mod_meta.module_root })
+  return (type(rows) == "table") and #rows > 0
 end
 
 local function parse_component_build_cs_async(component, build_cs_files, module_type_map, old_component_data, on_done)
@@ -99,12 +159,13 @@ local function parse_component_build_cs_async(component, build_cs_files, module_
       
       local module_name = vim.fn.fnamemodify(build_cs_path, ":t:r:r")
       local module_root = vim.fn.fnamemodify(build_cs_path, ":h")
-      local location = build_cs_path:find("/Plugins/", 1, true) and "in_plugins" or "in_source"
+      local norm_path = build_cs_path:gsub("\\", "/")
+      local location = norm_path:find("/Plugins/", 1, true) and "in_plugins" or "in_source"
       local mod_type = module_type_map[module_name]
       local type_source = "None"
       if mod_type then type_source = "Plugin/Project File"
       else
-        local lower_path = build_cs_path:lower()
+        local lower_path = norm_path:lower()
         if lower_path:find("/programs/", 1, true) then mod_type = "Program"; type_source = "Path (Programs)"
         elseif lower_path:find("/engine/source/runtime/", 1, true) then mod_type = "Runtime"; type_source = "Path (Runtime)"
         elseif lower_path:find("/engine/source/developer/", 1, true) then mod_type = "Developer"; type_source = "Path (Developer)"
@@ -218,7 +279,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       files_processed = files_processed + 1
       
       if files_processed > files_total then
-        log.info("Finished parsing %d project/plugin definitions.", files_total)
+        log.debug("Finished parsing %d project/plugin definitions.", files_total)
         
         table.insert(all_components, { name = game_name, display_name = vim.fn.fnamemodify(game_root, ":t"), type = "Game", root_path = game_root, owner_name = game_name })
         table.insert(all_components, { name = engine_name, display_name = "Engine", type = "Engine", root_path = engine_root, owner_name = engine_name })
@@ -281,7 +342,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       vim.schedule(parse_defs_loop)
     end
     
-    log.info("Found %d .uplugin files. Parsing project and plugin definitions (async)...", #all_uplugin_files)
+    log.debug("Found %d .uplugin files. Parsing project and plugin definitions (async)...", #all_uplugin_files)
     parse_defs_loop()
     
   end
@@ -332,8 +393,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
     
     for _, component in ipairs(_all_components) do
       local build_cs_for_this_comp = _files_by_component[component.name] or {}
-      local cache_filename = component.name .. ".project.json"
-      local old_data = project_cache.load(cache_filename)
+      local old_data = load_component_from_db(component.name)
       
       parse_component_build_cs_async(
         component,
@@ -356,6 +416,21 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       _module_type_map,
       _uproject_mtime
   )
+    local function db_counts()
+      local db = uep_db.get()
+      if not db then return 0, 0 end
+      local m = db:eval("SELECT count(*) as c FROM modules")
+      local f = db:eval("SELECT count(*) as c FROM files")
+      return (type(m) == "table" and m[1] and m[1].c or 0), (type(f) == "table" and f[1] and f[1].c or 0)
+    end
+
+    local modules_before, files_before = db_counts()
+    local need_full_scan = (modules_before < 50 or files_before < 100)
+    if need_full_scan and not (refresh_opts.bang or refresh_opts.force) then
+      log.info("Existing DB is small (modules=%d, files=%d). Forcing Full scope rescan once.", modules_before, files_before)
+      refresh_opts.force = true
+      refresh_opts.scope = "Full"
+    end
     -- (この関数の内容は 300 行以上あり、変更はありません)
     -- (... 依存関係解決、キャッシュ保存、モジュールスキャン実行 ...)
     
@@ -412,13 +487,22 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         if full_dependency_map[module_name] then
           local mod_meta = full_dependency_map[module_name]
           local mod_type = mod_meta.type
+          local lower_root = (mod_meta.module_root or ""):gsub("\\", "/"):lower()
+          if lower_root:find("/programs/", 1, true) then
+            mod_type = "Program" -- パス優先で Program に補正
+          end
+
           if mod_type then
-            local clean_type_lower = mod_meta.type:match("^%s*(.-)%s*$"):lower()
+            local clean_type_lower = mod_type:match("^%s*(.-)%s*$"):lower()
             if clean_type_lower == "program" then programs_modules[module_name] = mod_meta
             elseif clean_type_lower == "developer" then developer_modules[module_name] = mod_meta
             elseif clean_type_lower:find("editor", 1, true) or clean_type_lower == "uncookedonly" then editor_modules[module_name] = mod_meta
             else runtime_modules[module_name] = mod_meta end
-          else runtime_modules[module_name] = mod_meta end
+            -- mod_meta.type も補正後に反映
+            mod_meta.type = (clean_type_lower == "program") and "Program" or mod_meta.type
+          else
+            runtime_modules[module_name] = mod_meta
+          end
         end
       end
 
@@ -439,19 +523,21 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         build_targets = (component.type == "Game") and parsed_build_targets or nil,
       }
 
-      local cache_filename = component.name .. ".project.json"
-      local old_data = project_cache.load(cache_filename)
+      local old_data = load_component_from_db(component.name)
       local has_changed = false
       
-      if refresh_opts.force then has_changed = true; log.info("Forced update for component: %s", component.display_name)
+      if refresh_opts.force then has_changed = true; log.debug("Forced update for component: %s", component.display_name)
       elseif not old_data then has_changed = true
       elseif old_data.generation ~= new_generation then
+        -- DBにはgenerationカラムがないかもしれないが、とりあえず比較ロジックは残す
+        -- もしDBにgenerationがないなら常にchangedになる
         has_changed = true
       end
 
       if has_changed then
         log.trace("Updating project cache for component: %s (gen: %s)", component.display_name, new_generation:sub(1,8))
-        project_cache.save(cache_filename, new_data)
+        -- SQLiteに直接保存するため、個別のproject_cache.saveは不要
+        -- project_cache.save(cache_filename, new_data)
         table.insert(result_data.changed_components, new_data)
       end
       result_data.all_data[component.name] = has_changed and new_data or old_data
@@ -462,14 +548,13 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
     for i, component in ipairs(_all_components) do
         if not processed_components[component.name] then
             current_progress_count = current_progress_count + 1
-            local cache_filename = component.name .. ".project.json"
-            local old_data = project_cache.load(cache_filename)
+            local old_data = load_component_from_db(component.name)
             if old_data then
                 result_data.all_data[component.name] = old_data
                 progress:stage_update("save_components", current_progress_count, ("Loaded cache: %s [%d/%d]"):format(component.display_name, current_progress_count, #_all_components))
             else
-                log.warn("resolve_and_save_all: Cache missing for out-of-scope component '%s'. This component's modules will be ignored.", component.display_name)
-                progress:stage_update("save_components", current_progress_count, ("Cache missing: %s [%d/%d]"):format(component.display_name, current_progress_count, #_all_components))
+                log.debug("resolve_and_save_all: No cache data found for out-of-scope component '%s'. Will be processed on next full refresh.", component.display_name)
+                progress:stage_update("save_components", current_progress_count, ("No cache: %s [%d/%d]"):format(component.display_name, current_progress_count, #_all_components))
             end
         end
     end
@@ -517,8 +602,15 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
       end
       for path, mod_meta in pairs(all_modules_meta_map_by_path) do 
         if not modules_to_scan_meta[path] then
-          if not module_cache.load(mod_meta) then
-            log.info("Module cache for '%s' (at %s) not found. Adding to scan queue.", mod_meta.name, path)
+          local db = uep_db.get()
+          local is_cached = false
+          if db then
+            local rows = db:eval("SELECT 1 FROM modules WHERE name = ? AND root_path = ? LIMIT 1", { mod_meta.name, mod_meta.module_root })
+            if (type(rows) == "table") and #rows > 0 then is_cached = true end
+          end
+
+          if not is_cached then
+            log.debug("Module cache for '%s' (at %s) not found. Adding to scan queue.", mod_meta.name, path)
             add_module_to_scan_list(mod_meta)
           end
         end
@@ -530,7 +622,7 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
     
     -- (モジュールキャッシュスキャン実行 ... 変更なし)
     if modules_to_scan_count > 0 or (refresh_opts.bang or refresh_opts.force) then
-      log.info("Starting file scan for %d module(s) (and component roots)...", modules_to_scan_count)
+      log.debug("Starting file scan for %d module(s) (and component roots)...", modules_to_scan_count)
       refresh_modules_core.create_module_caches_for(
         modules_to_scan_meta,
         all_modules_meta_map_by_path,
@@ -539,11 +631,27 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         game_root, engine_root,
         function(files_ok)
             if not files_ok then log.error("Module file cache generation failed.") end
+            
+            -- SQLiteに変更されたコンポーネントのデータを一括保存
+            if #result_data.changed_components > 0 then
+              log.debug("Saving %d changed component(s) to SQLite database...", #result_data.changed_components)
+              db_writer.save_project_scan(result_data.all_data)
+              log.debug("SQLite database update completed.")
+            end
+            
             on_done(files_ok, result_data) 
         end
       )
     else
       log.info("Project structure is up-to-date and all module caches exist. Nothing to refresh.")
+      
+      -- SQLiteに変更されたコンポーネントのデータを一括保存
+      if #result_data.changed_components > 0 then
+        log.debug("Saving %d changed component(s) to SQLite database...", #result_data.changed_components)
+        db_writer.save_project_scan(result_data.all_data)
+        log.debug("SQLite database update completed.")
+      end
+      
       on_done(true, result_data)
     end
   end -- resolve_and_save_all 終わり

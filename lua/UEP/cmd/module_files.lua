@@ -6,8 +6,6 @@ local uep_log = require("UEP.logger")
 local uep_config = require("UEP.config")
 local unl_events = require("UNL.event.events")
 local unl_types = require("UNL.event.types")
--- local projects_cache = require("UEP.cache.projects") -- utils経由で取得するので不要
--- local unl_finder = require("UNL.finder") -- utils経由で取得するので不要
 local uep_utils = require("UEP.cmd.core.utils") -- ★ utils を require
 
 local M = {}

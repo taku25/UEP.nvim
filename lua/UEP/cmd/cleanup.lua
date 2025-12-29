@@ -2,9 +2,8 @@
 -- lua/UEP/cmd/cleanup.lua (モジュールキャッシュ・レジストリ削除対応 最終版)
 
 local core_utils = require("UEP.cmd.core.utils")
-local project_cache = require("UEP.cache.project")
-local module_cache = require("UEP.cache.module")
 local projects_cache = require("UEP.cache.projects")
+local uep_db = require("UEP.db.init") -- [!] DB追加
 local uep_log = require("UEP.logger")
 local unl_progress = require("UNL.backend.progress")
 local uep_config = require("UEP.config")
@@ -71,56 +70,30 @@ local function execute_project_cleanup(maps)
   end
 
   local function run_cleanup_async()
-    -- A. 全コンポーネントの「構造キャッシュ (*.project.json)」を削除
-    for _, component in ipairs(components_to_clean) do
-      local project_cache_filename = component.name .. ".project.json"
-      update_progress(component.display_name, "Project Structural")
-      if project_cache.delete_component_cache_file(project_cache_filename) then
-        deleted_count = deleted_count + 1
-      end
-    end
+    local db = uep_db.get()
+    local db_path = uep_db.get_path() -- DBパスを取得
 
-    -- B. 全モジュールの「モジュールキャッシュ (*.module.json)」を削除
-    for mod_name, mod_meta in pairs(maps.all_modules_map) do
-      update_progress(mod_name, "Module")
-      if module_cache.delete(mod_meta) then
-        deleted_count = deleted_count + 1
-      end
-    end
-
-    -- C. 疑似モジュール (Config/Shaders/Programs) のキャッシュを削除
-    log.debug("Cleaning up pseudo-module caches...")
-    
-    local pseudo_modules_to_delete = {}
-    
-    -- C-1: Engine の疑似モジュール
-    if maps.engine_root then
-        local engine_root = maps.engine_root
-        table.insert(pseudo_modules_to_delete, { name = "_EngineConfig", module_root = fs.joinpath(engine_root, "Engine", "Config") })
-        table.insert(pseudo_modules_to_delete, { name = "_EngineShaders", module_root = fs.joinpath(engine_root, "Engine", "Shaders") })
-        table.insert(pseudo_modules_to_delete, { name = "_EnginePrograms", module_root = fs.joinpath(engine_root, "Engine", "Source", "Programs") })
-    end
-    
-    -- C-2: Game および Plugin の疑似モジュール
-    for comp_name_hash, comp_meta in pairs(maps.all_components_map) do
-      if comp_meta.type == "Game" or comp_meta.type == "Plugin" then
-        -- refresh_modules_core と同じ命名規則 (Type_DisplayName)
-        local pseudo_name = comp_meta.type .. "_" .. comp_meta.display_name
-        local pseudo_root = comp_meta.root_path
-        if pseudo_root then
-            table.insert(pseudo_modules_to_delete, { name = pseudo_name, module_root = pseudo_root })
+    if db then
+        -- A. DB接続を閉じる
+        uep_db.close()
+        
+        -- B. DBファイルを削除
+        if db_path and vim.fn.filereadable(db_path) == 1 then
+            local ok, err = os.remove(db_path)
+            if ok then
+                update_progress("Database File", "File Deletion")
+                log.info("Deleted DB file: %s", db_path)
+            else
+                log.error("Failed to delete DB file: %s (%s)", db_path, tostring(err))
+            end
+            -- WALファイルなどもあれば削除 (SQLiteの仕様)
+            os.remove(db_path .. "-wal")
+            os.remove(db_path .. "-shm")
         end
-      end
-    end
-
-    -- C-3: 削除実行
-    for _, mod_meta in ipairs(pseudo_modules_to_delete) do
-        update_progress(mod_meta.name, "Pseudo Module")
-        if module_cache.delete(mod_meta) then
-            deleted_count = deleted_count + 1
-        else
-            log.warn("Failed to delete pseudo-module cache for: %s (Root: %s)", mod_meta.name, mod_meta.module_root or "NIL")
-        end
+        
+        deleted_count = total_components + total_modules + pseudo_module_count
+    else
+        log.error("Could not open DB for cleanup.")
     end
 
     -- D. マスターレジストリからこのプロジェクトを削除
@@ -140,7 +113,7 @@ local function execute_project_cleanup(maps)
 
     -- 3. 終了処理
     progress:finish(true)
-    log.info("Cleanup completed for project '%s'. %d cache files were cleared. Please run :UEP refresh.", project_display_name, deleted_count)
+    log.info("Cleanup completed for project '%s'. DB records were cleared. Please run :UEP refresh.", project_display_name)
     vim.notify(string.format("Cleanup complete. Run :UEP refresh to rebuild caches."), vim.log.levels.INFO)
   end
 

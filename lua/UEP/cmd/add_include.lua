@@ -5,6 +5,8 @@ local core_utils = require("UEP.cmd.core.utils")
 local uep_log = require("UEP.logger")
 local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
+local uep_db = require("UEP.db.init")
+local db_query = require("UEP.db.query")
 
 local M = {}
 
@@ -27,27 +29,26 @@ end
 local function insert_include_for_class(target_class_name)
   local log = uep_log.get()
   log.info("Attempting to add #include for class: '%s'", target_class_name)
-  derived_core.get_all_classes({}, function(all_classes)
-    if not all_classes then
-      return log.error("Could not retrieve class info.")
-    end
-    local target_header_path
-    for _, class_info in ipairs(all_classes) do
-      if class_info.class_name == target_class_name then
-        target_header_path = class_info.file_path
-        break
-      end
-    end
-    if not target_header_path then return log.warn("Class '%s' not found.", target_class_name) end
-    core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
-      if not ok then
-        return log.error("Could not get project maps: %s", tostring(maps))
-      end
 
-      local module_info = core_utils.find_module_for_path(target_header_path, maps.all_modules_map)
-      local include_path
+  local db = uep_db.get()
+  if not db then return log.error("DB not available.") end
 
-      if module_info and module_info.module_root then
+  local class_info = db_query.find_class_by_name(db, target_class_name)
+  if not class_info then
+      return log.warn("Class '%s' not found in DB.", target_class_name)
+  end
+
+  local target_header_path = class_info.file_path
+
+  core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
+    if not ok then
+      return log.error("Could not get project maps: %s", tostring(maps))
+    end
+
+    local module_info = core_utils.find_module_for_path(target_header_path, maps.all_modules_map)
+    local include_path
+
+    if module_info and module_info.module_root then
         include_path = format_include_path(target_header_path, module_info.module_root)
       else
         -- log.warn("Could not determine module for '%s'. Attempting engine header fallback.", target_header_path)
@@ -109,7 +110,6 @@ local function insert_include_for_class(target_class_name)
         log.warn("Cannot add include: current file is not a .h or .cpp file.")
       end
     end)
-  end)
 end
 
 function M.execute(opts)

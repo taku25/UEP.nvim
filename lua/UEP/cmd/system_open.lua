@@ -1,10 +1,7 @@
 -- lua/UEP/cmd/system_open.lua
 local uep_log = require("UEP.logger")
 local unl_picker = require("UNL.backend.picker")
-local projects_cache = require("UEP.cache.projects")
-local project_cache = require("UEP.cache.project")
-local module_cache = require("UEP.cache.module")
-local unl_finder = require("UNL.finder")
+local uep_db = require("UEP.db.init")
 local uep_config = require("UEP.config")
 
 local M = {}
@@ -36,52 +33,21 @@ local function open_in_system_explorer(path)
   end
 end
 
--- UEPのキャッシュから全ファイルを収集する
+-- UEPのDBから全ファイルを収集する
 local function collect_all_files()
-  local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
-  if not project_root then return {} end
-  
-  local project_name = vim.fn.fnamemodify(project_root, ":t")
-  local reg_info = projects_cache.get_project_info(project_name)
-  if not reg_info or not reg_info.components then return {} end
+  local db = uep_db.get()
+  if not db then return {} end
+
+  local rows = db:eval("SELECT path FROM files")
+  if not rows then return {} end
 
   local files = {}
-  -- 全コンポーネント (Game, Engine, Plugins) を走査
-  for _, comp_name in ipairs(reg_info.components) do
-    local p_cache = project_cache.load(comp_name .. ".project.json")
-    if p_cache then
-      -- 全モジュールタイプを走査
-      for _, mtype in ipairs({"runtime_modules", "developer_modules", "editor_modules", "programs_modules"}) do
-        if p_cache[mtype] then
-          for _, mod_meta in pairs(p_cache[mtype]) do
-            -- モジュールキャッシュをロード (ファイルリストが入っている)
-            local m_cache = module_cache.load(mod_meta)
-            if m_cache and m_cache.files then
-              -- ソースファイル
-              if m_cache.files.source then
-                for _, f in ipairs(m_cache.files.source) do
-                  table.insert(files, {
-                    display = f, -- フルパスだがTelescope等はcwd相対で表示してくれるはず
-                    value = f,
-                    filename = f
-                  })
-                end
-              end
-              -- コンフィグファイル
-              if m_cache.files.config then
-                for _, f in ipairs(m_cache.files.config) do
-                  table.insert(files, {
-                    display = f,
-                    value = f,
-                    filename = f
-                  })
-                end
-              end
-            end
-          end
-        end
-      end
-    end
+  for _, row in ipairs(rows) do
+    table.insert(files, {
+      display = row.path,
+      value = row.path,
+      filename = row.path
+    })
   end
   return files
 end
@@ -90,11 +56,11 @@ local function pick_and_open()
   local logger = uep_log.get()
   local conf = uep_config.get()
   
-  -- キャッシュからファイルリストを取得
+  -- DBからファイルリストを取得
   local items = collect_all_files()
   
   if #items == 0 then
-    return logger.warn("No files found in UEP cache. Try :UEP refresh first.")
+    return logger.warn("No files found in UEP DB. Try :UEP refresh first.")
   end
 
   unl_picker.pick({

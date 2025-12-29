@@ -2,7 +2,8 @@
 
 local class_parser = require("UEP.parser.class")
 local uep_config = require("UEP.config")
-local module_cache = require("UEP.cache.module")
+local uep_db = require("UEP.db.init")
+local db_writer = require("UEP.db.writer")
 local uep_log = require("UEP.logger")
 local core_utils = require("UEP.cmd.core.utils")
 local fs = require("vim.fs")
@@ -13,7 +14,32 @@ local M = {}
 
 local defaults = require("UEP.config.defaults") -- [!] デフォルト設定を読み込み
 
-local M = {}
+local function load_header_details_from_db(module_meta)
+  local db = uep_db.get()
+  if not db then return {} end
+  
+  local rows = db:eval([[
+    SELECT f.path, c.name, c.base_class, c.line_number, c.symbol_type
+    FROM classes c
+    JOIN files f ON c.file_id = f.id
+    JOIN modules m ON f.module_id = m.id
+    WHERE m.name = ? AND m.root_path = ?
+  ]], { module_meta.name, module_meta.module_root })
+  
+  if type(rows) ~= "table" then return {} end
+  
+  local details = {}
+  for _, row in ipairs(rows) do
+    if not details[row.path] then details[row.path] = { classes = {} } end
+    table.insert(details[row.path].classes, {
+      name = row.name,
+      base_class = row.base_class,
+      line = row.line_number,
+      type = row.symbol_type
+    })
+  end
+  return details
+end
 
 function M.create_fd_command(base_paths, type_flag)
   local conf = uep_config.get()
@@ -62,9 +88,9 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
 
   -- ... (PSEUDO_MODULES の構築) ...
   local PSEUDO_MODULES = {}
-  PSEUDO_MODULES["_EngineConfig"] = { name = "_EngineConfig", root = fs.joinpath(engine_root, "Engine", "Config") }
-  PSEUDO_MODULES["_EngineShaders"] = { name = "_EngineShaders", root = fs.joinpath(engine_root, "Engine", "Shaders") }
-  PSEUDO_MODULES["_EnginePrograms"] = { name = "_EnginePrograms", root = fs.joinpath(engine_root, "Engine", "Source", "Programs") }
+  PSEUDO_MODULES["_EngineConfig"] = { name = "_EngineConfig", root = fs.joinpath(engine_root, "Engine", "Config"), type = "Config" }
+  PSEUDO_MODULES["_EngineShaders"] = { name = "_EngineShaders", root = fs.joinpath(engine_root, "Engine", "Shaders"), type = "Shader" }
+  PSEUDO_MODULES["_EnginePrograms"] = { name = "_EnginePrograms", root = fs.joinpath(engine_root, "Engine", "Source", "Programs"), type = "Program" }
   
   for comp_name_hash, comp_meta in pairs(all_components_map) do
     if comp_meta.type == "Game" or comp_meta.type == "Plugin" then
@@ -277,14 +303,14 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
             local all_existing_header_details = {}
             for path, mod_meta in pairs(all_modules_meta_by_path) do
                 if not modules_to_refresh_meta[path] then
-                  local existing_cache = module_cache.load(mod_meta)
-                  if existing_cache and existing_cache.header_details then for fp, details in pairs(existing_cache.header_details) do all_existing_header_details[fp] = details end end
+                  local details = load_header_details_from_db(mod_meta)
+                  for fp, d in pairs(details) do all_existing_header_details[fp] = d end
                 end
             end
             for _, pseudo in pairs(PSEUDO_MODULES) do
                 local pseudo_meta = { name=pseudo.name, module_root=pseudo.root }
-                local existing_cache = module_cache.load(pseudo_meta)
-                if existing_cache and existing_cache.header_details then for fp, details in pairs(existing_cache.header_details) do all_existing_header_details[fp] = details end end
+                local details = load_header_details_from_db(pseudo_meta)
+                for fp, d in pairs(details) do all_existing_header_details[fp] = d end
             end
 
             local headers_to_parse = {}
@@ -293,7 +319,7 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
                 table.insert(headers_to_parse, file)
               end
             end
-            log.info("Identified %d header files to parse out of %d total files found.", #headers_to_parse, #all_found_files)
+            log.debug("Identified %d header files to parse out of %d total files found.", #headers_to_parse, #all_found_files)
 
             class_parser.parse_headers_async(all_existing_header_details, headers_to_parse, progress, function(ok, header_details_by_file)
               if not ok then log.error("Header parsing failed, aborting module cache save."); if on_done then on_done(false) end; return end
@@ -322,12 +348,11 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
                   end
                   local data_to_save = { files = module_files_data, directories = module_dirs_data, header_details = module_header_details }
                   
-                  local save_ok = module_cache.save(module_meta, data_to_save)
-                  if not save_ok then log.error("create_module_caches_for: module_cache.save FAILED for '%s'", module_name)
-                  elseif module_name == "Engine" then log.info("create_module_caches_for: module_cache.save SUCCEEDED for 'Engine'") end
+                  db_writer.save_module_files(module_meta, module_files_data, module_header_details, module_dirs_data)
+                  if module_name == "Engine" then log.debug("create_module_caches_for: module_cache.save SUCCEEDED for 'Engine'") end
                 else
                   log.debug("create_module_caches_for: Saving empty cache for '%s' (data missing in map)", module_name)
-                  module_cache.save(module_meta, { files = {}, directories = {}, header_details = {} })
+                  db_writer.save_module_files(module_meta, {}, {}, {})
                 end
               end
               
@@ -346,13 +371,12 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
                             end
                         end
                       end
-                      local data_to_save = { files = pseudo_files_data, directories = pseudo_dirs_data, header_details = pseudo_header_details }
-                      local pseudo_meta = { name = pseudo.name, module_root = pseudo.root }
-                      module_cache.save(pseudo_meta, data_to_save)
+                      local pseudo_meta = { name = pseudo.name, module_root = pseudo.root, type = pseudo.type }
+                      db_writer.save_module_files(pseudo_meta, pseudo_files_data, pseudo_header_details, pseudo_dirs_data)
                   else
                       log.debug("create_module_caches_for: No files/dirs found for pseudo-module '%s'. Saving empty.", pseudo.name)
-                      local pseudo_meta = { name = pseudo.name, module_root = pseudo.root }
-                      module_cache.save(pseudo_meta, { files = {}, directories = {}, header_details = {} })
+                      local pseudo_meta = { name = pseudo.name, module_root = pseudo.root, type = pseudo.type }
+                      db_writer.save_module_files(pseudo_meta, {}, {}, {})
                   end
               end
 
@@ -432,8 +456,7 @@ function M.update_single_module_cache(module_name, on_complete)
                   table.insert(dirs_by_category[category], dir)
                 end
               end
-              local existing_cache = module_cache.load(module_meta)
-              local existing_header_details = (existing_cache and existing_cache.header_details) or {}
+              local existing_header_details = load_header_details_from_db(module_meta)
               local dummy_progress = { stage_define = function() end, stage_update = function() end, }
               class_parser.parse_headers_async(existing_header_details, headers_to_parse, dummy_progress, function(ok, header_details_by_file)
                 if not ok then
@@ -442,19 +465,9 @@ function M.update_single_module_cache(module_name, on_complete)
                   return
                 end
                 local data_to_save = { files = files_by_category, directories = dirs_by_category, header_details = header_details_by_file or {}, }
-                if unl_events_ok and unl_types_ok then
-                  log.debug("Firing ON_AFTER_UEP_LIGHTWEIGHT_REFRESH event from refresh_modules.")
-                  unl_events.publish(unl_event_types.ON_AFTER_UEP_LIGHTWEIGHT_REFRESH, {
-                    status = "success", event_type = "refresh_module", updated_module = module_name,
-                  })
-                end
-                if module_cache.save(module_meta, data_to_save) then
-                  log.info("Lightweight cache update for module '%s' succeeded.", module_name)
-                  if on_complete then on_complete(true) end
-                else
-                  log.error("Failed to save lightweight cache for module '%s'.", module_name)
-                  if on_complete then on_complete(false) end
-                end
+                db_writer.save_module_files(module_meta, files_by_category, header_details_by_file or {}, dirs_by_category)
+                log.info("Lightweight cache update for module '%s' succeeded.", module_name)
+                if on_complete then on_complete(true) end
               end)
             end,
           })

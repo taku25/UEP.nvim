@@ -85,6 +85,16 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
     uep_log.error("Could not find worker script. Aborting parallel parse.")
     return on_complete(false, "Worker script path not found.")
   end
+
+  -- Treesitterパーサーのパスを収集してワーカーに渡す準備
+  local parser_paths = vim.api.nvim_get_runtime_file("parser/cpp.*", true)
+  local rtp_list = {}
+  for _, p in ipairs(parser_paths) do
+      local parser_dir = vim.fn.fnamemodify(p, ":h")
+      local root_dir = vim.fn.fnamemodify(parser_dir, ":h")
+      table.insert(rtp_list, root_dir)
+  end
+  local ts_rtp_env = table.concat(rtp_list, ",")
   
   local nvim_cmd = {
       vim.v.progpath,
@@ -125,39 +135,47 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
         local job_stderr = {}
         
         local job_id = vim.fn.jobstart(nvim_cmd, {
+          env = { ["UEP_TS_RTP"] = ts_rtp_env },
           rpc = false,
+          stdout_buffered = true,
+          stderr_buffered = true,
           
           on_stdout = function(job_id_cb, data, _)
             if not data then return end
             for _, line in ipairs(data) do
                 if line and line ~= "" then
-                    local ok_line, worker_result = pcall(vim.json.decode, line)
-                    if ok_line and type(worker_result) == "table" and worker_result.path then
-                      -- ▼▼▼ [修正] ワーカーからの結果を処理 ▼▼▼
-                      local res = worker_result
-                      
-                      if res.status == "cache_hit" then
-                        -- ワーカーが「ハッシュは同じだった」と報告
-                        -- 既存のデータを new_details にコピーし、mtimeだけ更新
-                        if existing_header_details[res.path] then
-                            new_details[res.path] = existing_header_details[res.path]
-                            new_details[res.path].mtime = res.mtime
-                        else
-                            uep_log.warn("Worker reported cache hit, but no existing data found for %s", res.path)
-                        end
+                    local trimmed = line:gsub("^%s+", ""):gsub("%s+$", "")
+                    if trimmed ~= "" then
+                      local ok_line, worker_result = pcall(vim.json.decode, trimmed)
+                      if ok_line and type(worker_result) == "table" and worker_result.path then
+                        -- ▼▼▼ ワーカーからの結果を処理 ▼▼▼
+                        local res = worker_result
                         
-                      elseif res.status == "parsed" then
-                        -- ワーカーが「パースした」と報告
-                        -- on_exit でマージするために一時保持
-                        merged_worker_results[res.path] = {
-                            classes = res.data.classes,
-                            file_hash = res.data.new_hash,
-                            mtime = res.mtime
-                        }
+                        if res.status == "cache_hit" then
+                          if existing_header_details[res.path] then
+                              new_details[res.path] = existing_header_details[res.path]
+                              new_details[res.path].mtime = res.mtime
+                          else
+                              uep_log.warn("Worker reported cache hit, but no existing data found for %s", res.path)
+                          end
+                          
+                        elseif res.status == "parsed" then
+                          merged_worker_results[res.path] = {
+                              classes = res.data.classes,
+                              file_hash = res.data.new_hash,
+                              mtime = res.mtime
+                          }
+                          if res.data.parser then
+                              uep_log.debug("Parsed %s using %s", res.path, res.data.parser)
+                          end
+                        end
+                        -- ▲▲▲ 処理完了 ▲▲▲
+                      else
+                          -- noisy空行は無視、内容があるのに失敗した場合のみwarn
+                          if trimmed ~= "" then
+                            uep_log.warn("Worker (job_id %s): Failed to decode JSON line: %s", job_id_cb, trimmed)
+                          end
                       end
-                      -- ▲▲▲ 処理完了 ▲▲▲
-                    else
-                        uep_log.warn("Worker (job_id %s): Failed to decode JSON line: %s", job_id_cb, line)
                     end
                 end
             end
