@@ -57,6 +57,13 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "dummy_arg", required = false }, -- 必要なら削除
       },
     },
+    module_tree = {
+      handler = uep_api.module_tree,
+      desc = "Open project filer for a specific module.",
+      args = {
+        { name = "module_name", required = false },
+      },
+    },
     tree = {
       handler = uep_api.tree,
       desc = "Open project filer. Scope: Game|Engine|Runtime(default)|Developer|Editor|Full.",

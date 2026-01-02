@@ -194,7 +194,26 @@ function M.get_pending_tree_request(opts)
   local consumer_id = (opts and opts.consumer) or "unknown"
   local handle = unl_context.use("UEP"):key("pending_request:" .. consumer_id)
   local payload = handle:get("payload")
-  if payload then handle:del("payload"); return payload end
+  
+  -- Debug log
+  local log = uep_log.get()
+  if payload then
+      log.debug("Found pending payload for consumer '" .. consumer_id .. "': " .. vim.inspect(payload))
+      return payload
+  else
+      log.debug("No pending payload found for consumer '" .. consumer_id .. "'")
+  end
+  
+  -- Fallback: Check global project payload (last resort)
+  local global_handle = unl_context.use("UEP"):key("last_tree_payload")
+  local global_payload = global_handle:get("payload")
+  if global_payload then
+      log.debug("Found global last_tree_payload: " .. vim.inspect(global_payload))
+      return global_payload
+  end
+
+  log.debug("No payload found in pending_request or last_tree_payload.")
+
   return nil
 end
 
@@ -205,6 +224,8 @@ function M.build_tree_model(opts)
   -- The consumer might call this with empty opts or partial opts.
   local request_payload = M.get_pending_tree_request({ consumer = "neo-tree-uproject" }) or {} 
   opts = vim.tbl_deep_extend("force", request_payload, opts or {})
+  
+  log.debug("Merged opts: " .. vim.inspect(opts))
   
   local project_root = opts.project_root
   local engine_root = opts.engine_root
@@ -339,11 +360,6 @@ function M.build_tree_model(opts)
   
   if not next(top_level_nodes) then
     return {{ id = "_message_", name = "No components/files to display.", type = "message" }}
-  end
-
-  -- ★ 修正: モジュールツリーの場合は、ルートノードを作らずに直接モジュールノードを返す
-  if opts.target_module then
-      return top_level_nodes
   end
 
   return {{
@@ -560,16 +576,6 @@ function M.load_children(node)
 
     table.sort(children, directory_first_sorter)
     return children
-end
-
-function M.get_pending_tree_request(opts)
-    local key = "pending_request:" .. (opts and opts.consumer or "neo-tree-uproject")
-    return uep_context.get(key)
-end
-
-function M.clear_tree_state()
-    uep_context.set(EXPANDED_STATE_KEY, {})
-    return true
 end
 
 function M.request(opts)

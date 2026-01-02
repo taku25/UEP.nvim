@@ -3,7 +3,7 @@
 local unl_context = require("UNL.context")
 local unl_events = require("UNL.event.events")
 local unl_event_types = require("UNL.event.types")
-local uep_log = require("UEP.logger").get()
+local uep_logger = require("UEP.logger") -- ★修正: get()をここでは呼ばない
 local unl_api = require("UNL.api") -- プロバイダー呼び出しに必要
 
 local M = {}
@@ -12,7 +12,17 @@ local M = {}
 -- UEPのツリーリクエストを保存し、UNXまたはNeo-treeの起動を制御する。
 -- @param payload table UEP treeコマンドで生成されたペイロード
 function M.handle_tree_request(payload)
+    local uep_log = uep_logger.get() -- ★修正: 関数内で取得
     
+    -- ★修正: UNX起動前にペイロードを保存する (Cold Start時の競合回避)
+    -- Consumer specific
+    unl_context.use("UEP"):key("pending_request:" .. "neo-tree-uproject"):set("payload", payload)
+    -- Global backup (for safety)
+    unl_context.use("UEP"):key("last_tree_payload"):set("payload", payload)
+    
+    uep_log.debug("Stored pending payload: " .. vim.inspect(payload))
+    -- vim.notify("Stored pending payload: " .. vim.inspect(payload), vim.log.levels.INFO) -- Debug
+
     local has_unx_provider = false
     local is_unx_open = false
 
@@ -38,9 +48,11 @@ function M.handle_tree_request(payload)
     end
     
     -- 4. 1フレーム後にフォールバックロジックを実行 (Neo-tree)
+    -- ★修正: UNXへのイベント通知をここで行う (UNXが開いた後に確実に受け取れるように)
+    -- UNXが既に開いている場合でも、イベントを受け取ってリフレッシュする必要がある
     vim.schedule(function()
-        unl_context.use("UEP"):key("pending_request:" .. "neo-tree-uproject"):set("payload", payload)
         unl_events.publish(unl_event_types.ON_REQUEST_UPROJECT_TREE_VIEW, payload )
+        
         -- UNXプロバイダーが存在しない場合 (has_unx_provider が false の場合) はneo-treeにフォールバック
         if not has_unx_provider then
             uep_log.warn("UNX.nvim provider not found. Falling back to neo-tree.")
