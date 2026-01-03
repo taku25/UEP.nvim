@@ -20,10 +20,21 @@ function M.request(opts)
   local targets = {}
   for _, row in ipairs(rows) do
       local name = row.filename:gsub("%.Target%.cs$", "")
+      
+      -- Determine target type (Editor or Game/Program)
+      local type = "Game" -- Default
+      if name:match("Editor$") then
+          type = "Editor"
+      elseif name:match("Server$") then
+          type = "Server"
+      elseif name:match("Client$") then
+          type = "Client"
+      end
+
       table.insert(targets, {
           name = name,
           path = row.path,
-          type = "Target"
+          type = type
       })
   end
   uep_log.info("Provider 'uep.get_build_targets' succeeded, returning %d targets.", #targets)

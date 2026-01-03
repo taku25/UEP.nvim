@@ -32,7 +32,7 @@ local cmd_target_cs = require("UEP.cmd.target_cs") -- ★ 変更
 local cmd_shaders = require("UEP.cmd.shaders") -- ★ 変更
 local cmd_class_symbol = require("UEP.cmd.class_symbol")
 local cmd_new_project = require("UEP.cmd.new_project")
-local cmd_gen_shadow = require("UEP.cmd.gen_shadow")
+local cmd_gen_compile_commands_fast = require("UEP.cmd.gen_compile_commands_fast")
 local cmd_clean_intermediate = require("UEP.cmd.clean_intermediate")
 
 local M = {}
@@ -196,8 +196,8 @@ function M.new_project(opts)
   cmd_new_project.execute(opts)
 end
 
-function M.gen_shadow(opts)
-  cmd_gen_shadow.execute(opts or {})
+function M.gen_compile_commands_fast(opts)
+  cmd_gen_compile_commands_fast.execute(opts or {})
 end
 
 function M.clean_intermediate(opts)

@@ -278,11 +278,11 @@ local function run_job(opts)
   local engine_config = target_config
   if target_config == "DebugGame" then engine_config = "Development" end
 
-  log.info("Generating Shadow DB. Project: %s, Engine: %s", project_config, engine_config)
+  log.info("Generating Compile Commands. Project: %s, Engine: %s", project_config, engine_config)
 
   local progress, _ = unl_progress.create_for_refresh(uep_config.get(), {
-    title = "UEP Shadow Gen",
-    client_name = "UEP.Shadow",
+    title = "UEP Compile Commands Gen",
+    client_name = "UEP.CompileCommands",
     weights = { map = 0.1, scan = 0.3, fetch=0.1, process = 0.5 }
   })
   progress:open()
@@ -584,7 +584,7 @@ function M.execute(opts)
   opts = opts or {}
   if opts.has_bang then
     unl_picker.pick({
-      kind = "uep_gen_shadow", title = "Select Shadow Config",
+      kind = "uep_gen_compile_commands_fast", title = "Select Compile Commands Config",
       conf = uep_config.get(), items = get_presets_sync(),
       format = function(entry) return entry.name end,
       preview_enabled = false,

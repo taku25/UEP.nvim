@@ -241,10 +241,10 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Create a new Unreal Engine project from a template.",
       args = {},
     },
-   ["gen_shadow"] = {
-      handler = uep_api.gen_shadow,
+   ["gen_compile_commands_fast"] = {
+      handler = uep_api.gen_compile_commands_fast,
       bang = true,
-      desc = "Generate compile_commands.json from existing build artifacts (Shadow RSP).",
+      desc = "Generate compile_commands.json from existing build artifacts (Fast/Shadow).",
       args = {
         { name = "platform", required = false }, -- 必要なら引数拡張
       },

@@ -399,6 +399,23 @@ function M.save_project_scan(components_data)
         data.type = normalized_type("Program", data.module_root or data.root_path)
         return insert_safe(table_name, data)
       end, comp.programs_modules, "Program", scope)
+
+      -- ★追加: Build Targets (.Target.cs) を files テーブルに登録
+      if comp.build_targets and type(comp.build_targets) == "table" then
+        for _, target in ipairs(comp.build_targets) do
+           if target.path then
+             local filename = vim.fn.fnamemodify(target.path, ":t")
+             insert_safe("files", {
+               path = target.path,
+               filename = filename,
+               extension = "cs",
+               mtime = 0,
+               module_id = nil, -- No module association
+               is_header = 0
+             })
+           end
+        end
+      end
     end
 
     -- pathベースの最終補正: /programs/ を含むものは Program として揃える
