@@ -553,8 +553,28 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
                 result_data.all_data[component.name] = old_data
                 progress:stage_update("save_components", current_progress_count, ("Loaded cache: %s [%d/%d]"):format(component.display_name, current_progress_count, #_all_components))
             else
-                log.debug("resolve_and_save_all: No cache data found for out-of-scope component '%s'. Will be processed on next full refresh.", component.display_name)
-                progress:stage_update("save_components", current_progress_count, ("No cache: %s [%d/%d]"):format(component.display_name, current_progress_count, #_all_components))
+                -- キャッシュがない場合でも、コンポーネントの基本情報だけは保存しておく
+                -- これにより、EngineコンポーネントなどがDBから消滅するのを防ぐ
+                local minimal_data = {
+                    name = component.name,
+                    display_name = component.display_name,
+                    type = component.type,
+                    root_path = component.root_path,
+                    owner_name = component.owner_name,
+                    uplugin_path = component.uplugin_path,
+                    uproject_path = component.uproject_path,
+                    engine_association = component.engine_association,
+                    runtime_modules = {},
+                    developer_modules = {},
+                    editor_modules = {},
+                    programs_modules = {},
+                    generation = "0"
+                }
+                result_data.all_data[component.name] = minimal_data
+                table.insert(result_data.changed_components, minimal_data)
+                
+                log.debug("resolve_and_save_all: Created minimal data for out-of-scope component '%s'.", component.display_name)
+                progress:stage_update("save_components", current_progress_count, ("Minimal: %s [%d/%d]"):format(component.display_name, current_progress_count, #_all_components))
             end
         end
     end

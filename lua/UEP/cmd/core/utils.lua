@@ -120,7 +120,17 @@ M.get_project_maps = function(start_path, on_complete)
             end_time - start_time, vim.tbl_count(all_modules_map), vim.tbl_count(all_components_map))
 
   -- Engine rootは Engine コンポーネントの root_path を利用
-  local engine_root = engine_name and all_components_map[engine_name] and all_components_map[engine_name].root_path or nil
+  local engine_root = engine_name and all_components_map[engine_name] and all_components_map[engine_name].root_path
+
+  if not engine_root and project_root then
+      -- Fallback: Try to find engine root using finder if not in DB
+      local uproject = unl_finder.project.find_project_file(project_root)
+      if uproject then
+          engine_root = unl_finder.engine.find_engine_root(uproject, {
+              engine_override_path = require("UEP.config").get().engine_path
+          })
+      end
+  end
 
   on_complete(true, {
     project_root = project_root,

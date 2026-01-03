@@ -62,6 +62,13 @@ end
 -- ============================================================
 
 local function create_shadow_shared_rsp(source_path, dest_path)
+  -- Optimization: Check mtime
+  local src_stat = vim.loop.fs_stat(source_path)
+  local dst_stat = vim.loop.fs_stat(dest_path)
+  if src_stat and dst_stat and dst_stat.mtime.sec >= src_stat.mtime.sec then
+      return true -- Already up-to-date
+  end
+
   local content = read_file(source_path)
   if not content then return false end
   local base_dir = vim.fn.fnamemodify(source_path, ":h")
@@ -77,6 +84,13 @@ local function create_shadow_shared_rsp(source_path, dest_path)
 end
 
 local function create_shadow_rsp(original_rsp_path, shadow_rsp_path, shared_rsp_lookup)
+  -- Optimization: Check mtime
+  local src_stat = vim.loop.fs_stat(original_rsp_path)
+  local dst_stat = vim.loop.fs_stat(shadow_rsp_path)
+  if src_stat and dst_stat and dst_stat.mtime.sec >= src_stat.mtime.sec then
+      return true -- Already up-to-date
+  end
+
   local content = read_file(original_rsp_path)
   if not content then return false end
 
@@ -111,6 +125,17 @@ local function create_shadow_rsp(original_rsp_path, shadow_rsp_path, shared_rsp_
 end
 
 local function create_shadow_rsp_from_template(template_rsp_path, shadow_rsp_path, target_source_path, shared_rsp_lookup)
+  -- Optimization: Check mtime
+  -- Note: For template-based RSPs, we should ideally check if the target source path inside matches,
+  -- but checking mtime is a good first step. If the template hasn't changed, the shadow likely doesn't need to.
+  -- However, if we switch projects or something, the target source might be different for the same shadow path?
+  -- No, shadow path includes source filename usually.
+  local src_stat = vim.loop.fs_stat(template_rsp_path)
+  local dst_stat = vim.loop.fs_stat(shadow_rsp_path)
+  if src_stat and dst_stat and dst_stat.mtime.sec >= src_stat.mtime.sec then
+      return true -- Already up-to-date
+  end
+
   local content = read_file(template_rsp_path)
   if not content then return false end
 
@@ -196,26 +221,34 @@ local function scan_rsps_async(search_roots, target_config, target_name, on_comp
     if target_config and not p:find("/" .. target_config:lower() .. "/", 1, true) then
         return false
     end
-    if target_name and not p:find("/" .. target_name:lower() .. "/", 1, true) then
-        return false
+    if target_name then
+        -- Relaxed check: Match "/TargetName" (allows suffixes like UnrealEditorGCD)
+        if not p:find("/" .. target_name:lower(), 1, true) then
+            return false
+        end
     end
     return true
   end
 
   for _, root in ipairs(roots_to_scan) do
-    local cmd = { "fd", "--type", "f", "--regex", ".*(\\.obj\\.rsp|\\.Shared\\.rsp)(\\.gcd)?$", root }
+    log.info("Scanning root: %s", root)
+    local cmd = { "fd", "--type", "f", "--no-ignore", "--absolute-path", "--ignore-case", "--regex", ".*(\\.obj\\.rsp|\\.Shared\\.rsp)(\\.gcd)?$", root }
     
     local stdout_buffer = ""
+    local found_count = 0
+    local matched_count = 0
     
     vim.fn.jobstart(cmd, {
-      stdout_buffered = false, -- ストリームで受け取る
+      stdout_buffered = false,
       on_stdout = function(_, data)
         if not data then return end
         for _, line in ipairs(data) do
           if line ~= "" then
+             found_count = found_count + 1
              local path = line
              if not path:match("%.nvim$") then
                 if is_target_config(path) then
+                  matched_count = matched_count + 1
                   local filename = vim.fn.fnamemodify(path, ":t")
                   if filename:match("%.Shared%.rsp") then
                       shared_rsps[filename] = path
@@ -228,12 +261,22 @@ local function scan_rsps_async(search_roots, target_config, target_name, on_comp
                       table.insert(obj_rsps[source_name], { path = path, module = module_name })
                       total_count = total_count + 1
                   end
+                else
+                   -- log.trace("Skipped RSP (config mismatch): %s", path)
                 end
              end
           end
         end
       end,
+      on_stderr = function(_, data)
+          if data then
+             for _, line in ipairs(data) do
+                 if line ~= "" then log.warn("fd stderr: %s", line) end
+             end
+          end
+      end,
       on_exit = function()
+        log.info("Root scan finished: %s. Found: %d, Matched: %d", root, found_count, matched_count)
         pending_jobs = pending_jobs - 1
         check_done()
       end
@@ -242,26 +285,31 @@ local function scan_rsps_async(search_roots, target_config, target_name, on_comp
 end
 
 local function find_clang_cl()
-  -- 1. Check if clang-cl is in PATH
-  if vim.fn.executable("clang-cl.exe") == 1 then
-    return "clang-cl.exe"
+  local is_windows = vim.fn.has("win32") == 1
+
+  -- 1. Check common Visual Studio paths (Windows only, prioritized)
+  if is_windows then
+      local editions = { "Enterprise", "Professional", "Community" }
+      local years = { "2026", "2022", "2019" }
+      
+      for _, year in ipairs(years) do
+        for _, edition in ipairs(editions) do
+          local base = string.format("C:/Program Files/Microsoft Visual Studio/%s/%s/VC/Tools/Llvm/x64/bin/clang-cl.exe", year, edition)
+          if vim.fn.filereadable(base) == 1 then
+            return string.format('"%s"', base)
+          end
+        end
+      end
   end
 
-  -- 2. Check common Visual Studio paths
-  local editions = { "Enterprise", "Professional", "Community" }
-  local years = { "2026","2022", "2019" }
-  
-  for _, year in ipairs(years) do
-    for _, edition in ipairs(editions) do
-      local base = string.format("C:/Program Files/Microsoft Visual Studio/%s/%s/VC/Tools/Llvm/x64/bin/clang-cl.exe", year, edition)
-      if vim.fn.filereadable(base) == 1 then
-        return string.format('"%s"', base)
-      end
-    end
+  -- 2. Check if clang-cl is in PATH
+  local exe_name = is_windows and "clang-cl.exe" or "clang-cl"
+  if vim.fn.executable(exe_name) == 1 then
+    return exe_name
   end
 
   -- Fallback
-  return "clang-cl.exe"
+  return exe_name
 end
 
 -- ============================================================
@@ -297,6 +345,9 @@ local function run_job(opts)
       progress:finish(false)
       return
     end
+    log.info("Project Root: %s", maps.project_root)
+    log.info("Engine Root: %s", maps.engine_root)
+
     progress:stage_update("map", 1, "Map complete.")
 
     -- 2. Async Scan
@@ -306,7 +357,11 @@ local function run_job(opts)
     local search_roots_proj = { fs.joinpath(maps.project_root, "Intermediate", "Build") }
     local search_roots_eng = {}
     if maps.engine_root then
-       table.insert(search_roots_eng, fs.joinpath(maps.engine_root, "Engine", "Intermediate", "Build"))
+       local eng_path = fs.joinpath(maps.engine_root, "Engine", "Intermediate", "Build")
+       table.insert(search_roots_eng, eng_path)
+       log.info("Engine Search Path: %s", eng_path)
+    else
+       log.warn("Engine root not found. Skipping Engine RSP scan.")
     end
 
     -- Project Scan
@@ -314,6 +369,11 @@ local function run_job(opts)
       
       -- Engine Scan (nested callback)
       -- Engine target is always UnrealEditor for editor builds
+      -- But wait, Engine intermediate files are NOT under "UnrealEditor" target folder usually?
+      -- They are often under "UnrealEditor" but sometimes just "Development" or similar?
+      -- Actually, for Engine modules, the target name in the path IS "UnrealEditor" (e.g. Intermediate/Build/Win64/UnrealEditor/Development/Core/...)
+      -- So "UnrealEditor" should be correct.
+      
       local engine_target = "UnrealEditor"
       scan_rsps_async(search_roots_eng, engine_config, engine_target, function(eng_objs, eng_shared, eng_cnt)
         
@@ -371,6 +431,8 @@ local function run_job(opts)
                 end
             end
         end
+        log.info("DB Source Files: %d", #all_source_files)
+        log.info("Fallback Map Size: %d", vim.tbl_count(module_rsp_fallback))
 
         -- Prepare work queue: Use ALL source files from DB + any extra found in RSPs
         local work_queue = {}
@@ -490,6 +552,10 @@ local function run_job(opts)
                         if maps.engine_root then
                             work_dir = fs.joinpath(maps.engine_root, "Engine", "Source")
                         end
+                        
+                        -- Normalize paths to forward slashes
+                        shadow_rsp_path = shadow_rsp_path:gsub("\\", "/")
+                        work_dir = work_dir:gsub("\\", "/")
                         
                         table.insert(json_entries, {
                             file = source_abs_path,
