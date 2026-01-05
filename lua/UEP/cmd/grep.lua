@@ -229,10 +229,12 @@ function M.execute(opts)
             groups.engine_developer = { root = fs.joinpath(e_src, "Developer"), count = 0 }
             groups.engine_editor = { root = fs.joinpath(e_src, "Editor"), count = 0 }
             groups.engine_plugins = { root = fs.joinpath(engine_root, "Engine", "Plugins"), count = 0 }
+            groups.engine_platforms = { root = fs.joinpath(engine_root, "Engine", "Platforms"), count = 0 }
         end
         if project_root then
             groups.project_source = { root = fs.joinpath(project_root, "Source"), count = 0 }
             groups.project_plugins = { root = fs.joinpath(project_root, "Plugins"), count = 0 }
+            groups.project_platforms = { root = fs.joinpath(project_root, "Platforms"), count = 0 }
         end
         
         local optimized = {}
@@ -264,6 +266,16 @@ function M.execute(opts)
             end
         end
         
+        -- Safety check: If still too long, fallback to roots
+        local opt_len = 0
+        for _, p in ipairs(optimized) do opt_len = opt_len + #p + 1 end
+        if opt_len > 30000 then -- Windows limit is ~32k
+             log.warn("grep: Optimized paths still too long (%d chars). Falling back to Project/Engine roots.", opt_len)
+             optimized = {}
+             if project_root then table.insert(optimized, project_root) end
+             if engine_root then table.insert(optimized, fs.joinpath(engine_root, "Engine")) end
+        end
+
         log.info("grep: Optimized paths from %d to %d items.", #paths, #optimized)
         return optimized
     end
