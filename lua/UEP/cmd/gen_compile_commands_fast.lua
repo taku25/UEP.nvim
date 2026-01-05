@@ -5,6 +5,7 @@ local unl_progress = require("UNL.backend.progress")
 local unl_picker = require("UNL.backend.picker")
 local uep_db = require("UEP.db.init")
 local unl_finder = require("UNL.finder")
+local unl_cache_core = require("UNL.cache.core")
 local fs = require("vim.fs")
 
 local M = {}
@@ -61,6 +62,13 @@ end
 -- 2. Shadow RSP Creation Logic (Sync per file)
 -- ============================================================
 
+local function get_cached_path(cache_dir, original_path)
+  local name = vim.fn.fnamemodify(original_path, ":t")
+  local dir = vim.fn.fnamemodify(original_path, ":h")
+  local hash = vim.fn.sha256(dir):sub(1, 8)
+  return string.format("%s/%s_%s", cache_dir, hash, name)
+end
+
 local function create_shadow_shared_rsp(source_path, dest_path)
   -- Optimization: Check mtime
   local src_stat = vim.loop.fs_stat(source_path)
@@ -83,7 +91,7 @@ local function create_shadow_shared_rsp(source_path, dest_path)
   return write_file(dest_path, new_content)
 end
 
-local function create_shadow_rsp(original_rsp_path, shadow_rsp_path, shared_rsp_lookup)
+local function create_shadow_rsp(original_rsp_path, shadow_rsp_path, shared_rsp_lookup, cache_dir)
   -- Optimization: Check mtime
   local src_stat = vim.loop.fs_stat(original_rsp_path)
   local dst_stat = vim.loop.fs_stat(shadow_rsp_path)
@@ -113,7 +121,7 @@ local function create_shadow_rsp(original_rsp_path, shadow_rsp_path, shared_rsp_
 
     if shared_rsp_lookup[filename] then
         local original_shared = shared_rsp_lookup[filename]
-        local shadow_shared = original_shared .. ".nvim"
+        local shadow_shared = get_cached_path(cache_dir, original_shared)
         create_shadow_shared_rsp(original_shared, shadow_shared)
         return prefix .. shadow_shared .. suffix
     end
@@ -124,7 +132,7 @@ local function create_shadow_rsp(original_rsp_path, shadow_rsp_path, shared_rsp_
   return write_file(shadow_rsp_path, new_content)
 end
 
-local function create_shadow_rsp_from_template(template_rsp_path, shadow_rsp_path, target_source_path, shared_rsp_lookup)
+local function create_shadow_rsp_from_template(template_rsp_path, shadow_rsp_path, target_source_path, shared_rsp_lookup, cache_dir)
   -- Optimization: Check mtime
   -- Note: For template-based RSPs, we should ideally check if the target source path inside matches,
   -- but checking mtime is a good first step. If the template hasn't changed, the shadow likely doesn't need to.
@@ -159,7 +167,7 @@ local function create_shadow_rsp_from_template(template_rsp_path, shadow_rsp_pat
 
     if shared_rsp_lookup[filename] then
         local original_shared = shared_rsp_lookup[filename]
-        local shadow_shared = original_shared .. ".nvim"
+        local shadow_shared = get_cached_path(cache_dir, original_shared)
         create_shadow_shared_rsp(original_shared, shadow_shared)
         return prefix .. shadow_shared .. suffix
     end
@@ -417,6 +425,16 @@ local function run_job(opts)
         end
         progress:stage_update("fetch", 1, "DB loaded.")
 
+        -- Create Cache Dir
+        local project_hash = vim.fn.sha256(maps.project_root):sub(1, 8)
+        local project_name = vim.fn.fnamemodify(maps.project_root, ":t")
+        
+        local base_cache_dir = unl_cache_core.get_cache_dir(uep_config.get())
+        local cache_dir = fs.joinpath(base_cache_dir, project_name .. "_" .. project_hash)
+        
+        vim.fn.mkdir(cache_dir, "p")
+        log.info("Shadow RSP Cache Dir: %s", cache_dir)
+
         -- 4. Process (Chunked Async Loop)
         -- Determine compiler path
         local compiler_cmd = find_clang_cl()
@@ -536,15 +554,15 @@ local function run_job(opts)
 
                     if is_fallback then
                         -- Generate a unique shadow RSP for this file based on the fallback template
-                        -- Construct path: <RspDir>/<SourceFileName>.obj.rsp.nvim
-                        local rsp_dir = vim.fn.fnamemodify(rsp_path, ":h")
                         local source_name = vim.fn.fnamemodify(source_abs_path, ":t")
-                        shadow_rsp_path = fs.joinpath(rsp_dir, source_name .. ".obj.rsp.nvim")
+                        local safe_name = source_name .. ".obj.rsp"
+                        local src_hash = vim.fn.sha256(source_abs_path):sub(1, 8)
+                        shadow_rsp_path = string.format("%s/%s_%s", cache_dir, src_hash, safe_name)
                         
-                        success = create_shadow_rsp_from_template(rsp_path, shadow_rsp_path, source_abs_path, final_shared_rsps)
+                        success = create_shadow_rsp_from_template(rsp_path, shadow_rsp_path, source_abs_path, final_shared_rsps, cache_dir)
                     else
-                        shadow_rsp_path = rsp_path .. ".nvim"
-                        success = create_shadow_rsp(rsp_path, shadow_rsp_path, final_shared_rsps)
+                        shadow_rsp_path = get_cached_path(cache_dir, rsp_path)
+                        success = create_shadow_rsp(rsp_path, shadow_rsp_path, final_shared_rsps, cache_dir)
                     end
 
                     if success then
