@@ -42,6 +42,11 @@ M.setup = function()
       impl = tree_provider,
     })
     unl_api.provider.register({
+      capability = "uep.update_module_cache",
+      name = "UEP.nvim",
+      impl = tree_provider, 
+    })
+    unl_api.provider.register({
       capability = "uep.clear_tree_state",
       name = "UEP.nvim",
       impl = tree_provider,

@@ -585,6 +585,20 @@ function M.request(opts)
     return M.build_tree_model(opts)
   elseif opts and opts.capability == "uep.load_tree_children" and opts.node then
     return M.load_children(opts.node)
+  elseif opts and opts.capability == "uep.update_module_cache" and opts.module_name then
+    -- モジュールキャッシュの更新
+    local module_name = opts.module_name
+    local refresher = require("UEP.cmd.core.refresh_modules")
+    
+    -- 非同期実行されるが、ここではリクエスト受付を返す
+    -- 必要なら将来的にコールバックやPromise対応を行う
+    if refresher and refresher.update_single_module_cache then
+       refresher.update_single_module_cache(module_name, function() 
+         -- 完了時のログなどは refresher 側で行われる想定
+       end)
+       return { accepted = true }
+    end
+    return nil
   elseif opts and opts.capability == "uep.clear_tree_state" then
     return M.clear_tree_state()
   else
