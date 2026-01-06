@@ -34,6 +34,8 @@ local cmd_class_symbol = require("UEP.cmd.class_symbol")
 local cmd_new_project = require("UEP.cmd.new_project")
 local cmd_gen_compile_commands_fast = require("UEP.cmd.gen_compile_commands_fast")
 local cmd_clean_intermediate = require("UEP.cmd.clean_intermediate")
+local cmd_start = require("UEP.cmd.start")
+local cmd_stop = require("UEP.cmd.stop")
 
 local M = {}
 
@@ -48,6 +50,14 @@ end
 function M.reload_config(opts)
   -- 実処理はcmdモジュールに委譲
   cmd_reload_config.execute(opts)
+end
+
+function M.start(opts)
+  cmd_start.run(opts or {})
+end
+
+function M.stop(opts)
+  cmd_stop.run(opts or {})
 end
 
 function M.cd(opts)

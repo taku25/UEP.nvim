@@ -413,7 +413,7 @@ function M.update_single_module_cache(module_name, on_complete)
     local new_files = {}
     local new_dirs = {}
     local files_stderr = {}
-    vim.fn.jobstart(fd_cmd_files, {
+    local files_job_id = vim.fn.jobstart(fd_cmd_files, {
       stdout_buffered = true, stderr_buffered = true,
       on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(new_files, line) end end end end,
       on_stderr = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(files_stderr, line) end end end end,
@@ -425,7 +425,7 @@ function M.update_single_module_cache(module_name, on_complete)
         end
         vim.schedule(function()
           local dirs_stderr = {}
-          vim.fn.jobstart(fd_cmd_dirs, {
+          local dirs_job_id = vim.fn.jobstart(fd_cmd_dirs, {
             stdout_buffered = true, stderr_buffered = true,
             on_stdout = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(new_dirs, line) end end end end,
             on_stderr = function(_, data) if data then for _, line in ipairs(data) do if line ~= "" then table.insert(dirs_stderr, line) end end end end,
@@ -471,9 +471,17 @@ function M.update_single_module_cache(module_name, on_complete)
               end)
             end,
           })
+          if dirs_job_id <= 0 then
+            log.error("Failed to start fd (dirs) for module '%s' (job_id: %d)", module_name, dirs_job_id)
+            if on_complete then on_complete(false) end
+          end
         end)
       end,
     })
+    if files_job_id <= 0 then
+      log.error("AFiled to start fd (files) for module '%s' (job_id: %d)", module_name, files_job_id)
+      if on_complete then on_complete(false) end
+    end
   end)
 end
 

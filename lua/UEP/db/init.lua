@@ -2,6 +2,8 @@
 local uep_log = require("UEP.logger")
 local schema = require("UEP.db.schema")
 local unl_path = require("UNL.path") -- パス正規化用
+local unl_cache = require("UNL.cache.core")
+local uep_config = require("UEP.config")
 
 -- kkharji/sqlite.lua をロード
 local has_sqlite, sqlite = pcall(require, "sqlite")
@@ -19,9 +21,11 @@ local current_db_path = nil
 local function get_db_path()
   -- カレントディレクトリを正規化 (区切り文字を統一) してハッシュ化の種にする
   local cwd = unl_path.normalize(vim.loop.cwd())
-  local path_sep = package.config:sub(1, 1)
   
-  local cache_dir = vim.fn.stdpath("cache") .. path_sep .. "uep"
+  -- UNL.cache.core を使ってキャッシュディレクトリを取得
+  local conf = uep_config.get()
+  local cache_dir = unl_path.normalize(unl_cache.get_cache_dir(conf))
+
   if vim.fn.isdirectory(cache_dir) == 0 then
     vim.fn.mkdir(cache_dir, "p")
   end
@@ -30,7 +34,7 @@ local function get_db_path()
   -- フルパスからハッシュを生成 (ディレクトリが違えば別ファイルになる)
   local cwd_hash = vim.fn.sha256(cwd):sub(1, 8) 
   
-  return string.format("%s%s%s_%s.db", cache_dir, path_sep, project_name, cwd_hash)
+  return string.format("%s/%s_%s.db", cache_dir, project_name, cwd_hash)
 end
 
 function M.get()
@@ -94,7 +98,7 @@ function M.transaction(func)
     local vals = {}
     local placeholders = {}
     for k, v in pairs(data) do
-      table.insert(cols, k)
+      table.insert(cols, string.format('"%s"', k))
       table.insert(vals, v)
       table.insert(placeholders, "?")
     end

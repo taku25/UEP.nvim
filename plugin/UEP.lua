@@ -14,6 +14,16 @@ local command_spec = { -- line 10: 開始の '{'
   },
 
   subcommands = {
+    start = {
+      handler = uep_api.start,
+      desc = "Start background file watcher for project.",
+      args = {},
+    },
+    stop = {
+      handler = uep_api.stop,
+      desc = "Stop background file watcher.",
+      args = {},
+    },
     refresh = {
       handler = uep_api.refresh,
       bang = true,
