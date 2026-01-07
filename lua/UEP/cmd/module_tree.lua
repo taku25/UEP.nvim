@@ -3,11 +3,20 @@
 local uep_log = require("UEP.logger")
 local uep_config = require("UEP.config")
 local uep_utils = require("UEP.cmd.core.utils")
+local uep_db = require("UEP.db.init") -- Added DB
 local unl_picker = require("UNL.backend.picker")
 local ui_control = require("UEP.cmd.core.ui_control")
 local unl_finder = require("UNL.finder")
 
 local M = {}
+
+local function get_module_root(module_name)
+    local db = uep_db.get()
+    if not db then return nil end
+    local rows = db:eval("SELECT root_path FROM modules WHERE name = ?", { module_name })
+    if rows and rows[1] then return rows[1].root_path end
+    return nil
+end
 
 local function open_tree(module_name)
     local log = uep_log.get()
@@ -20,12 +29,19 @@ local function open_tree(module_name)
     local engine_root = proj_info and unl_finder.engine.find_engine_root(proj_info.uproject,
         { engine_override_path = uep_config.get().engine_path })
 
+    local module_root = get_module_root(module_name)
+    if not module_root then
+        -- Fallback: try to find it via heuristic or just warn
+        log.warn("Could not find root path for module: %s in DB", module_name)
+    end
+
     local payload = {
         project_root = project_root,
         engine_root = engine_root,
-        all_deps = false, -- Single module
+        module_root = module_root, -- Added
+        all_deps = false, 
         target_module = module_name,
-        scope = "Module", -- Special scope for module tree
+        scope = "Module", 
         deps_flag = "--no-deps",
     }
 
