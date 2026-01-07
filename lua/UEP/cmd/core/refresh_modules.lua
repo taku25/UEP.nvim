@@ -485,4 +485,32 @@ function M.update_single_module_cache(module_name, on_complete)
   end)
 end
 
+function M.update_single_file_cache(module_name, file_path, on_complete)
+  local log = uep_log.get()
+  
+  -- 拡張子チェック
+  local ext = vim.fn.fnamemodify(file_path, ":e"):lower()
+  local is_header = (ext == "h" or ext == "hpp" or ext == "ush" or ext == "usf")
+  
+  if is_header then
+      local dummy_progress = { stage_define = function() end, stage_update = function() end }
+      -- 既存情報は渡さず、新規解析させる (single update なので)
+      class_parser.parse_headers_async({}, { file_path }, dummy_progress, function(ok, result_map)
+          if not ok then
+             log.error("Header parse failed for single file: %s", file_path)
+             if on_complete then on_complete(false) end
+             return
+          end
+          
+          local details = result_map and result_map[file_path]
+          local success = db_writer.update_single_file(module_name, file_path, details)
+          if on_complete then on_complete(success) end
+      end)
+  else
+      -- ヘッダー以外なら即DB更新 (ディスクにあれば追加、なければ削除)
+      local success = db_writer.update_single_file(module_name, file_path, nil)
+      if on_complete then on_complete(success) end
+  end
+end
+
 return M

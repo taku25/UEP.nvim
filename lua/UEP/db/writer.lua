@@ -279,6 +279,52 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
   log.trace("[UEP.db] Saved module '%s' files to DB in %.2f ms.", module_meta.name, ms)
 end
 
+-- 単一ファイルの更新 (高速化用)
+function M.update_single_file(module_name, file_path, header_data)
+  local log = uep_log.get()
+  
+  -- モジュールIDを取得
+  local db = uep_db.get()
+  local rows = db:eval("SELECT id FROM modules WHERE name = ?", { module_name })
+  local module_id = (rows and rows[1]) and rows[1].id
+  
+  if not module_id then
+    log.error("[UEP.db] update_single_file: Module '%s' not found.", module_name)
+    return false
+  end
+
+  uep_db.transaction(function(db_conn, insert_fn_base)
+    -- 該当ファイルの既存エントリからIDを取得
+    local file_rows = db_conn:eval("SELECT id FROM files WHERE path = ?", { file_path })
+    local old_file_id = nil
+    if type(file_rows) == "table" and file_rows[1] then
+        old_file_id = file_rows[1].id
+    end
+    
+    if old_file_id then
+       -- 手動でクラスを削除 (外部キーCASCADEが効く環境と効かない環境があるため安全策)
+       db_conn:eval("DELETE FROM classes WHERE file_id = ?", { old_file_id })
+       db_conn:eval("DELETE FROM files WHERE id = ?", { old_file_id })
+    end
+    
+    -- ファイル追加 (disk上に存在しない場合は削除のみで終わる)
+    if vim.fn.filereadable(file_path) == 1 then
+       -- ヘッダー情報の形式を合わせる
+       -- parse_headers_async returns { [filepath] = { classes = ... } }
+       -- header_data is expected to be { classes = ... } or nil
+       local details_map = {}
+       if header_data then
+          details_map[file_path] = header_data
+       end
+       insert_file_and_classes(insert_fn_base, module_id, file_path, details_map)
+    else
+       log.debug("[UEP.db] File deleted from disk, removed from DB: %s", file_path)
+    end
+  end)
+  
+  return true
+end
+
 ---
 -- 全プロジェクトデータをDBに保存
 function M.save_project_scan(components_data)
