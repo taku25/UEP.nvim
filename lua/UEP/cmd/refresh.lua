@@ -11,6 +11,8 @@ local projects_cache = require("UEP.cache.projects")
 local refresh_project_core = require("UEP.cmd.core.refresh_project")
 local unl_events = require("UNL.event.events")
 local unl_types = require("UNL.event.types")
+local uep_db = require("UEP.db.init")
+local uep_vcs = require("UEP.vcs.init")
 
 local M = {}
 
@@ -89,10 +91,16 @@ function M.execute(opts, on_complete)
 
     projects_cache.register_project_with_components(registration_info, result.full_component_list)
     
-    log.info("Project refresh completed successfully.")
-    
-    -- STEP 2: (必須) 完了を通知する
-    finish_all(true)
+    -- [Fix] Refresh完了時に現在のリビジョンをDBに保存する
+    -- これにより、手動Refresh後のUEP startで不要な再Refreshが走るのを防ぐ
+    uep_vcs.get_revision(game_root, function(rev)
+        if rev then
+            uep_db.set_meta("vcs_revision", rev)
+            log.debug("Updated VCS revision in DB to: %s", rev)
+        end
+        log.info("Project refresh completed successfully.")
+        finish_all(true)
+    end)
   end)
 
 end
