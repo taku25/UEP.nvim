@@ -57,6 +57,9 @@ function M.ensure_tables(db)
   db:eval("CREATE INDEX IF NOT EXISTS idx_files_filename ON files(filename);")
   db:eval("CREATE INDEX IF NOT EXISTS idx_files_module_id ON files(module_id);")
 
+  -- file_hash カラムを追加 (インクリメンタル更新用)
+  ensure_column(db, "files", "file_hash", "file_hash TEXT")
+
   -- 2b. Directories Table
   db:eval([[
     CREATE TABLE IF NOT EXISTS directories (

@@ -60,7 +60,8 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
       
               -- mtime が同じなら、即時OK
               if existing_entry and existing_entry.mtime and existing_entry.mtime == current_mtime then
-                new_details[file_path] = existing_entry
+                -- [変更] Cache Hit の場合は new_details に追加しない (DB更新スキップのため)
+                -- new_details[file_path] = existing_entry
               else
                 table.insert(files_to_parse, {
                     path = file_path,

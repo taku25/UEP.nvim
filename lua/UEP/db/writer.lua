@@ -29,12 +29,29 @@ local function insert_file_and_classes(insert_fn, module_id, file_path, header_d
   local filename, ext = parse_path(file_path)
   local is_hdr = is_header(ext)
 
+  -- header_details からメタデータを取得
+  local file_mtime = 0
+  local file_hash = nil
+  
+  if header_details and header_details[file_path] then
+      file_mtime = header_details[file_path].mtime or 0
+      file_hash = header_details[file_path].file_hash
+  elseif file_path then
+       -- ヘッダー以外でも、ファイルが存在すれば stat して mtime を取っておくのが望ましいが
+       -- パフォーマンスへの影響を考慮し、ここでは一旦 0 のままにするか、fs_stat するか。
+       -- 今回はヘッダーの再解析防止が主目的なので、ヘッダー詳細がある場合のみ重視する。
+       -- (もし必要ならここで vim.loop.fs_stat(file_path) を呼ぶ)
+       -- local s = vim.loop.fs_stat(file_path)
+       -- if s then file_mtime = s.mtime.sec end
+  end
+
   -- 1. files テーブルへ挿入
   local file_id = insert_fn("files", {
     path = file_path,
     filename = filename,
     extension = ext,
-    mtime = 0,
+    mtime = file_mtime,
+    file_hash = file_hash,
     module_id = module_id,
     is_header = is_hdr and 1 or 0
   })

@@ -22,7 +22,7 @@ local function load_module_file_states(module_meta)
   -- c.symbol_type などは取得せず、ファイルパスとmtimeのみを取得
   -- これにより数万件のクラス結合を回避
   local rows = db:eval([[
-    SELECT f.path, f.mtime, f.id
+    SELECT f.path, f.mtime, f.file_hash, f.id
     FROM files f
     JOIN modules m ON f.module_id = m.id
     WHERE m.name = ? AND m.root_path = ?
@@ -35,6 +35,7 @@ local function load_module_file_states(module_meta)
     if row.path and row.path ~= "" then
         states[row.path] = {
             mtime = row.mtime,
+            file_hash = row.file_hash,
             id = row.id
         }
     end
@@ -341,13 +342,17 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
               
               -- [高速化] 全モジュールのファイル状態(mtime)のみをロード
               local all_existing_file_states = {}
+              local module_db_counts = {} -- [追加] モジュールごとのDBファイル数を記録
+
               for path, mod_meta in pairs(all_modules_meta_by_path) do
                   local states = load_module_file_states(mod_meta)
+                  module_db_counts[path] = vim.tbl_count(states)
                   for fp, s in pairs(states) do all_existing_file_states[fp] = s end
               end
               for _, pseudo in pairs(PSEUDO_MODULES) do
                   local pseudo_meta = { name=pseudo.name, module_root=pseudo.root }
                   local states = load_module_file_states(pseudo_meta)
+                  module_db_counts[pseudo.root] = vim.tbl_count(states)
                   for fp, s in pairs(states) do all_existing_file_states[fp] = s end
               end              
               
@@ -407,24 +412,62 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
                     
                     if module_files_data and module_dirs_data then
                        local module_header_details = {}
-                       if header_details_by_file then
-                         if item.type == "real" then
-                              -- Real modules: check source category only for headers (as per original logic)
-                              if module_files_data.source then
-                                for _, file in ipairs(module_files_data.source) do
-                                  if header_details_by_file[file] then module_header_details[file] = header_details_by_file[file] end
-                                end
-                              end
-                         else 
-                             -- Pseudo: check all categories
-                             for category, files in pairs(module_files_data) do
-                                  for _, file in ipairs(files) do
-                                    if header_details_by_file[file] then module_header_details[file] = header_details_by_file[file] end
-                                  end
-                             end
-                         end
+                       local content_changed = false
+                       local scanned_file_count = 0
+
+                       -- 変更があった(Parsed)かどうかのチェック
+                       local function check_and_collect(file_list)
+                           if not file_list then return end
+                           for _, file in ipairs(file_list) do
+                               scanned_file_count = scanned_file_count + 1
+                               if header_details_by_file and header_details_by_file[file] then 
+                                   module_header_details[file] = header_details_by_file[file] 
+                                   content_changed = true
+                               end
+                           end
+                       end
+
+                       if item.type == "real" then
+                           -- Real modules
+                           if module_files_data.source then check_and_collect(module_files_data.source) end
+                           if module_files_data.config then scanned_file_count = scanned_file_count + #module_files_data.config end
+                           if module_files_data.shader then scanned_file_count = scanned_file_count + #module_files_data.shader end
+                           if module_files_data.other  then scanned_file_count = scanned_file_count + #module_files_data.other end
+                       else 
+                           -- Pseudo modules
+                           for category, files in pairs(module_files_data) do
+                                check_and_collect(files)
+                           end
                        end
                        
+                       -- [最適化] 内容変更がなく、ファイル数もDBと一致していれば保存をスキップ (Savingフェーズの高速化)
+                       local db_count = module_db_counts[path] or 0
+                       
+                       if (not content_changed) and (scanned_file_count == db_count) then
+                           log.debug("Skipping save for clean module: %s (Files: %d)", module_meta.name, scanned_file_count)
+                           goto continue_loop
+                       else
+                           if content_changed then
+                               local changed_list = {}
+                               if item.type == "real" and module_files_data.source then
+                                   for _, f in ipairs(module_files_data.source) do
+                                       if header_details_by_file and header_details_by_file[f] then table.insert(changed_list, vim.fn.fnamemodify(f, ":t")) end
+                                   end
+                               elseif item.type ~= "real" then
+                                   for _, files in pairs(module_files_data) do
+                                       for _, f in ipairs(files) do
+                                            if header_details_by_file and header_details_by_file[f] then table.insert(changed_list, vim.fn.fnamemodify(f, ":t")) end
+                                       end
+                                   end
+                               end
+                               -- ログが大量に出るのを防ぐため、先頭5件だけ出すなど調整も考えられるが、まずは全てチェックしたいとのことなので
+                               log.debug("[Debug] Saving module '%s' due to CONTENT CHANGE. Modified files (%d): %s", 
+                                   module_meta.name, #changed_list, table.concat(changed_list, ", "))
+                           else
+                               log.debug("[Debug] Saving module '%s' due to FILE COUNT MISMATCH. (DB: %d, Scan: %d)", module_meta.name, db_count, scanned_file_count)
+                           end
+                       end
+
                        db_writer.save_module_files(module_meta, module_files_data, module_header_details, module_dirs_data)
                        if module_meta.name == "Engine" then log.debug("save_module_files SUCCEEDED for 'Engine'") end
                     else
@@ -432,6 +475,7 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
                         db_writer.save_module_files(module_meta, {}, {}, {})
                     end
                     
+                    ::continue_loop::
                     queue_idx = queue_idx + 1
                     vim.schedule(process_save_item)
                 end
