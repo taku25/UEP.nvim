@@ -125,4 +125,25 @@ function M.transaction(func)
   end
 end
 
+-- メタデータの取得
+function M.get_meta(key)
+  local db = M.get()
+  if not db then return nil end
+  -- db.project_meta (ORM access) might be nil if schema is not refreshed in lua object
+  -- using raw SQL eval is safer
+  local res = db:eval("SELECT value FROM project_meta WHERE key = ?", { key })
+  
+  if res and type(res) == "table" and #res > 0 then
+    return res[1].value
+  end
+  return nil
+end
+
+-- メタデータの保存
+function M.set_meta(key, value)
+  local db = M.get()
+  if not db then return end
+  db:eval("INSERT OR REPLACE INTO project_meta (key, value) VALUES (?, ?)", { key, value })
+end
+
 return M

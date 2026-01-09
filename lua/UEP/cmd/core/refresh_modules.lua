@@ -14,31 +14,32 @@ local M = {}
 
 local defaults = require("UEP.config.defaults") -- [!] デフォルト設定を読み込み
 
-local function load_header_details_from_db(module_meta)
+-- [変更] クラス詳細ではなく、ファイルの更新チェック用メタデータのみをロードする (高速化)
+local function load_module_file_states(module_meta)
   local db = uep_db.get()
   if not db then return {} end
   
+  -- c.symbol_type などは取得せず、ファイルパスとmtimeのみを取得
+  -- これにより数万件のクラス結合を回避
   local rows = db:eval([[
-    SELECT f.path, c.name, c.base_class, c.line_number, c.symbol_type
-    FROM classes c
-    JOIN files f ON c.file_id = f.id
+    SELECT f.path, f.mtime, f.id
+    FROM files f
     JOIN modules m ON f.module_id = m.id
     WHERE m.name = ? AND m.root_path = ?
   ]], { module_meta.name, module_meta.module_root })
   
   if type(rows) ~= "table" then return {} end
   
-  local details = {}
+  local states = {}
   for _, row in ipairs(rows) do
-    if not details[row.path] then details[row.path] = { classes = {} } end
-    table.insert(details[row.path].classes, {
-      name = row.name,
-      base_class = row.base_class,
-      line = row.line_number,
-      type = row.symbol_type
-    })
+    if row.path and row.path ~= "" then
+        states[row.path] = {
+            mtime = row.mtime,
+            id = row.id
+        }
+    end
   end
-  return details
+  return states
 end
 
 function M.create_fd_command(base_paths, type_flag)
@@ -216,173 +217,235 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
             for _, pseudo in pairs(PSEUDO_MODULES) do table.insert(sorted_pseudo_roots, pseudo.root) end
             table.sort(sorted_pseudo_roots, function(a,b) return #a > #b end)
 
-            -- ▼▼▼ ファイル振り分け ▼▼▼
-            for _, file in ipairs(all_found_files) do
-              local assigned = false
-              -- 1. 実際のモジュール
-              for _, mod_root in ipairs(sorted_real_module_roots) do
-                if file:find(mod_root, 1, true) then
-                  local category = core_utils.categorize_path(file)
-                  if category ~= "uproject" and category ~= "uplugin" then
-                    if files_by_path_key[mod_root] then
-                      if not files_by_path_key[mod_root][category] then files_by_path_key[mod_root][category] = {} end
-                      table.insert(files_by_path_key[mod_root][category], file)
-                    else
-                      log.warn("refresh_modules: files_by_path_key key missing for %s", mod_root)
-                    end
-                  end
-                  assigned = true; break
-                end
-              end
-              -- 2. 疑似モジュール
-              if not assigned then
-                for _, pseudo_root in ipairs(sorted_pseudo_roots) do
-                  if file:find(pseudo_root, 1, true) then
-                    
-                    local is_engine_programs = pseudo_root:find("Engine/Source/Programs", 1, true)
-                    local should_check_source_exclusion = true
-                    if is_engine_programs then
-                      should_check_source_exclusion = false
-                    end
+            -- ▼▼▼ ファイル振り分け (非同期バッチ処理) ▼▼▼
+            -- 線形探索コストが高すぎるため、チャンクに分割してメインスレッドのブロックを防ぐ
+            local FILE_PROCESS_CHUNK_SIZE = 5000 -- 1フレームあたりの処理件数
+            local current_file_idx = 1
+            local total_files_count = #all_found_files
+            local current_dir_idx = 1
+            local total_dirs_count = #all_found_dirs
 
-                    if (not should_check_source_exclusion) or (not file:find(fs.joinpath(pseudo_root, "Source"), 1, true)) then
-                      local category = core_utils.categorize_path(file)
-                      if files_by_path_key[pseudo_root] then
-                        if not files_by_path_key[pseudo_root][category] then files_by_path_key[pseudo_root][category] = {} end
-                        table.insert(files_by_path_key[pseudo_root][category], file)
+            local function process_file_chunk()
+              local chunk_end = math.min(current_file_idx + FILE_PROCESS_CHUNK_SIZE - 1, total_files_count)
+              for i = current_file_idx, chunk_end do
+                local file = all_found_files[i]
+                local assigned = false
+                
+                -- 1. 実際のモジュール
+                for _, mod_root in ipairs(sorted_real_module_roots) do
+                  if file:find(mod_root, 1, true) then
+                    local category = core_utils.categorize_path(file)
+                    if category ~= "uproject" and category ~= "uplugin" then
+                      if files_by_path_key[mod_root] then
+                        if not files_by_path_key[mod_root][category] then files_by_path_key[mod_root][category] = {} end
+                        table.insert(files_by_path_key[mod_root][category], file)
                       end
                     end
                     assigned = true; break
                   end
                 end
-              end
-            end
-            
-            -- ▼▼▼ ディレクトリ振り分け ▼▼▼
-            for _, dir in ipairs(all_found_dirs) do
-                local assigned = false
-                -- 1. 実際のモジュール
-                for _, mod_root in ipairs(sorted_real_module_roots) do
-                    if dir:find(mod_root, 1, true) then
-                        local category = core_utils.categorize_path(dir)
-                        if category ~= "uproject" and category ~= "uplugin" then
-                            if dirs_by_path_key[mod_root] then
-                                if not dirs_by_path_key[mod_root][category] then dirs_by_path_key[mod_root][category] = {} end
-                                table.insert(dirs_by_path_key[mod_root][category], dir)
-                            else
-                                log.warn("refresh_modules: dirs_by_path_key key missing for %s", mod_root)
-                            end
-                        end
-                        assigned = true; break
-                    end
-                end
+                
                 -- 2. 疑似モジュール
                 if not assigned then
-                    for _, pseudo_root in ipairs(sorted_pseudo_roots) do
-                        if dir:find(pseudo_root, 1, true) then
-                            local is_engine_programs = pseudo_root:find("Engine/Source/Programs", 1, true)
-                            local should_check_source_exclusion = true
-                            if is_engine_programs then
-                                should_check_source_exclusion = false
-                            end
-
-                            if (not should_check_source_exclusion) or (not dir:find(fs.joinpath(pseudo_root, "Source"), 1, true)) then
-                                local category = core_utils.categorize_path(dir)
-                                if dirs_by_path_key[pseudo_root] then
-                                    if not dirs_by_path_key[pseudo_root][category] then dirs_by_path_key[pseudo_root][category] = {} end
-                                    table.insert(dirs_by_path_key[pseudo_root][category], dir)
-                                end
-                            end
-                            assigned = true; break
-                        end
-                    end
-                end
-            end
-            
-            progress:stage_define("header_analysis", #all_found_files)
-            local all_existing_header_details = {}
-            for path, mod_meta in pairs(all_modules_meta_by_path) do
-                if not modules_to_refresh_meta[path] then
-                  local details = load_header_details_from_db(mod_meta)
-                  for fp, d in pairs(details) do all_existing_header_details[fp] = d end
-                end
-            end
-            for _, pseudo in pairs(PSEUDO_MODULES) do
-                local pseudo_meta = { name=pseudo.name, module_root=pseudo.root }
-                local details = load_header_details_from_db(pseudo_meta)
-                for fp, d in pairs(details) do all_existing_header_details[fp] = d end
-            end
-
-            local headers_to_parse = {}
-            for _, file in ipairs(all_found_files) do
-              if file:match("%.h$") and not file:find("NoExportTypes.h", 1, true) then
-                table.insert(headers_to_parse, file)
-              end
-            end
-            log.debug("Identified %d header files to parse out of %d total files found.", #headers_to_parse, #all_found_files)
-
-            class_parser.parse_headers_async(all_existing_header_details, headers_to_parse, progress, function(ok, header_details_by_file)
-              if not ok then log.error("Header parsing failed, aborting module cache save."); if on_done then on_done(false) end; return end
-
-              progress:stage_define("module_cache_save", total_count + vim.tbl_count(PSEUDO_MODULES))
-              local saved_count = 0
-              log.debug("create_module_caches_for: Starting save loop for %d modules.", total_count)
-
-              for path, module_meta in pairs(modules_to_refresh_meta) do 
-                saved_count = saved_count + 1
-                local module_name = module_meta.name
-                progress:stage_update("module_cache_save", saved_count, ("Saving: %s [%d/%d]"):format(module_name, saved_count, total_count))
-                
-                if module_name == "Engine" then log.debug("create_module_caches_for: Processing 'Engine' module for saving...") end
-
-                local module_files_data = files_by_path_key[path]
-                local module_dirs_data = dirs_by_path_key[path]
-                if module_files_data and module_dirs_data then
-                  local module_header_details = {}
-                  if header_details_by_file then
-                    if module_files_data.source then
-                      for _, file in ipairs(module_files_data.source) do
-                        if header_details_by_file[file] then module_header_details[file] = header_details_by_file[file] end
+                  for _, pseudo_root in ipairs(sorted_pseudo_roots) do
+                    if file:find(pseudo_root, 1, true) then
+                      local is_engine_programs = pseudo_root:find("Engine/Source/Programs", 1, true)
+                      local should_check_source_exclusion = true
+                      if is_engine_programs then
+                        should_check_source_exclusion = false
                       end
+
+                      if (not should_check_source_exclusion) or (not file:find(fs.joinpath(pseudo_root, "Source"), 1, true)) then
+                        local category = core_utils.categorize_path(file)
+                        if files_by_path_key[pseudo_root] then
+                          if not files_by_path_key[pseudo_root][category] then files_by_path_key[pseudo_root][category] = {} end
+                          table.insert(files_by_path_key[pseudo_root][category], file)
+                        end
+                      end
+                      assigned = true; break
                     end
                   end
-                  local data_to_save = { files = module_files_data, directories = module_dirs_data, header_details = module_header_details }
-                  
-                  db_writer.save_module_files(module_meta, module_files_data, module_header_details, module_dirs_data)
-                  if module_name == "Engine" then log.debug("create_module_caches_for: module_cache.save SUCCEEDED for 'Engine'") end
-                else
-                  log.debug("create_module_caches_for: Saving empty cache for '%s' (data missing in map)", module_name)
-                  db_writer.save_module_files(module_meta, {}, {}, {})
                 end
               end
               
-              log.debug("create_module_caches_for: Saving %d pseudo-modules...", vim.tbl_count(PSEUDO_MODULES))
-              for _, pseudo in pairs(PSEUDO_MODULES) do
-                  saved_count = saved_count + 1
-                  progress:stage_update("module_cache_save", saved_count, ("Saving: %s [%d/%d]"):format(pseudo.name, saved_count, total_count + vim.tbl_count(PSEUDO_MODULES)))
-                  local pseudo_files_data = files_by_path_key[pseudo.root]
-                  local pseudo_dirs_data = dirs_by_path_key[pseudo.root]
-                  if pseudo_files_data and pseudo_dirs_data then
-                      local pseudo_header_details = {}
-                      if header_details_by_file then
-                        for category, files in pairs(pseudo_files_data) do
-                            for _, file in ipairs(files) do
-                              if header_details_by_file[file] then pseudo_header_details[file] = header_details_by_file[file] end
-                            end
-                        end
-                      end
-                      local pseudo_meta = { name = pseudo.name, module_root = pseudo.root, type = pseudo.type }
-                      db_writer.save_module_files(pseudo_meta, pseudo_files_data, pseudo_header_details, pseudo_dirs_data)
-                  else
-                      log.debug("create_module_caches_for: No files/dirs found for pseudo-module '%s'. Saving empty.", pseudo.name)
-                      local pseudo_meta = { name = pseudo.name, module_root = pseudo.root, type = pseudo.type }
-                      db_writer.save_module_files(pseudo_meta, {}, {}, {})
-                  end
-              end
+              current_file_idx = chunk_end + 1
+              progress:stage_update("module_file_scan", 1, ("Processing files... [%d/%d]"):format(math.min(current_file_idx, total_files_count), total_files_count))
 
-              progress:stage_update("module_cache_save", saved_count, "All module caches saved.")
-              if on_done then on_done(true) end
-            end)
+              if current_file_idx <= total_files_count then
+                vim.schedule(process_file_chunk)
+              else
+                 -- ファイル処理完了、ディレクトリ処理へ
+                 vim.schedule(process_dir_chunk)
+              end
+            end
+
+            function process_dir_chunk() -- (localだと前方参照できないのでグローバル風 or 事前宣言必要だが、ここではブロック内なので)
+               -- 事前宣言が面倒なので process_file_chunk から呼ばれることを前提にここに定義
+               local chunk_end = math.min(current_dir_idx + FILE_PROCESS_CHUNK_SIZE - 1, total_dirs_count)
+               for i = current_dir_idx, chunk_end do
+                 local dir = all_found_dirs[i]
+                 local assigned = false
+                 -- 1. 実際のモジュール
+                 for _, mod_root in ipairs(sorted_real_module_roots) do
+                     if dir:find(mod_root, 1, true) then
+                         local category = core_utils.categorize_path(dir)
+                         if category ~= "uproject" and category ~= "uplugin" then
+                             if dirs_by_path_key[mod_root] then
+                                 if not dirs_by_path_key[mod_root][category] then dirs_by_path_key[mod_root][category] = {} end
+                                 table.insert(dirs_by_path_key[mod_root][category], dir)
+                             end
+                         end
+                         assigned = true; break
+                     end
+                 end
+                 -- 2. 疑似モジュール
+                 if not assigned then
+                     for _, pseudo_root in ipairs(sorted_pseudo_roots) do
+                         if dir:find(pseudo_root, 1, true) then
+                             local is_engine_programs = pseudo_root:find("Engine/Source/Programs", 1, true)
+                             local should_check_source_exclusion = true
+                             if is_engine_programs then
+                                 should_check_source_exclusion = false
+                             end
+ 
+                             if (not should_check_source_exclusion) or (not dir:find(fs.joinpath(pseudo_root, "Source"), 1, true)) then
+                                 local category = core_utils.categorize_path(dir)
+                                 if dirs_by_path_key[pseudo_root] then
+                                     if not dirs_by_path_key[pseudo_root][category] then dirs_by_path_key[pseudo_root][category] = {} end
+                                     table.insert(dirs_by_path_key[pseudo_root][category], dir)
+                                 end
+                             end
+                             assigned = true; break
+                         end
+                     end
+                 end
+               end
+
+               current_dir_idx = chunk_end + 1
+               progress:stage_update("module_file_scan", 1, ("Processing dirs... [%d/%d]"):format(math.min(current_dir_idx, total_dirs_count), total_dirs_count))
+
+               if current_dir_idx <= total_dirs_count then
+                   vim.schedule(process_dir_chunk)
+               else
+                   -- 全処理完了、次のステップへ
+                   vim.schedule(function() 
+                      -- ▼▼▼ 以降は元のフロー (ヘッダ解析〜保存) ▼▼▼
+                      run_header_analysis_phase() 
+                   end)
+               end
+            end
+
+            -- ヘッダ解析フェーズ以降を関数化して呼び出しやすくする
+            function run_header_analysis_phase() 
+              progress:stage_define("header_analysis", #all_found_files)
+              
+              -- [高速化] 全モジュールのファイル状態(mtime)のみをロード
+              local all_existing_file_states = {}
+              for path, mod_meta in pairs(all_modules_meta_by_path) do
+                  local states = load_module_file_states(mod_meta)
+                  for fp, s in pairs(states) do all_existing_file_states[fp] = s end
+              end
+              for _, pseudo in pairs(PSEUDO_MODULES) do
+                  local pseudo_meta = { name=pseudo.name, module_root=pseudo.root }
+                  local states = load_module_file_states(pseudo_meta)
+                  for fp, s in pairs(states) do all_existing_file_states[fp] = s end
+              end              
+              
+              local headers_to_parse = {}
+              -- ヘッダー集めも再走査が必要だが、files_by_path_key から集める法が効率的かも？
+              -- いや、all_found_filesからでいい
+              for _, file in ipairs(all_found_files) do
+                if file:match("%.h$") and not file:find("NoExportTypes.h", 1, true) then
+                  table.insert(headers_to_parse, file)
+                end
+              end
+              
+              log.debug("Identified %d header files to parse out of %d total files found.", #headers_to_parse, #all_found_files)
+
+              class_parser.parse_headers_async(all_existing_file_states, headers_to_parse, progress, function(ok, header_details_by_file)
+                if not ok then log.error("Header parsing failed, aborting module cache save."); if on_done then on_done(false) end; return end
+  
+                -- ▼▼▼ 非同期保存キューの構築 ▼▼▼
+                local save_queue = {}
+                local total_save_count = 0
+                
+                -- Real Modules
+                for path, module_meta in pairs(modules_to_refresh_meta) do
+                   table.insert(save_queue, { type="real", meta=module_meta, path=path })
+                   total_save_count = total_save_count + 1
+                end
+                -- Pseudo Modules
+                for _, pseudo in pairs(PSEUDO_MODULES) do
+                   table.insert(save_queue, { type="pseudo", meta={ name = pseudo.name, module_root = pseudo.root, type = pseudo.type }, path=pseudo.root })
+                   total_save_count = total_save_count + 1
+                end
+
+                progress:stage_define("module_cache_save", total_save_count)
+                local saved_count = 0
+                local queue_idx = 1
+                log.debug("create_module_caches_for: Starting ASYNC save loop for %d modules.", total_save_count)
+
+                local function process_save_item()
+                    if queue_idx > total_save_count then
+                         -- 完了
+                         progress:stage_update("module_cache_save", saved_count, "All module caches saved.")
+                         if on_done then on_done(true) end
+                         return
+                    end
+                    
+                    local item = save_queue[queue_idx]
+                    local module_meta = item.meta
+                    local path = item.path
+                    
+                    saved_count = saved_count + 1
+                    progress:stage_update("module_cache_save", saved_count, ("Saving: %s [%d/%d]"):format(module_meta.name, saved_count, total_save_count))
+                    
+                    if module_meta.name == "Engine" then log.debug("Processing 'Engine' module for saving...") end
+
+                    local module_files_data = files_by_path_key[path]
+                    local module_dirs_data = dirs_by_path_key[path]
+                    
+                    if module_files_data and module_dirs_data then
+                       local module_header_details = {}
+                       if header_details_by_file then
+                         if item.type == "real" then
+                              -- Real modules: check source category only for headers (as per original logic)
+                              if module_files_data.source then
+                                for _, file in ipairs(module_files_data.source) do
+                                  if header_details_by_file[file] then module_header_details[file] = header_details_by_file[file] end
+                                end
+                              end
+                         else 
+                             -- Pseudo: check all categories
+                             for category, files in pairs(module_files_data) do
+                                  for _, file in ipairs(files) do
+                                    if header_details_by_file[file] then module_header_details[file] = header_details_by_file[file] end
+                                  end
+                             end
+                         end
+                       end
+                       
+                       db_writer.save_module_files(module_meta, module_files_data, module_header_details, module_dirs_data)
+                       if module_meta.name == "Engine" then log.debug("save_module_files SUCCEEDED for 'Engine'") end
+                    else
+                        log.debug("Saving empty cache for '%s' (data missing in map)", module_meta.name)
+                        db_writer.save_module_files(module_meta, {}, {}, {})
+                    end
+                    
+                    queue_idx = queue_idx + 1
+                    vim.schedule(process_save_item)
+                end
+                
+                -- 開始
+                vim.schedule(process_save_item)
+
+              end) -- parse_headers_async
+            end -- run_header_analysis_phase
+
+            -- 処理開始 (ファイルチャンクから)
+            vim.schedule(process_file_chunk)
+
+
           end,
         })
         if not job2_ok then log.error("Failed to start fd (dirs) job: %s", tostring(job2_id_or_err)); if on_done then on_done(false) end end

@@ -169,7 +169,7 @@ local function process_module_group(insert_fn, modules_map, group_type, scope)
 end
 
 ---
--- 単一モジュールのファイルデータをSQLiteに保存する
+-- 単一モジュールのファイルデータをSQLiteに保存する (Diff Update / Incremental Sync)
 function M.save_module_files(module_meta, files_data, header_details, directories_data)
   if not (module_meta and module_meta.name and module_meta.module_root) then
     uep_log.get().warn("save_module_files: Invalid module_meta")
@@ -179,28 +179,13 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
   local log = uep_log.get()
   local start_t = vim.loop.hrtime()
 
-   -- ヘッダ詳細の件数とクラス件数を計算
-   local hdr_count, cls_count = 0, 0
-   if header_details then
-     for _, info in pairs(header_details) do
-       hdr_count = hdr_count + 1
-       if info.classes then cls_count = cls_count + #info.classes end
-     end
-   end
-   if hdr_count > 0 then
-     log.debug("[UEP.db] save_module_files: header_details=%d, classes=%d for '%s'", hdr_count, cls_count, module_meta.name)
-   end
-  
-  -- エラーハンドリングを追加
   local success, err = pcall(function()
-    -- トランザクション処理
     uep_db.transaction(function(db, insert_fn_base)
-      -- 既存のモジュールIDを取得 (name + root_path で特定)
+      -- 1. モジュールID取得 / 更新 / 作成
       local rows = db:eval("SELECT id FROM modules WHERE name = ? AND root_path = ?", { module_meta.name, module_meta.module_root })
       local module_id = (type(rows) == "table" and rows[1]) and rows[1].id or nil
 
       if module_id then
-        -- 既存モジュールを更新
         db:eval([[UPDATE modules SET type = ?, scope = ?, build_cs_path = ?, owner_name = ?, component_name = ?, deep_dependencies = ? WHERE id = ?]], {
           module_meta.type or "Runtime",
           module_meta.scope or "Individual",
@@ -211,7 +196,6 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
           module_id
         })
       else
-        -- 新規モジュールを登録
         module_id = insert_fn_base("modules", {
           name = module_meta.name,
           type = module_meta.type or "Runtime",
@@ -223,50 +207,101 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
           deep_dependencies = module_meta.deep_dependencies and vim.json.encode(module_meta.deep_dependencies) or nil
         })
       end
-      
-      -- モジュール内の既存ファイル・ディレクトリを全削除（削除されたファイルを反映するため）
-      if module_id then
-        db:eval("DELETE FROM files WHERE module_id = ?", { module_id })
-        db:eval("DELETE FROM directories WHERE module_id = ?", { module_id })
-      end
+      if not module_id then error("Failed to get module_id") end
 
-      if module_id and files_data then
-        -- パス重複による UNIQUE(path) 衝突を避けるため、1モジュール内で重複排除してから挿入。
-        -- 既存行が他モジュールにある場合は先に DELETE してから挿入する。
-        local seen_paths = {}
-        for category, file_list in pairs(files_data) do
-          if type(file_list) == "table" then
-            for _, file_path in ipairs(file_list) do
-              if file_path and not seen_paths[file_path] then
-                seen_paths[file_path] = true
-                db:eval("DELETE FROM files WHERE path = ?", { file_path })
-                insert_file_and_classes(insert_fn_base, module_id, file_path, header_details)
-              end
-            end
-          end
+      -- 2. 既存ファイルのマップを作成 (パス -> ID)
+      local existing_files_rows = db:eval("SELECT id, path FROM files WHERE module_id = ?", { module_id })
+      local db_files_map = {}
+      if type(existing_files_rows) == "table" then
+        for _, row in ipairs(existing_files_rows) do
+          db_files_map[row.path] = row.id
         end
       end
 
-      -- ディレクトリを登録（カテゴリ保持）
-      if module_id and directories_data then
+      -- 3. ディレクトリの全置換 (件数が少ないため全Delete/Insertでもコストは低いが、Diffにしても良い)
+      --    ここでは複雑さを避けるため、ディレクトリのみ従来通り全置換とする（ファイルに比べて数が圧倒的に少ない）
+      db:eval("DELETE FROM directories WHERE module_id = ?", { module_id })
+      if directories_data then
         local seen_dirs = {}
         for category, dir_list in pairs(directories_data) do
           if type(dir_list) == "table" then
             for _, dir_path in ipairs(dir_list) do
               if dir_path and not seen_dirs[dir_path] then
-                seen_dirs[dir_path] = true
-                -- 他モジュールからの移動を考慮してDELETE (自モジュール分は上で削除済みだが念のため)
-                db:eval("DELETE FROM directories WHERE path = ?", { dir_path })
-                insert_fn_base("directories", {
-                  path = dir_path,
-                  category = category,
-                  module_id = module_id,
-                })
+                 seen_dirs[dir_path] = true
+                 insert_fn_base("directories", { path = dir_path, category = category, module_id = module_id })
               end
             end
           end
         end
       end
+
+      -- 4. ファイルの Diff Update
+      local current_scan_paths = {} -- 今回スキャンで見つかったパスの集合
+      
+      if files_data then
+        for category, file_list in pairs(files_data) do
+          if type(file_list) == "table" then
+            for _, file_path in ipairs(file_list) do
+              -- [修正] 同一モジュール内でのパス重複チェック (symlinkなどで重複して現れる可能性)
+              if file_path and not current_scan_paths[file_path] then
+                current_scan_paths[file_path] = true
+                
+                -- A. 新規 or 既存
+                if not db_files_map[file_path] then
+                   -- 新規挿入
+                   -- [修正] UNIQUE制約違反(他モジュールに存在)を防ぐため、事前にチェックして奪い取る
+                   -- ただし毎回SELECTすると遅いので、INSERTで失敗したときに対処するか、
+                   -- ここではシンプルに pcall で試行し、失敗したら盗むロジックにする。
+                   
+                   local status, res = pcall(insert_file_and_classes, insert_fn_base, module_id, file_path, header_details)
+                   if not status then
+                       -- エラー発生。UNIQUE constraint かどうか判別は難しいが、パス重複の可能性が高い
+                       -- 既存の所有者を削除してからリトライ
+                       local owner_rows = db:eval("SELECT id FROM files WHERE path = ?", { file_path })
+                       if type(owner_rows) == "table" and owner_rows[1] then
+                            local old_id = owner_rows[1].id
+                            log.debug("Stealing file '%s' from previous owner (ID: %s)", file_path, tostring(old_id))
+                            db:eval("DELETE FROM classes WHERE file_id = ?", { old_id })
+                            db:eval("DELETE FROM files WHERE id = ?", { old_id })
+                            
+                            -- リトライ
+                            insert_file_and_classes(insert_fn_base, module_id, file_path, header_details)
+                       else
+                            log.error("Failed to insert file '%s', and no existing owner found. Error: %s", file_path, tostring(res))
+                       end
+                   end
+                else
+                   -- 既存ファイル
+                   -- 解析結果(header_details) に含まれている場合のみ更新する
+                   if header_details and header_details[file_path] then
+                       local fid = db_files_map[file_path]
+                       db:eval("DELETE FROM classes WHERE file_id = ?", { fid })
+                       db:eval("DELETE FROM files WHERE id = ?", { fid })
+                       insert_file_and_classes(insert_fn_base, module_id, file_path, header_details)
+                       
+                       -- マップ更新 (削除済みとしてマーク... しないと下の削除ロジックでまた消そうとしてしまう？
+                       -- いや、db_files_map は古いIDを持っている。
+                       -- 下のループでは `current_scan_paths` に入っているので削除されない。OK。
+                   else
+                       -- 変更なし (header_detailsに含まれていない = Cache Hit)
+                       -- 何もしない
+                   end
+                end
+              end
+            end
+          end
+        end
+      end
+
+      -- 5. 削除されたファイルの処理
+      -- db_files_map に残っていて、current_scan_paths に無いものは削除
+      for path, fid in pairs(db_files_map) do
+         if not current_scan_paths[path] then
+             db:eval("DELETE FROM classes WHERE file_id = ?", { fid })
+             db:eval("DELETE FROM files WHERE id = ?", { fid })
+         end
+      end
+      
     end)
   end)
   

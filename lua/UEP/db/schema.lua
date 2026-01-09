@@ -90,6 +90,14 @@ function M.ensure_tables(db)
   db:eval("CREATE INDEX IF NOT EXISTS idx_components_type ON components(type);")
   db:eval("CREATE INDEX IF NOT EXISTS idx_components_owner ON components(owner_name);")
 
+  -- 4. Project Meta Table
+  db:eval([[
+    CREATE TABLE IF NOT EXISTS project_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+  ]])
+
   -- 3. Classes Table
   db:eval([[
     CREATE TABLE IF NOT EXISTS classes (
