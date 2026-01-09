@@ -33,8 +33,12 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
       * The `:UEP find_derived` command instantly finds all child classes that inherit from a specified base class.
       * The `:UEP find_parents` command displays the entire inheritance chain from a specified class up to `UObject`.
       * The `:UEP add_include` command automatically finds and inserts the correct `#include` directive for a class name under the cursor or one chosen from a list.
-      * The `:UEP find_module` command allows you to select a class from a list and copies the name of the module it belongs to (e.g., "Core", "Engine") to the clipboard, making it easy to edit `Build.cs`.  <-- 追加
+      * The `:UEP find_module` command allows you to select a class from a list and copies the name of the module it belongs to (e.g., "Core", "Engine") to the clipboard, making it easy to edit `Build.cs`.
       * Leverages the class inheritance data cached by `:UEP refresh` for high-speed navigation.
+  * **Intelligent File Watching**:
+      * The `:UEP start` command starts monitoring the project for changes.
+      * It automatically compares the current VCS (Git) revision with the last cached state.
+      * If changes are detected (or on first run), it triggers a `:UEP refresh` automatically, then begins a low-overhead file watcher.
   * **Intelligent Content Searching (Grep)**:
       * Performs high-speed content searches across the entire project and engine source code (requires ripgrep).
       * The `:UEP grep` command lets you specify the search scope (**Game**, **Engine**, **Runtime**, **Editor**, **Full**).
@@ -198,6 +202,12 @@ All commands start with `:UEP`.
 
 " Create a new Unreal Engine project from a template.
 :UEP new_project
+
+" Start project monitoring. Checks for Git updates, runs refresh if needed, then watches for file changes.
+:UEP start
+
+" Stop the project monitor.
+:UEP stop
 
 " Jumps to the actual class or struct definition file, skipping forward declarations.
 :UEP goto_definition[!] [ClassName]
