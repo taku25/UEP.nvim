@@ -563,9 +563,10 @@ function M.update_single_module_cache(module_name, on_complete)
                   table.insert(dirs_by_category[category], dir)
                 end
               end
-              local existing_header_details = load_header_details_from_db(module_meta)
+              -- [Fix] 単一モジュール更新時も軽量版ステータスロードを使用する
+              local existing_file_states = load_module_file_states(module_meta)
               local dummy_progress = { stage_define = function() end, stage_update = function() end, }
-              class_parser.parse_headers_async(existing_header_details, headers_to_parse, dummy_progress, function(ok, header_details_by_file)
+              class_parser.parse_headers_async(existing_file_states, headers_to_parse, dummy_progress, function(ok, header_details_by_file)
                 if not ok then
                   log.error("Header parsing failed for lightweight refresh of '%s'.", module_name)
                   if on_complete then on_complete(false) end
