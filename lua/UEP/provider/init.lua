@@ -24,6 +24,14 @@ M.setup = function()
       impl = inheritance_provider,
     })
 
+    -- ★追加: 構造体プロバイダー
+    local struct_provider = require("UEP.provider.struct")
+    unl_api.provider.register({
+      capability = "uep.get_project_structs",
+      name = "UEP.nvim",
+      impl = struct_provider,
+    })
+
     -- ... (以下の既存登録はそのまま) ...
     local tree_provider = require("UEP.provider.tree")
     unl_api.provider.register({
