@@ -40,6 +40,7 @@ local function find_and_show_parents(child_class_name)
         if selected_class and selected_class.file_path then
           unl_buf_open.safe({
             file_path = selected_class.file_path,
+            open_cmd = "edit",
             plugin_name = "UEP",
           })
         end
