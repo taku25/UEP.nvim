@@ -26,7 +26,7 @@ local function find_current_context()
     local bufnr = vim.api.nvim_get_current_buf()
     local cursor_line = vim.fn.line(".")
     
-    local result = unl_parser.parse(bufnr)
+    local result = unl_parser.parse(bufnr, "UEP")
     
     local target_class = nil
     local target_function = nil
@@ -122,7 +122,7 @@ function M.execute(opts)
                 end
 
                 -- ターゲットファイルをパースして関数を探す
-                local p_result = unl_parser.parse(target_file_path)
+                local p_result = unl_parser.parse(target_file_path, "UEP")
                 
                 -- cppファイルの場合、クラス名が名前空間的に使われているので map から探す
                 -- ヘッダーの場合、list から探す (find_best_match_class 利用)

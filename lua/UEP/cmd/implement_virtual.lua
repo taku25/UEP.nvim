@@ -74,7 +74,7 @@ local function find_current_class_context()
     local current_line = vim.fn.line(".")
     local bufnr = vim.api.nvim_get_current_buf()
     
-    local parse_result = unl_parser.parse(bufnr)
+    local parse_result = unl_parser.parse(bufnr, "UEP")
     local classes = parse_result.list or {}
     
     local best_match = nil
@@ -142,7 +142,7 @@ function M.execute(opts)
             local file_path = parent_info.file_path
             if file_path and vim.fn.filereadable(file_path) == 1 then
                 
-                local parent_parse_result = unl_parser.parse(file_path)
+                local parent_parse_result = unl_parser.parse(file_path, "UEP")
                 local target_parent_data = unl_parser.find_best_match_class(parent_parse_result, parent_info.class_name)
                 
                 if target_parent_data then
