@@ -66,8 +66,7 @@
           * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
           * [fzf-lua](https://github.com/ibhagwan/fzf-lua)
       * **UI (Tree View):**
-          * [**neo-tree.nvim**](https://github.com/nvim-neo-tree/neo-tree.nvim)
-          * [**neo-tree-unl.nvim**](https://github.com/taku25/neo-tree-unl.nvim) (`:UEP tree`, `:UEP module_tree` コマンドの利用に**必須**)
+          * [**UNX.nvim**](https://github.com/taku25/UNX.nvim) (`:UEP tree`, `:UEP module_tree` コマンドの利用に**必須**)
 
 
 ## 🚀 インストール (Installation)

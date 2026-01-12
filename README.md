@@ -66,8 +66,7 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
           * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
           * [fzf-lua](https://github.com/ibhagwan/fzf-lua)
       * **UI (Tree View):**
-          * [**neo-tree.nvim**](https://github.com/nvim-neo-tree/neo-tree.nvim)
-          * [**neo-tree-unl.nvim**](https://github.com/taku25/neo-tree-unl.nvim) (**Required** for `:UEP tree` and `:UEP module_tree` commands)
+          * [**UNX.nvim**](https://github.com/taku25/UNX.nvim) (**Required** for `:UEP tree` and `:UEP module_tree` commands)
 
 
 ## 🚀 Installation
