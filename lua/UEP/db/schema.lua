@@ -119,8 +119,9 @@ function M.ensure_tables(db)
   
   -- symbol_type カラムを追加 (class, struct, enum)
   ensure_column(db, "classes", "symbol_type", "symbol_type TEXT DEFAULT 'class'")
-
-  return true
+  
+  -- 重複防止のためのユニーク制約を追加
+  db:eval("CREATE UNIQUE INDEX IF NOT EXISTS idx_classes_unique_name_type ON classes(name, symbol_type)")
 end
 
 return M

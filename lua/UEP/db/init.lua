@@ -102,7 +102,7 @@ function M.transaction(func)
       table.insert(vals, v)
       table.insert(placeholders, "?")
     end
-    local sql = string.format("INSERT INTO %s (%s) VALUES (%s)", table_name, table.concat(cols, ", "), table.concat(placeholders, ", "))
+    local sql = string.format("INSERT OR IGNORE INTO %s (%s) VALUES (%s)", table_name, table.concat(cols, ", "), table.concat(placeholders, ", "))
     local res = db:eval(sql, vals)
     if res == false then error(string.format("Insert failed for table '%s'", table_name)) end
     local rows = db:eval("SELECT last_insert_rowid() as id")
