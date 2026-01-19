@@ -36,6 +36,7 @@ local cmd_gen_compile_commands_fast = require("UEP.cmd.gen_compile_commands_fast
 local cmd_clean_intermediate = require("UEP.cmd.clean_intermediate")
 local cmd_start = require("UEP.cmd.start")
 local cmd_stop = require("UEP.cmd.stop")
+local cmd_open_in_ide = require("UEP.cmd.open_in_ide")
 
 local M = {}
 
@@ -213,4 +214,9 @@ end
 function M.clean_intermediate(opts)
   cmd_clean_intermediate.execute(opts or {})
 end
+
+function M.open_in_ide(opts)
+  cmd_open_in_ide.execute(opts or {})
+end
+
 return M

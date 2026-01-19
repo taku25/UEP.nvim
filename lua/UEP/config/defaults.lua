@@ -4,7 +4,20 @@ local M = {
     -- refreshコマンド実行時に自動で設定をリロードするかどうか
     auto_reload_config_on_refresh = true,
   
+  server = {
+    enable = true,
+    name = "UEP_nvim",
+  },
 
+  ide = {
+    -- Command template to open file in IDE.
+    -- Placeholders: {file}, {line}
+    -- Examples:
+    -- Rider: "rider --line {line} {file}" 
+    -- VS Code: "code -g {file}:{line}"
+    -- Visual Studio: "devenv /edit {file} /command \"Edit.GoTo {line}\"" (Adjust path to devenv if needed)
+    open_command = "rider --line {line} \"{file}\"", 
+  },
 
   shader = {
     -- 自動解決でカバーできないパスを手動で追加

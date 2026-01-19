@@ -267,6 +267,11 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "scope", required = false }, -- "project", "engine", "all"
       },
     },
+    ["open_in_ide"] = {
+      handler = uep_api.open_in_ide,
+      desc = "Open current file in external IDE (configured in uep.ide.open_command).",
+      args = {},
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)
