@@ -102,7 +102,16 @@ Below are the default values related to `UEP.nvim`.
 opts = {
   -- UEP-specific settings
   uep = {
-    -- Section for future UEP-specific settings
+    -- Automatically start Neovim server (named pipe) on :UEP start
+    server = {
+      enable = true,
+      name = "UEP_nvim", -- \\.\pipe\UEP_nvim on Windows
+    },
+    -- Command template for opening files in external IDEs
+    ide = {
+      -- {file} and {line} will be replaced with actual values
+      open_command = "rider --line {line} \"{file}\"",
+    },
   },
   
 
@@ -241,6 +250,8 @@ All commands start with `:UEP`.
 " Search for shader files (.usf, .ush).
 :UEP shaders[!] [Game|Engine|Runtime|Editor|Full]
 
+" Open the current file in an external IDE (Rider, VS, etc.).
+:UEP open_in_ide
 ```
 
 ### Command Details
@@ -379,6 +390,13 @@ All commands start with `:UEP`.
   * **`:UEP shaders[!] [Scope]`**:
       * Searches for shader files (`.usf`, `.ush`) within the specified scope (default `Full`).
       * Useful for quickly accessing engine or project shaders.
+  * **`:UEP open_in_ide`**:
+      * Opens the current file at the current line in an external IDE configured in `uep.ide.open_command`.
+      * Defaults to Rider, but can be configured for VS Code, Visual Studio, etc.
+  * **Neovim Server (Named Pipe)**:
+      * When `:UEP start` is executed, UEP automatically starts a Neovim server.
+      * This allows external tools (like Rider/VS) to send commands back to Neovim.
+      * A helper script `scripts/open_in_uep.ps1` is provided to facilitate this integration.
 ## 🤖 API & Automation Examples
 
 You can use the `UEP.api` module to integrate with other Neovim configurations.

@@ -102,7 +102,16 @@ return {
 opts = {
   -- UEP固有の設定
   uep = {
-    -- 将来的なUEP固有設定のためのセクション
+    -- :UEP start 時に自動的にNeovimサーバー (名前付きパイプ) を起動します
+    server = {
+      enable = true,
+      name = "UEP_nvim", -- Windowsでは \\.\pipe\UEP_nvim となります
+    },
+    -- 外部IDEでファイルを開く際のコマンドテンプレート
+    ide = {
+      -- {file} と {line} が実際の値に置換されます
+      open_command = "rider --line {line} \"{file}\"",
+    },
   },
   
 
@@ -240,6 +249,9 @@ opts = {
 
 " シェーダーファイル (.usf, .ush) を検索します。
 :UEP shaders[!] [Game|Engine|Runtime|Editor|Full]
+
+" 現在のファイルを外部IDE (Rider, VS等) で開きます。
+:UEP open_in_ide
 ```
 
 ### コマンド詳細
@@ -382,6 +394,13 @@ opts = {
   * **`:UEP shaders[!] [Scope]`**:
       * 指定されたスコープ（デフォルトは `Full`）内のシェーダーファイル (`.usf`, `.ush`) を検索します。
       * エンジンやプロジェクトのシェーダーに素早くアクセスするのに便利です。
+  * **`:UEP open_in_ide`**:
+      * `uep.ide.open_command` で設定された外部IDEで、現在のファイルと行番号を開きます。
+      * デフォルトは Rider 用の設定になっていますが、VS Code や Visual Studio 等にも変更可能です。
+  * **Neovim サーバー (名前付きパイプ)**:
+      * `:UEP start` 実行時に、自動的に Neovim サーバーを起動します。
+      * これにより、外部ツール (Rider/VS等) から Neovim に対してコマンド（ファイルを開く等）を送信できるようになります。
+      * `scripts/open_in_uep.ps1` を外部ツールに登録することで、IDEからNeovimへのジャンプが可能になります。
 
 ## 🤖 API & 自動化 (Automation Examples)
 
