@@ -34,6 +34,24 @@ function M.execute(opts, on_complete)
   local uproject_path = project_info.uproject
   local game_root = vim.fn.fnamemodify(uproject_path, ":h")
 
+  local conf = uep_config.get()
+  local engine_root = unl_finder.engine.find_engine_root(uproject_path, {
+    engine_override_path = conf.engine_path,
+  })
+
+  if not engine_root or engine_root == "" or vim.fn.isdirectory(engine_root) == 0 then
+    log.error("Could not find a valid Unreal Engine root. Please check your .uproject or 'engine_path' config.")
+    if on_complete then on_complete(false) end
+    return
+  end
+
+  local fs = require("vim.fs")
+  if vim.fn.isdirectory(fs.joinpath(engine_root, "Engine", "Source")) == 0 then
+    log.error("Engine root found but 'Engine/Source' is missing: %s. Please check your engine installation.", engine_root)
+    if on_complete then on_complete(false) end
+    return
+  end
+
   if not refresh_opts.scope then
     local project_display_name = vim.fn.fnamemodify(game_root, ":t")
     local registry_info = projects_cache.get_project_info(project_display_name)
@@ -79,10 +97,6 @@ function M.execute(opts, on_complete)
 
     -- STEP 1: (必須) マスターインデックスを更新する
     -- result.full_component_list には全コンポーネント情報が含まれている
-    local engine_root = unl_finder.engine.find_engine_root(uproject_path,
-      {
-        engine_override_path = uep_config.get().engine_path,
-      })
     local registration_info = {
       root_path = game_root,
       uproject_path = uproject_path,

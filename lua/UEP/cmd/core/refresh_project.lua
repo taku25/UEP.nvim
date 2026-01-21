@@ -200,9 +200,21 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
   local engine_root = unl_finder.engine.find_engine_root(uproject_path, {
     engine_override_path = uep_config.get().engine_path,
   })
-  if not engine_root then
+  if not engine_root or engine_root == "" then
     log.error("update_project_structure: Could not find engine root.")
     return on_done(false, "Could not find engine root.")
+  end
+
+  -- エンジンルートが実在するか、および Engine/Source があるかチェック
+  if vim.fn.isdirectory(engine_root) == 0 then
+    log.error("Engine root directory does not exist: %s", engine_root)
+    return on_done(false, "Engine root directory does not exist.")
+  end
+
+  local engine_source_path = fs.joinpath(engine_root, "Engine", "Source")
+  if vim.fn.isdirectory(engine_source_path) == 0 then
+    log.error("Engine root found but 'Engine/Source' is missing: %s. Please check your engine installation or 'engine_path' config.", engine_root)
+    return on_done(false, "Engine/Source is missing.")
   end
 
   local game_name = get_name_from_root(game_root)
