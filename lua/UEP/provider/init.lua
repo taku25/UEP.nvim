@@ -96,6 +96,14 @@ M.setup = function()
       impl = files_provider,
     })
 
+    -- ★追加: IDE連携
+    local ide_provider = require("UEP.provider.ide")
+    unl_api.provider.register({
+      capability = "uep.open_in_ide",
+      name = "UEP.nvim",
+      impl = ide_provider,
+    })
+
     local uep_logger = require("UEP.logger").get()
     if uep_logger then
       uep_logger.info("Registered UEP providers to UNL.nvim.")

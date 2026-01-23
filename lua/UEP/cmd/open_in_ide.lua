@@ -4,13 +4,14 @@ local uep_config = require("UEP.config")
 local M = {}
 
 M.execute = function(opts)
-  local file = vim.fn.expand("%:p")
+  opts = opts or {}
+  local file = opts.file_path or vim.fn.expand("%:p")
   if file == "" then
     uep_log.get().warn("No file to open.")
     return
   end
 
-  local line = vim.fn.line(".")
+  local line = opts.line or vim.fn.line(".")
   local config = uep_config.get()
   
   local cmd_template = config.ide and config.ide.open_command
