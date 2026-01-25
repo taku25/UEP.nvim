@@ -85,44 +85,48 @@ local function insert_file_and_classes(insert_fn, module_id, file_path, header_d
               if not found then table.insert(bases, 1, cls.base_class) end
           end
           
-          local primary_base = bases[1] or ""
-
-          local namespace = clean_val(cls.namespace, nil)
+                    local db_conn = uep_db.get()
+                    local class_id = nil
           
-          local status, class_id = pcall(insert_fn, "classes", {
-            name = class_name,
-            namespace = namespace, -- 名前空間を追加
-            base_class = primary_base, 
-            file_id = file_id,
-            line_number = line_no,
-            symbol_type = sym_type
-          })
+                    -- 既存のクラスがあるか確認
+                    local q_check = "SELECT id FROM classes WHERE name = ? AND symbol_type = ?"
+                    local p_check = { class_name, sym_type }
+                    if namespace then
+                        q_check = q_check .. " AND namespace = ?"
+                        table.insert(p_check, namespace)
+                    else
+                        q_check = q_check .. " AND namespace IS NULL"
+                    end
+                    
+                    local existing_rows = db_conn:eval(q_check, p_check)
+                    if type(existing_rows) == "table" and existing_rows[1] then
+                        class_id = existing_rows[1].id
+                        -- 既存レコードの基本情報を更新
+                        db_conn:eval([[
+                          UPDATE classes SET base_class = ?, file_id = ?, line_number = ? WHERE id = ?
+                        ]], { primary_base, file_id, line_no, class_id })
+                    else
+                        -- 新規挿入
+                        local status, res = pcall(insert_fn, "classes", {
+                          name = class_name,
+                          namespace = namespace,
+                          base_class = primary_base, 
+                          file_id = file_id,
+                          line_number = line_no,
+                          symbol_type = sym_type
+                        })
+                        if status then
+                            -- 挿入直後のIDを取得
+                            local id_rows = db_conn:eval("SELECT last_insert_rowid() as id")
+                            class_id = (type(id_rows) == "table" and id_rows[1]) and id_rows[1].id or nil
+                        else
+                            uep_log.get().error("[UEP.db] Insert class failed for '%s' in %s: %s", class_name, file_path, tostring(res))
+                        end
+                    end
           
-          -- [Fix] IGNORE された場合や、IDが取得できなかった場合に既存の ID を取得する
-          if status then
-              local db_conn = uep_db.get()
-              local q = "SELECT id FROM classes WHERE name = ? AND symbol_type = ?"
-              local params = { class_name, sym_type }
-              if namespace then
-                  q = q .. " AND namespace = ?"
-                  table.insert(params, namespace)
-              else
-                  q = q .. " AND namespace IS NULL"
-              end
-              local id_rows = db_conn:eval(q, params)
-              if type(id_rows) == "table" and id_rows[1] then
-                  class_id = id_rows[1].id
-              end
-          end
-
-          if not status then
-             uep_log.get().error("[UEP.db] Insert class failed for '%s' in %s: %s", class_name, file_path, tostring(class_id))
-          elseif class_id then
-             local db_conn = uep_db.get()
-             
-             -- 継承情報の更新 (DELETE -> INSERT)
-             db_conn:eval("DELETE FROM inheritance WHERE child_id = ?", { class_id })
-             for _, parent in ipairs(bases) do
+                    if class_id then
+                       -- 継承情報の更新 (DELETE -> INSERT)
+                       db_conn:eval("DELETE FROM inheritance WHERE child_id = ?", { class_id })             for _, parent in ipairs(bases) do
                  if parent and parent ~= "" then
                      pcall(insert_fn, "inheritance", {
                          child_id = class_id,
