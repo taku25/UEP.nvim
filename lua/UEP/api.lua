@@ -37,6 +37,7 @@ local cmd_clean_intermediate = require("UEP.cmd.clean_intermediate")
 local cmd_start = require("UEP.cmd.start")
 local cmd_stop = require("UEP.cmd.stop")
 local cmd_open_in_ide = require("UEP.cmd.open_in_ide")
+local uep_server = require("UEP.cmd.core.server")
 
 local M = {}
 
@@ -45,6 +46,18 @@ local M = {}
 function M.refresh(opts)
   -- builderがパースしたoptsは { type = "Engine", has_bang = false } のようになる
   cmd_refresh.execute(opts or {})
+end
+
+function M.server_start(opts)
+  uep_server.start()
+end
+
+function M.server_stop(opts)
+  uep_server.stop()
+end
+
+function M.server_is_running()
+  return uep_server.is_running()
 end
 
 --- 設定をリロードするAPI

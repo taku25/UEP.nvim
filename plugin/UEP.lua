@@ -24,6 +24,16 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Stop background file watcher.",
       args = {},
     },
+    server_start = {
+      handler = uep_api.server_start,
+      desc = "Start Neovim remote server.",
+      args = {},
+    },
+    server_stop = {
+      handler = uep_api.server_stop,
+      desc = "Stop Neovim remote server.",
+      args = {},
+    },
     refresh = {
       handler = uep_api.refresh,
       bang = true,

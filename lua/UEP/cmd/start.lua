@@ -5,6 +5,7 @@ local uep_db = require("UEP.db.init")
 local uep_config = require("UEP.config")
 local cmd_refresh = require("UEP.cmd.refresh")
 local uep_vcs = require("UEP.vcs.init")
+local uep_server = require("UEP.cmd.core.server")
 
 local M = {}
 
@@ -14,22 +15,8 @@ M.run = function(opts)
     return
   end
 
-  local config = uep_config.get()
-  if config.server and config.server.enable then
-    local server_name = config.server.name
-    if vim.fn.has('win32') == 1 then
-      if not server_name:match("^\\\\%.\\pipe\\") then
-        server_name = [[\\.\pipe\]] .. server_name
-      end
-    end
-
-    local ok, _ = pcall(vim.fn.serverstart, server_name)
-    if ok then
-      uep_log.get().info("UEP Server started at: " .. server_name)
-    else
-      uep_log.get().warn("Failed to start UEP Server at: " .. server_name)
-    end
-  end
+  -- [リファクタリング] サーバーの開始
+  uep_server.start()
   
   -- DBアクセスのために初期化 (テーブル作成など)
   local db = uep_db.get()
