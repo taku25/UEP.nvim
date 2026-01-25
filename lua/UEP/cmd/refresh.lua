@@ -26,6 +26,14 @@ function M.execute(opts, on_complete)
     scope = opts.scope, -- [! 1. 修正] opts.type -> opts.scope
   }
 
+  -- [追加] リフレッシュ開始前にスキャナバイナリの存在を確認する
+  local unl_scanner_ok, unl_scanner = pcall(require, "UNL.scanner")
+  if unl_scanner_ok and not unl_scanner.has_binary() then
+      unl_scanner.warn_binary_missing()
+      -- 警告は出すが、構造解析（.build.csの読み込み等）はバイナリなしでも
+      -- 部分的に動く可能性があるため、処理自体は続行させる
+  end
+
   local project_info = unl_finder.project.find_project(vim.loop.cwd())
   if not (project_info and project_info.uproject) then
     if on_complete then on_complete(false) end

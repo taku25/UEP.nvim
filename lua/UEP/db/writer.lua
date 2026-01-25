@@ -17,6 +17,14 @@ local function parse_path(full_path)
   return filename, ext:lower()
 end
 
+-- 値のクリーンアップ (JSON null = vim.NIL を Lua nil に変換してデフォルト値を適用)
+local function clean_val(val, default)
+  if val == nil or val == vim.NIL then
+    return default
+  end
+  return val
+end
+
 -- 単一のファイルパスをDBに登録し、関連するクラス情報も保存する
 local function insert_file_and_classes(insert_fn, module_id, file_path, header_details)
   if not file_path then 
@@ -34,15 +42,8 @@ local function insert_file_and_classes(insert_fn, module_id, file_path, header_d
   local file_hash = nil
   
   if header_details and header_details[file_path] then
-      file_mtime = header_details[file_path].mtime or 0
-      file_hash = header_details[file_path].file_hash
-  elseif file_path then
-       -- ヘッダー以外でも、ファイルが存在すれば stat して mtime を取っておくのが望ましいが
-       -- パフォーマンスへの影響を考慮し、ここでは一旦 0 のままにするか、fs_stat するか。
-       -- 今回はヘッダーの再解析防止が主目的なので、ヘッダー詳細がある場合のみ重視する。
-       -- (もし必要ならここで vim.loop.fs_stat(file_path) を呼ぶ)
-       -- local s = vim.loop.fs_stat(file_path)
-       -- if s then file_mtime = s.mtime.sec end
+      file_mtime = clean_val(header_details[file_path].mtime, 0)
+      file_hash = clean_val(header_details[file_path].file_hash, nil)
   end
 
   -- 1. files テーブルへ挿入
@@ -68,33 +69,106 @@ local function insert_file_and_classes(insert_fn, module_id, file_path, header_d
     local info = header_details[file_path]
     if info.classes then
       for _, cls in ipairs(info.classes) do
-        -- worker は class_name / base_class を返す。従来の name/super もサポートして両対応にする。
-        local class_name = cls.name or cls.class_name
-        local base_class = cls.base_class or cls.super or ""
-        local line_no = cls.line_number or cls.line or 1
-        local sym_type = cls.symbol_type or "class"
+        local class_name = clean_val(cls.name or cls.class_name, nil)
+        local base_class = clean_val(cls.base_class or cls.super, "")
+        local line_no = clean_val(cls.line_number or cls.line, 1)
+        local sym_type = clean_val(cls.symbol_type, "class")
 
         if class_name and class_name ~= "" and type(class_name) == "string" then
-          -- Debug logging for problematic classes
-          if class_name == "None" or class_name:match("^%s*$") then
-             uep_log.get().warn("[UEP.db] Suspicious class name '%s' in file %s", class_name, file_path)
+          -- base_classes (配列) の処理
+          local bases = cls.base_classes or {}
+          if type(bases) ~= "table" then bases = {} end
+          -- 既存の base_class 文字列があればそれを先頭に追加 (Scanner変更前の互換性)
+          if cls.base_class and cls.base_class ~= "" then
+              local found = false
+              for _, b in ipairs(bases) do if b == cls.base_class then found = true break end end
+              if not found then table.insert(bases, 1, cls.base_class) end
           end
+          
+          local primary_base = bases[1] or ""
 
-          local status, err = pcall(insert_fn, "classes", {
+          local namespace = clean_val(cls.namespace, nil)
+          
+          local status, class_id = pcall(insert_fn, "classes", {
             name = class_name,
-            base_class = base_class,
+            namespace = namespace, -- 名前空間を追加
+            base_class = primary_base, 
             file_id = file_id,
             line_number = line_no,
             symbol_type = sym_type
           })
-          if not status then
-             uep_log.get().error("[UEP.db] Insert class failed for '%s' in %s: %s", class_name, file_path, tostring(err))
+          
+          -- [Fix] IGNORE された場合や、IDが取得できなかった場合に既存の ID を取得する
+          if status then
+              local db_conn = uep_db.get()
+              local q = "SELECT id FROM classes WHERE name = ? AND symbol_type = ?"
+              local params = { class_name, sym_type }
+              if namespace then
+                  q = q .. " AND namespace = ?"
+                  table.insert(params, namespace)
+              else
+                  q = q .. " AND namespace IS NULL"
+              end
+              local id_rows = db_conn:eval(q, params)
+              if type(id_rows) == "table" and id_rows[1] then
+                  class_id = id_rows[1].id
+              end
           end
-        else
-          -- 無効なクラスデータをログに出力（デバッグ用）
-          uep_log.get().debug("Skipping invalid class data in file %s: name=%s, type=%s", 
-                              file_path, tostring(class_name), type(class_name))
+
+          if not status then
+             uep_log.get().error("[UEP.db] Insert class failed for '%s' in %s: %s", class_name, file_path, tostring(class_id))
+          elseif class_id then
+             local db_conn = uep_db.get()
+             
+             -- 継承情報の更新 (DELETE -> INSERT)
+             db_conn:eval("DELETE FROM inheritance WHERE child_id = ?", { class_id })
+             for _, parent in ipairs(bases) do
+                 if parent and parent ~= "" then
+                     pcall(insert_fn, "inheritance", {
+                         child_id = class_id,
+                         parent_name = parent
+                     })
+                 end
+             end
+
+             -- 3. メンバー情報の挿入 (NEW)
+             db_conn:eval("DELETE FROM members WHERE class_id = ?", { class_id })
+             db_conn:eval("DELETE FROM enum_values WHERE enum_id = ?", { class_id })
+
+             if cls.members then
+                 for _, mem in ipairs(cls.members) do
+                 local m_type = clean_val(mem.type, "variable")
+                 local m_name = clean_val(mem.name, "unknown")
+                 
+                 if m_type == "enum_item" then
+                     -- Enum値の保存
+                     pcall(insert_fn, "enum_values", {
+                         enum_id = class_id,
+                         name = m_name
+                     })
+                 else
+                     -- 通常メンバーの保存
+                     local m_flags = clean_val(mem.flags, "")
+                     local is_static = m_flags:find("static") and 1 or 0
+                     
+                     local mem_status, mem_res = pcall(insert_fn, "members", {
+                         name = m_name,
+                         class_id = class_id,
+                         type = m_type,
+                         flags = m_flags,
+                         access = "public",
+                         detail = clean_val(mem.detail, ""), -- 追加
+                         return_type = clean_val(mem.return_type, ""), -- 追加
+                         is_static = is_static
+                     })
+                     if not mem_status then
+                         uep_log.get().error("[UEP.db] Insert member failed for '%s' in class '%s': %s", m_name, class_name, tostring(mem_res))
+                     end
+                 end
+             end
+          end
         end
+      end
       end
       uep_log.get().trace("[UEP.db] Inserted %d classes for header %s", #info.classes, filename)
     end
@@ -104,20 +178,8 @@ end
 ---
 -- モジュールグループを処理
 local function process_module_group(insert_fn, modules_map, group_type, scope)
-  if not modules_map then 
-    uep_log.get().debug("[UEP.db] process_module_group: modules_map is nil for type '%s' scope '%s'", group_type, scope)
-    return 
-  end
-  
-  local module_count = vim.tbl_count(modules_map)
-  uep_log.get().debug("[UEP.db] Processing %d modules for type '%s' scope '%s'", module_count, group_type, scope)
-
+  if not modules_map then return end
   for mod_name, mod_data in pairs(modules_map) do
-    uep_log.get().trace("[UEP.db] Inserting module: %s (%s/%s) at %s", mod_name, group_type, scope, mod_data.module_root or "unknown")
-    
-    -- 1. モジュール情報をINSERT
-    -- schema変更により、(name, root_path) が重複しない限り登録される
-    -- 同名でもパスが違えば別IDとして登録される
     local deep_deps_json = nil
     if mod_data.deep_dependencies and type(mod_data.deep_dependencies) == "table" then
         deep_deps_json = vim.json.encode(mod_data.deep_dependencies)
@@ -132,55 +194,19 @@ local function process_module_group(insert_fn, modules_map, group_type, scope)
       deep_dependencies = deep_deps_json
     })
 
-    -- 2. ファイル情報をINSERT (mod_idがあれば)
     if mod_id then
       local files_map = mod_data.files
       local details = mod_data.header_details or {}
-
       if files_map then
-        uep_log.get().debug("[UEP.db] Module '%s' has files_map with keys: %s", mod_name, table.concat(vim.tbl_keys(files_map), ", "))
-        
         if files_map.source then
-          uep_log.get().debug("[UEP.db] Processing %d source files for module '%s'", #files_map.source, mod_name)
           for _, path in ipairs(files_map.source) do
             insert_file_and_classes(insert_fn, mod_id, path, details)
           end
-        else
-          uep_log.get().debug("[UEP.db] Module '%s' has no source files", mod_name)
         end
-        
-        if files_map.config then
-          uep_log.get().debug("[UEP.db] Processing %d config files for module '%s'", #files_map.config, mod_name)
-          for _, path in ipairs(files_map.config) do
-            insert_file_and_classes(insert_fn, mod_id, path, nil)
-          end
-        else
-          uep_log.get().debug("[UEP.db] Module '%s' has no config files", mod_name)
-        end
-        
-        if files_map.shader then
-          uep_log.get().debug("[UEP.db] Processing %d shader files for module '%s'", #files_map.shader, mod_name)
-          for _, path in ipairs(files_map.shader) do
-            insert_file_and_classes(insert_fn, mod_id, path, nil)
-          end
-        else
-          uep_log.get().debug("[UEP.db] Module '%s' has no shader files", mod_name)
-        end
-        
-        if files_map.other then
-          uep_log.get().debug("[UEP.db] Processing %d other files for module '%s'", #files_map.other, mod_name)
-          for _, path in ipairs(files_map.other) do
-            insert_file_and_classes(insert_fn, mod_id, path, nil)
-          end
-        else
-          uep_log.get().debug("[UEP.db] Module '%s' has no other files", mod_name)
-        end
-      else
-        -- 一部のプラグインメタモジュールはファイルリストを持たないため情報ログに格下げ
-        uep_log.get().debug("[UEP.db] Module '%s' has no files_map", mod_name)
+        if files_map.config then for _, path in ipairs(files_map.config) do insert_file_and_classes(insert_fn, mod_id, path, nil) end end
+        if files_map.shader then for _, path in ipairs(files_map.shader) do insert_file_and_classes(insert_fn, mod_id, path, nil) end end
+        if files_map.other then for _, path in ipairs(files_map.other) do insert_file_and_classes(insert_fn, mod_id, path, nil) end end
       end
-    else
-      uep_log.get().error("[UEP.db] Failed to insert module '%s' - no module ID returned", mod_name)
     end
   end
 end
@@ -188,11 +214,7 @@ end
 ---
 -- 単一モジュールのファイルデータをSQLiteに保存する (Diff Update / Incremental Sync)
 function M.save_module_files(module_meta, files_data, header_details, directories_data)
-  if not (module_meta and module_meta.name and module_meta.module_root) then
-    uep_log.get().warn("save_module_files: Invalid module_meta")
-    return
-  end
-  
+  if not (module_meta and module_meta.name and module_meta.module_root) then return end
   local log = uep_log.get()
   local start_t = vim.loop.hrtime()
 
@@ -226,7 +248,7 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
       end
       if not module_id then error("Failed to get module_id") end
 
-      -- 2. 既存ファイルのマップを作成 (パス -> ID)
+      -- 2. 既存ファイルのマップを作成
       local existing_files_rows = db:eval("SELECT id, path FROM files WHERE module_id = ?", { module_id })
       local db_files_map = {}
       if type(existing_files_rows) == "table" then
@@ -235,8 +257,7 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
         end
       end
 
-      -- 3. ディレクトリの全置換 (件数が少ないため全Delete/Insertでもコストは低いが、Diffにしても良い)
-      --    ここでは複雑さを避けるため、ディレクトリのみ従来通り全置換とする（ファイルに比べて数が圧倒的に少ない）
+      -- 3. ディレクトリ全置換
       db:eval("DELETE FROM directories WHERE module_id = ?", { module_id })
       if directories_data then
         local seen_dirs = {}
@@ -253,55 +274,30 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
       end
 
       -- 4. ファイルの Diff Update
-      local current_scan_paths = {} -- 今回スキャンで見つかったパスの集合
-      
+      local current_scan_paths = {}
       if files_data then
         for category, file_list in pairs(files_data) do
           if type(file_list) == "table" then
             for _, file_path in ipairs(file_list) do
-              -- [修正] 同一モジュール内でのパス重複チェック (symlinkなどで重複して現れる可能性)
               if file_path and not current_scan_paths[file_path] then
                 current_scan_paths[file_path] = true
-                
-                -- A. 新規 or 既存
                 if not db_files_map[file_path] then
-                   -- 新規挿入
-                   -- [修正] UNIQUE制約違反(他モジュールに存在)を防ぐため、事前にチェックして奪い取る
-                   -- ただし毎回SELECTすると遅いので、INSERTで失敗したときに対処するか、
-                   -- ここではシンプルに pcall で試行し、失敗したら盗むロジックにする。
-                   
                    local status, res = pcall(insert_file_and_classes, insert_fn_base, module_id, file_path, header_details)
                    if not status then
-                       -- エラー発生。UNIQUE constraint かどうか判別は難しいが、パス重複の可能性が高い
-                       -- 既存の所有者を削除してからリトライ
                        local owner_rows = db:eval("SELECT id FROM files WHERE path = ?", { file_path })
                        if type(owner_rows) == "table" and owner_rows[1] then
                             local old_id = owner_rows[1].id
-                            log.debug("Stealing file '%s' from previous owner (ID: %s)", file_path, tostring(old_id))
                             db:eval("DELETE FROM classes WHERE file_id = ?", { old_id })
                             db:eval("DELETE FROM files WHERE id = ?", { old_id })
-                            
-                            -- リトライ
                             insert_file_and_classes(insert_fn_base, module_id, file_path, header_details)
-                       else
-                            log.error("Failed to insert file '%s', and no existing owner found. Error: %s", file_path, tostring(res))
                        end
                    end
                 else
-                   -- 既存ファイル
-                   -- 解析結果(header_details) に含まれている場合のみ更新する
                    if header_details and header_details[file_path] then
                        local fid = db_files_map[file_path]
                        db:eval("DELETE FROM classes WHERE file_id = ?", { fid })
                        db:eval("DELETE FROM files WHERE id = ?", { fid })
                        insert_file_and_classes(insert_fn_base, module_id, file_path, header_details)
-                       
-                       -- マップ更新 (削除済みとしてマーク... しないと下の削除ロジックでまた消そうとしてしまう？
-                       -- いや、db_files_map は古いIDを持っている。
-                       -- 下のループでは `current_scan_paths` に入っているので削除されない。OK。
-                   else
-                       -- 変更なし (header_detailsに含まれていない = Cache Hit)
-                       -- 何もしない
                    end
                 end
               end
@@ -310,122 +306,57 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
         end
       end
 
-      -- 5. 削除されたファイルの処理
-      -- db_files_map に残っていて、current_scan_paths に無いものは削除
+      -- 5. 削除
       for path, fid in pairs(db_files_map) do
          if not current_scan_paths[path] then
              db:eval("DELETE FROM classes WHERE file_id = ?", { fid })
              db:eval("DELETE FROM files WHERE id = ?", { fid })
          end
       end
-      
     end)
   end)
   
   if not success then
     log.error("[UEP.db] Failed to save module '%s' to SQLite: %s", module_meta.name, tostring(err))
-    return
   end
-  
-  local ms = (vim.loop.hrtime() - start_t) / 1e6
-  log.trace("[UEP.db] Saved module '%s' files to DB in %.2f ms.", module_meta.name, ms)
 end
 
--- 単一ファイルの更新 (高速化用)
+-- 単一ファイルの更新
 function M.update_single_file(module_name, file_path, header_data)
   local log = uep_log.get()
-  
-  -- モジュールIDを取得
   local db = uep_db.get()
   local rows = db:eval("SELECT id FROM modules WHERE name = ?", { module_name })
   local module_id = (rows and rows[1]) and rows[1].id
-  
-  if not module_id then
-    log.error("[UEP.db] update_single_file: Module '%s' not found.", module_name)
-    return false
-  end
+  if not module_id then return false end
 
   uep_db.transaction(function(db_conn, insert_fn_base)
-    -- 該当ファイルの既存エントリからIDを取得
     local file_rows = db_conn:eval("SELECT id FROM files WHERE path = ?", { file_path })
-    local old_file_id = nil
     if type(file_rows) == "table" and file_rows[1] then
-        old_file_id = file_rows[1].id
+       db_conn:eval("DELETE FROM classes WHERE file_id = ?", { file_rows[1].id })
+       db_conn:eval("DELETE FROM files WHERE id = ?", { file_rows[1].id })
     end
-    
-    if old_file_id then
-       -- 手動でクラスを削除 (外部キーCASCADEが効く環境と効かない環境があるため安全策)
-       db_conn:eval("DELETE FROM classes WHERE file_id = ?", { old_file_id })
-       db_conn:eval("DELETE FROM files WHERE id = ?", { old_file_id })
-    end
-    
-    -- ファイル追加 (disk上に存在しない場合は削除のみで終わる)
     if vim.fn.filereadable(file_path) == 1 then
-       -- ヘッダー情報の形式を合わせる
-       -- parse_headers_async returns { [filepath] = { classes = ... } }
-       -- header_data is expected to be { classes = ... } or nil
        local details_map = {}
-       if header_data then
-          details_map[file_path] = header_data
-       end
+       if header_data then details_map[file_path] = header_data end
        insert_file_and_classes(insert_fn_base, module_id, file_path, details_map)
-    else
-       log.debug("[UEP.db] File deleted from disk, removed from DB: %s", file_path)
     end
   end)
-  
   return true
 end
 
 ---
 -- 全プロジェクトデータをDBに保存
 function M.save_project_scan(components_data)
-  if not components_data then 
-    uep_log.get().warn("[UEP.db] save_project_scan: components_data is nil")
-    return 
-  end
-  
+  if not components_data then return end
   local log = uep_log.get()
   local start_t = vim.loop.hrtime()
   
-  -- 入力データの詳細をログ出力
-  local comp_count = 0
-  local total_modules = 0
-  for comp_name, comp_data in pairs(components_data) do
-    comp_count = comp_count + 1
-    local runtime_count = comp_data.runtime_modules and vim.tbl_count(comp_data.runtime_modules) or 0
-    local editor_count = comp_data.editor_modules and vim.tbl_count(comp_data.editor_modules) or 0
-    local dev_count = comp_data.developer_modules and vim.tbl_count(comp_data.developer_modules) or 0
-    local prog_count = comp_data.programs_modules and vim.tbl_count(comp_data.programs_modules) or 0
-    local comp_total = runtime_count + editor_count + dev_count + prog_count
-    total_modules = total_modules + comp_total
-    
-    log.debug("[UEP.db] Component '%s' (%s): %d runtime, %d editor, %d dev, %d program = %d total modules", 
-              comp_name, comp_data.type or "unknown", runtime_count, editor_count, dev_count, prog_count, comp_total)
-  end
-  
-  log.debug("[UEP.db] Processing %d components with %d total modules...", comp_count, total_modules)
-
-  -- トランザクション処理
   uep_db.transaction(function(db, insert_fn_base)
-    -- コンポーネントは一旦全削除してから再登録（数が少なく整合性重視）
     db:eval("DELETE FROM components;")
-
-    -- INSERT OR REPLACE を使用して上書き
     local function insert_safe(table_name, data)
-      local cols = {}
-      local vals = {}
-      local placeholders = {}
-      for k, v in pairs(data) do
-        table.insert(cols, k)
-        table.insert(vals, v)
-        table.insert(placeholders, "?")
-      end
-      -- IGNOREで既存行を保持し、あとで必要なカラムだけUPDATEする
-      local sql = string.format("INSERT OR IGNORE INTO %s (%s) VALUES (%s)", table_name, table.concat(cols, ", "), table.concat(placeholders, ", "))
-      db:eval(sql, vals)
-
-      -- 既存行のIDを取得
+      local cols, vals, placeholders = {}, {}, {}
+      for k, v in pairs(data) do table.insert(cols, k); table.insert(vals, v); table.insert(placeholders, "?") end
+      db:eval(string.format("INSERT OR IGNORE INTO %s (%s) VALUES (%s)", table_name, table.concat(cols, ", "), table.concat(placeholders, ", ")), vals)
       local row_id = nil
       if table_name == "modules" then
         local rows = db:eval("SELECT id FROM modules WHERE name = ? AND root_path = ?", { data.name, data.root_path })
@@ -434,95 +365,52 @@ function M.save_project_scan(components_data)
         local rows = db:eval("SELECT last_insert_rowid() as id")
         row_id = (type(rows) == "table" and rows[1]) and rows[1].id or nil
       end
-
-      -- modulesテーブルの場合のみ、type/scope/build_cs_path/owner_name/component_name/deep_dependencies を更新
       if row_id and table_name == "modules" then
         db:eval([[UPDATE modules SET type = ?, scope = ?, build_cs_path = ?, owner_name = ?, component_name = ?, deep_dependencies = ? WHERE id = ?]], {
           data.type, data.scope, data.build_cs_path, data.owner_name, data.component_name, data.deep_dependencies, row_id
         })
       end
-
       return row_id
     end
 
-    -- components_data をループし、componentsテーブルとmodulesを登録
     for comp_name, comp in pairs(components_data) do
-      local scope = comp.type 
-      if scope == "Project" then scope = "Game" end 
-
+      local scope = (comp.type == "Project") and "Game" or comp.type 
       insert_safe("components", {
-        name = comp_name,
-        display_name = comp.display_name or comp_name,
-        type = comp.type,
-        owner_name = comp.owner_name,
-        root_path = comp.root_path,
-        uplugin_path = comp.uplugin_path,
-        uproject_path = comp.uproject_path,
-        engine_association = comp.engine_association,
+        name = comp_name, display_name = comp.display_name or comp_name, type = comp.type,
+        owner_name = comp.owner_name, root_path = comp.root_path, uplugin_path = comp.uplugin_path,
+        uproject_path = comp.uproject_path, engine_association = comp.engine_association,
       })
-
-      -- モジュール登録（component_name/owner_nameを付与）
       local function normalized_type(t, root_path)
-        local lower_root = (root_path or ""):gsub("\\", "/"):lower()
-        if lower_root:find("/programs/", 1, true) then
-          return "Program"
-        end
+        if (root_path or ""):lower():find("/programs/", 1, true) then return "Program" end
         return t
       end
-
       process_module_group(function(table_name, data)
         data.component_name = comp_name
         data.owner_name = data.owner_name or comp.owner_name
         data.type = normalized_type("Runtime", data.module_root or data.root_path)
         return insert_safe(table_name, data)
       end, comp.runtime_modules, "Runtime", scope)
-
       process_module_group(function(table_name, data)
         data.component_name = comp_name
         data.owner_name = data.owner_name or comp.owner_name
         data.type = normalized_type("Editor", data.module_root or data.root_path)
         return insert_safe(table_name, data)
       end, comp.editor_modules, "Editor", scope)
-
       process_module_group(function(table_name, data)
         data.component_name = comp_name
         data.owner_name = data.owner_name or comp.owner_name
         data.type = normalized_type("Developer", data.module_root or data.root_path)
         return insert_safe(table_name, data)
       end, comp.developer_modules, "Developer", scope)
-
       process_module_group(function(table_name, data)
         data.component_name = comp_name
         data.owner_name = data.owner_name or comp.owner_name
         data.type = normalized_type("Program", data.module_root or data.root_path)
         return insert_safe(table_name, data)
       end, comp.programs_modules, "Program", scope)
-
-      -- ★追加: Build Targets (.Target.cs) を files テーブルに登録
-      if comp.build_targets and type(comp.build_targets) == "table" then
-        for _, target in ipairs(comp.build_targets) do
-           if target.path then
-             local filename = vim.fn.fnamemodify(target.path, ":t")
-             insert_safe("files", {
-               path = target.path,
-               filename = filename,
-               extension = "cs",
-               mtime = 0,
-               module_id = nil, -- No module association
-               is_header = 0
-             })
-           end
-        end
-      end
     end
-
-    -- pathベースの最終補正: /programs/ を含むものは Program として揃える
-    -- Windowsパス(\)とUnixパス(/)の両方に対応
     db:eval([[UPDATE modules SET type = 'Program' WHERE lower(root_path) LIKE '%/programs/%' OR lower(root_path) LIKE '%\programs\%']])
   end)
-
-  local ms = (vim.loop.hrtime() - start_t) / 1e6
-  log.debug("[UEP.db] Saved project data to DB in %.2f ms.", ms)
 end
 
 return M

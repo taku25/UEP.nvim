@@ -17,7 +17,7 @@ end
 ----------------------------------------------------------------------
 -- 1. Treesitter Parser
 ----------------------------------------------------------------------
-local cpp_query = [[
+local cpp_query = [[ 
   (class_specifier name: (_) @class_name) @class_def
   (struct_specifier name: (_) @struct_name) @struct_def
   (enum_specifier name: (_) @enum_name) @enum_def
@@ -27,12 +27,25 @@ local cpp_query = [[
   (unreal_enum_declaration name: (_) @enum_name) @uenum_def
   
   (unreal_declare_class_macro) @declare_class_macro
+
+  (unreal_function_declaration
+    declarator: (_) @ufunc_declarator
+  )
+  (inline_method_definition
+    (ufunction_macro)
+    declarator: (_) @ufunc_declarator
+  )
+  (field_declaration
+    (uproperty_macro)
+    declarator: (_) @uprop_declarator
+  )
 ]]
 
 local function get_node_text(node, source)
     if not node then return nil end
-    -- vim.treesitter.get_node_text supports string source in recent versions
-    return vim.treesitter.get_node_text(node, source)
+    local ok, text = pcall(vim.treesitter.get_node_text, node, source)
+    if ok then return text end
+    return nil
 end
 
 local function has_body(node, content)
@@ -41,17 +54,14 @@ local function has_body(node, content)
         if child:type() == "field_declaration_list" then return true end
         if child:type() == "enumerator_list" then return true end
     end
-    -- Fallback: check for braces or GENERATED_BODY in text
-    -- (Useful if tree-sitter structure is slightly different for some nodes)
     local text = get_node_text(node, content)
-    if text:find("{") or text:find("GENERATED_BODY") or text:find("GENERATED_UCLASS_BODY") then
+    if text and (text:find("{ ") or text:find("GENERATED_BODY") or text:find("GENERATED_UCLASS_BODY")) then
         return true
     end
     return false
 end
 
 local function parse_header_with_ts(content)
-    -- Check if parser is available
     local ok, parser = pcall(vim.treesitter.get_string_parser, content, "cpp")
     if not ok or not parser then return nil end
     
@@ -62,97 +72,143 @@ local function parse_header_with_ts(content)
     local ok_query, query = pcall(vim.treesitter.query.parse, "cpp", cpp_query)
     if not ok_query or not query then return nil end
     
-    local final_symbols = {}
+    local classes_list = {}
+    local members_list = {}
     
     for id, node, _ in query:iter_captures(root, content, 0, -1) do
         local capture_name = query.captures[id]
+        local start_row, start_col, end_row, end_col = node:range()
         
         if capture_name == "declare_class_macro" then
              local text = get_node_text(node, content)
-             local class_name, parent_name = text:match("DECLARE_CLASS%s*%(%s*([%w_]+)%s*,%s*([%w_]+)")
-             if class_name and parent_name then
-                 local base_class_val = parent_name
-                 if class_name == parent_name or parent_name == "None" then
-                     base_class_val = nil
+             if text then
+                 local class_name, parent_name = text:match("DECLARE_CLASS%s*%(%s*([%w_]+)%s*,%s*([%w_]+)")
+                 if class_name and parent_name then
+                     local base_class_val = parent_name
+                     if class_name == parent_name or parent_name == "None" then base_class_val = nil end
+                     table.insert(classes_list, {
+                         class_name = class_name, base_class = base_class_val,
+                         is_final = false, is_interface = false, symbol_type = "class",
+                         line = start_row + 1, range = {start_row, start_col, end_row, end_col}, members = {}
+                     })
                  end
-                 local start_row, _, _, _ = node:range()
-                 table.insert(final_symbols, {
-                     class_name = class_name,
-                     base_class = base_class_val,
-                     is_final = false,
-                     is_interface = false,
-                     symbol_type = "class",
-                     line = start_row + 1
-                 })
              end
 
         elseif capture_name == "class_name" or capture_name == "struct_name" or capture_name == "enum_name" then
             local parent = node:parent()
-            
-            -- Check if it's a definition (has body)
-            if not has_body(parent, content) then
-                -- Skip forward declarations
-                goto continue_ts_loop
-            end
-
-            local type = parent:type()
-            local text = get_node_text(node, content)
-            
-            if not text or text == "" then goto continue_ts_loop end
-            
-            -- Clean up text: remove body if captured, collapse whitespace
-            local brace_idx = text:find("{")
-            if brace_idx then
-                text = text:sub(1, brace_idx - 1)
-            end
-            
-            text = text:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-            
-            if text == "" or text == ";" then goto continue_ts_loop end
-            
-            local symbol_type = "class"
-            local is_interface = false
-            local is_final = false
-            
-            if capture_name == "struct_name" then symbol_type = "struct" end
-            if capture_name == "enum_name" then symbol_type = "enum"; is_final = true end
-            
-            if type == "unreal_class_declaration" then symbol_type = "UCLASS" end
-            if type == "unreal_struct_declaration" then symbol_type = "USTRUCT" end
-            if type == "unreal_enum_declaration" then symbol_type = "UENUM"; is_final = true end
-            
-            -- Get Base Class
-            local base_class = nil
-            for child in parent:iter_children() do
-                if child:type() == "base_class_clause" then
-                    for i = 0, child:named_child_count() - 1 do
-                        local base_node = child:named_child(i)
-                        local btype = base_node:type()
-                        if btype ~= "access_specifier" and btype ~= "virtual" then
-                            base_class = get_node_text(base_node, content)
-                            break 
+            if has_body(parent, content) then
+                local type = parent:type()
+                local text = get_node_text(node, content)
+                
+                if text and text ~= "" then
+                    local brace_idx = text:find("{ ")
+                    if brace_idx then text = text:sub(1, brace_idx - 1) end
+                    text = text:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+                    
+                    if text ~= "" and text ~= ";" then
+                        local symbol_type = "class"
+                        local is_interface = false
+                        local is_final = false
+                        if capture_name == "struct_name" then symbol_type = "struct" end
+                        if capture_name == "enum_name" then symbol_type = "enum"; is_final = true end
+                        if type == "unreal_class_declaration" then symbol_type = "UCLASS" end
+                        if type == "unreal_struct_declaration" then symbol_type = "USTRUCT" end
+                        if type == "unreal_enum_declaration" then symbol_type = "UENUM"; is_final = true end
+                        
+                        local base_class = nil
+                        for child in parent:iter_children() do
+                            if child:type() == "base_class_clause" then
+                                for i = 0, child:named_child_count() - 1 do
+                                    local base_node = child:named_child(i)
+                                    if base_node:type() ~= "access_specifier" and base_node:type() ~= "virtual" then
+                                        base_class = get_node_text(base_node, content)
+                                        break 
+                                    end
+                                end
+                            end
                         end
+                        if base_class == "UInterface" then is_interface = true end
+                        local p_start, p_sc, p_end, p_ec = parent:range()
+                        table.insert(classes_list, {
+                            class_name = text, base_class = base_class, is_final = is_final, is_interface = is_interface, symbol_type = symbol_type,
+                            line = start_row + 1, range = {p_start, p_sc, p_end, p_ec}, members = {}
+                        })
                     end
                 end
             end
             
-            if base_class == "UInterface" then is_interface = true end
-            
-            local start_row, _, _, _ = node:range()
-            
-            table.insert(final_symbols, {
-                class_name = text,
-                base_class = base_class,
-                is_final = is_final,
-                is_interface = is_interface,
-                symbol_type = symbol_type,
-                line = start_row + 1
-            })
+        elseif capture_name == "ufunc_declarator" or capture_name == "uprop_declarator" then
+            local raw_text = get_node_text(node, content)
+            if raw_text then
+                local name = raw_text
+                
+                if capture_name == "ufunc_declarator" then
+                    -- Remove arguments: "Func(Arg)" -> "Func"
+                    local paren_idx = name:find("%(")
+                    if paren_idx then name = name:sub(1, paren_idx - 1) end
+                else
+                    -- Remove array: "Prop[10]" -> "Prop"
+                    local bracket_idx = name:find("%[")
+                    if bracket_idx then name = name:sub(1, bracket_idx - 1) end
+                    -- Remove initialization: "Prop = Val" -> "Prop"
+                    local eq_idx = name:find("=")
+                    if eq_idx then name = name:sub(1, eq_idx - 1) end
+                end
+                
+                -- Clean leading pointers/refs and spaces
+                -- Note: This is heuristic. Real parsing needs AST traversal inside declarator.
+                name = name:gsub("^[%s*&]+", ""):gsub("%s+$", "")
+                -- If multiple words (e.g. "virtual void Func"), take the last one
+                -- Actually declarator shouldn't contain return type "void", but "declarator: (_)" captures the whole node which MIGHT be function_declarator.
+                -- In tree-sitter-c/cpp, function_declarator contains parameters.
+                
+                -- Better heuristic: Last word before '(' or end
+                local last_word = name:match("(%w+)$")
+                if last_word then name = last_word end
+                
+                local flags = (capture_name == "ufunc_declarator") and "UFUNCTION" or "UPROPERTY"
+                local mem_type = (capture_name == "ufunc_declarator") and "function" or "property"
+                
+                -- Try to find 'virtual' in parent (declaration) text
+                local decl_node = node:parent()
+                if decl_node then
+                    local decl_text = get_node_text(decl_node, content)
+                    if decl_text and decl_text:find("virtual") then
+                        flags = flags .. " virtual"
+                    end
+                end
+                
+                if name ~= "" and name ~= "virtual" then
+                    -- Use definition/declaration node for range to ensure it falls within class
+                    local range_node = decl_node or node
+                    local m_s, m_sc, m_e, m_ec = range_node:range()
+                    
+                    table.insert(members_list, { 
+                        name = name, type = mem_type, flags = flags, 
+                        range = {m_s, m_sc, m_e, m_ec} 
+                    })
+                end
+            end
         end
-        ::continue_ts_loop::
     end
     
-    if #final_symbols > 0 then return final_symbols end
+    -- Assign members to classes based on range containment
+    for _, member in ipairs(members_list) do
+        local best_class = nil
+        local min_size = 999999999
+        for _, cls in ipairs(classes_list) do
+            if member.range[1] >= cls.range[1] and member.range[3] <= cls.range[3] then
+                local size = cls.range[3] - cls.range[1]
+                if size < min_size then min_size = size; best_class = cls end
+            end
+        end
+        if best_class then table.insert(best_class.members, member) end
+    end
+    
+    -- Cleanup
+    for _, cls in ipairs(classes_list) do cls.range = nil; for _, m in ipairs(cls.members) do m.range = nil end end
+    
+    if #classes_list > 0 then return classes_list end
     return nil
 end
 
@@ -227,12 +283,60 @@ local function parse_header_regex(content_lines)
   local keyword_to_find = nil
   local start_line_num = 1
   
+  -- メンバー追加用：現在アクティブなクラス
+  local current_class = nil
+  
   for line_idx, line in ipairs(content_lines) do
     if state == "SCANNING" then
         local is_uclass = line:find("UCLASS")
         local is_uinterface = line:find("UINTERFACE")
         local is_ustruct = line:find("USTRUCT")
         local is_uenum = line:find("UENUM")
+        
+        -- Member detection (UFUNCTION/UPROPERTY)
+        -- クラスの中にいると仮定（厳密なスコープ管理はRegexでは困難なので、直近のクラスに追加する）
+        if current_class then
+            local is_ufunc = line:find("UFUNCTION")
+            local is_uprop = line:find("UPROPERTY")
+            
+            if is_ufunc or is_uprop then
+                -- 次の行（あるいはその次）を簡易チェックして名前を取得
+                -- 行継続 (\) や複数行マクロには対応しきれないが、基本的なケースをカバー
+                local next_line = content_lines[line_idx + 1]
+                if next_line then
+                    local name = nil
+                    local mem_type = "variable"
+                    local flags = is_ufunc and "UFUNCTION" or "UPROPERTY"
+                    
+                    if is_ufunc then
+                        mem_type = "function"
+                        -- virtual void FuncName(...)
+                        -- void FuncName(...)
+                        -- static int32 FuncName(...)
+                        -- 戻り値の後の単語、かつ '(' の前
+                        name = next_line:match("[%w_]+%s+([%w_]+)%s*%(%)") 
+                        if not name then
+                             -- 行頭から関数名っぽいものを探す (Constructorなど)
+                             name = next_line:match("^%s*([%w_]+)%s*%(%)")
+                        end
+                    else
+                        mem_type = "property"
+                        -- Type VarName;
+                        name = next_line:match("[%w_]+%s+([%w_]+)%s*[;=%[]")
+                    end
+                    
+                    if name and name ~= "virtual" and name ~= "static" and name ~= "const" and name ~= "void" then
+                        table.insert(current_class.members, {
+                            name = name,
+                            type = mem_type,
+                            flags = flags,
+                            -- regex mode doesn't support accurate range, use line number
+                            range = {line_idx, 0, line_idx+1, 0}
+                        })
+                    end
+                end
+            end
+        end
 
         if is_uclass or is_uinterface or is_ustruct then
           state = "HUNTING_BODY_MACRO"
@@ -245,7 +349,9 @@ local function parse_header_regex(content_lines)
             local symbol_info = process_class_struct_block(table.concat(block_lines, "\n"), keyword_to_find, macro_type)
             if symbol_info then 
                 symbol_info.line = start_line_num
-                table.insert(final_symbols, symbol_info) 
+                symbol_info.members = {} -- Initialize members
+                table.insert(final_symbols, symbol_info)
+                current_class = symbol_info -- Set active class
             end
             state = "SCANNING"
             block_lines = {}
@@ -260,21 +366,16 @@ local function parse_header_regex(content_lines)
           local declare_match = line:match("DECLARE_CLASS%s*%(%s*([%w_]+)%s*,%s*([%w_]+)")
           if declare_match then
              local class_name, parent_name = line:match("DECLARE_CLASS%s*%(%s*([%w_]+)%s*,%s*([%w_]+)")
-             
              if class_name and parent_name then
                  local base_class_val = parent_name
-                 if class_name == parent_name or parent_name == "None" then
-                     base_class_val = nil
-                 end
-
-                 table.insert(final_symbols, {
-                     class_name = class_name,
-                     base_class = base_class_val,
-                     is_final = false,
-                     is_interface = false,
-                     symbol_type = "class",
-                     line = line_idx
-                 })
+                 if class_name == parent_name or parent_name == "None" then base_class_val = nil end
+                 local cls = {
+                     class_name = class_name, base_class = base_class_val,
+                     is_final = false, is_interface = false, symbol_type = "class",
+                     line = line_idx, members = {}
+                 }
+                 table.insert(final_symbols, cls)
+                 current_class = cls
              end
           end
         end
@@ -285,7 +386,9 @@ local function parse_header_regex(content_lines)
           local symbol_info = process_class_struct_block(table.concat(block_lines, "\n"), keyword_to_find, macro_type)
           if symbol_info then 
               symbol_info.line = start_line_num
-              table.insert(final_symbols, symbol_info) 
+              symbol_info.members = {}
+              table.insert(final_symbols, symbol_info)
+              current_class = symbol_info
           end
           state = "SCANNING"
           block_lines = {}
@@ -297,7 +400,8 @@ local function parse_header_regex(content_lines)
             local symbol_info = process_enum_block(table.concat(block_lines, "\n"), macro_type)
             if symbol_info then 
                 symbol_info.line = start_line_num
-                table.insert(final_symbols, symbol_info) 
+                table.insert(final_symbols, symbol_info)
+                -- Enum doesn't have members in this context
             end
             state = "SCANNING"
             block_lines = {}
@@ -316,6 +420,7 @@ end
 -- 3. Main Loop
 ----------------------------------------------------------------------
 local function main()
+  -- Restore production behavior (read from stdin)
   local raw_payload = io.read("*a")
   if not raw_payload or raw_payload == "" then
     io.stderr:write("[Worker] Error: Did not receive any payload from stdin.\n")
@@ -336,13 +441,13 @@ local function main()
     local old_hash = file_data.old_hash
     
     if not current_mtime then
-        io.stderr:write(("[Worker] Warning: Missing mtime for %s. Skipping.\n"):format(file_path))
+        io.stderr:write(('[Worker] Warning: Missing mtime for %s. Skipping.\n'):format(file_path))
         goto continue_loop
     end
 
     local read_ok, lines = pcall(vim.fn.readfile, file_path)
     if not read_ok or not lines then
-      io.stderr:write(("[Worker] Error: Could not read file %s\n"):format(file_path))
+      io.stderr:write(('[Worker] Error: Could not read file %s\n'):format(file_path))
       goto continue_loop
     end
     
@@ -383,7 +488,7 @@ local function main()
     if output_ok then
         io.write(json_line .. "\n")
     else
-        io.stderr:write(("[Worker] Error: Failed to encode JSON line for %s\n"):format(file_path))
+        io.stderr:write(('[Worker] Error: Failed to encode JSON line for %s\n'):format(file_path))
     end
     
     if i % 50 == 0 or i == #files_data_list or i == 1 then

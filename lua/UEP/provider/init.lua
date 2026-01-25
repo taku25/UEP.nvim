@@ -104,6 +104,14 @@ M.setup = function()
       impl = ide_provider,
     })
 
+    -- ★追加: メンバー取得プロバイダー
+    local members_provider = require("UEP.provider.members")
+    unl_api.provider.register({
+      capability = "uep.get_class_members",
+      name = "UEP.nvim",
+      impl = members_provider,
+    })
+
     local uep_logger = require("UEP.logger").get()
     if uep_logger then
       uep_logger.info("Registered UEP providers to UNL.nvim.")

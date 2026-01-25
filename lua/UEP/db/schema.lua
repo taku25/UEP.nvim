@@ -106,6 +106,7 @@ function M.ensure_tables(db)
     CREATE TABLE IF NOT EXISTS classes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
+      namespace TEXT, -- 名前空間 (NEW)
       base_class TEXT,
       file_id INTEGER,
       line_number INTEGER,
@@ -119,9 +120,57 @@ function M.ensure_tables(db)
   
   -- symbol_type カラムを追加 (class, struct, enum)
   ensure_column(db, "classes", "symbol_type", "symbol_type TEXT DEFAULT 'class'")
+  -- namespace カラムを追加
+  ensure_column(db, "classes", "namespace", "namespace TEXT")
   
   -- 重複防止のためのユニーク制約を追加
-  db:eval("CREATE UNIQUE INDEX IF NOT EXISTS idx_classes_unique_name_type ON classes(name, symbol_type)")
+  db:eval("CREATE UNIQUE INDEX IF NOT EXISTS idx_classes_unique_name_type ON classes(name, symbol_type, namespace)")
+
+  -- 4. Members Table (NEW)
+  -- クラス/構造体のメンバー（関数、変数、プロパティ）を格納
+  db:eval([[
+    CREATE TABLE IF NOT EXISTS members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      class_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL, -- 'function' or 'property' or 'enum_item'
+      flags TEXT,         -- 'static', 'virtual', 'UFUNCTION', etc.
+      access TEXT,        -- 'public', 'protected', 'private'
+      detail TEXT,        -- 引数リストや型詳細 (NEW)
+      return_type TEXT,   -- 戻り値の型 (NEW)
+      is_static INTEGER,
+      FOREIGN KEY(class_id) REFERENCES classes(id) ON DELETE CASCADE
+    );
+  ]])
+
+  -- メンバー検索用インデックス
+  db:eval("CREATE INDEX IF NOT EXISTS idx_members_name ON members(name);")
+  db:eval("CREATE INDEX IF NOT EXISTS idx_members_class_id ON members(class_id);")
+
+  -- 5. Enum Values Table (NEW)
+  -- Enumの各要素を格納
+  db:eval([[
+    CREATE TABLE IF NOT EXISTS enum_values (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      enum_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      FOREIGN KEY(enum_id) REFERENCES classes(id) ON DELETE CASCADE
+    );
+  ]])
+
+  db:eval("CREATE INDEX IF NOT EXISTS idx_enum_values_id ON enum_values(enum_id);")
+
+  -- 6. Inheritance Table (NEW - 多重継承対応)
+  db:eval([[
+    CREATE TABLE IF NOT EXISTS inheritance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      child_id INTEGER NOT NULL,
+      parent_name TEXT NOT NULL,
+      FOREIGN KEY(child_id) REFERENCES classes(id) ON DELETE CASCADE
+    );
+  ]])
+  db:eval("CREATE INDEX IF NOT EXISTS idx_inheritance_child ON inheritance(child_id);")
+  db:eval("CREATE INDEX IF NOT EXISTS idx_inheritance_parent ON inheritance(parent_name);")
 end
 
 return M
