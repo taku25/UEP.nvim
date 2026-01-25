@@ -195,39 +195,48 @@ end
 function M.get_recursive_derived_classes(db, base_class_name)
   local sql = [[
     WITH RECURSIVE derived_cte AS (
-      SELECT name, base_class, file_id, line_number, symbol_type
+      -- 最初の親（起点）
+      SELECT id, name, symbol_type
       FROM classes
-      WHERE base_class = ?
-      UNION ALL
-      SELECT c.name, c.base_class, c.file_id, c.line_number, c.symbol_type
+      WHERE name = ?
+      UNION
+      -- 子を辿る
+      SELECT c.id, c.name, c.symbol_type
       FROM classes c
-      JOIN derived_cte p ON c.base_class = p.name
+      JOIN inheritance i ON c.id = i.child_id
+      JOIN derived_cte p ON i.parent_name = p.name
     )
-    SELECT d.name as class_name, d.base_class, d.line_number, f.path as file_path, f.filename, d.symbol_type, m.name as module_name
+    SELECT d.name as class_name, '' as base_class, c.line_number, f.path as file_path, f.filename, d.symbol_type, m.name as module_name
     FROM derived_cte d
-    JOIN files f ON d.file_id = f.id
+    JOIN classes c ON d.id = c.id
+    JOIN files f ON c.file_id = f.id
     JOIN modules m ON f.module_id = m.id
+    WHERE d.name != ? -- 起点自身は除外
   ]]
-  return db:eval(sql, { base_class_name })
+  return db:eval(sql, { base_class_name, base_class_name })
 end
 
 -- 再帰的に親クラス(継承チェーン)を取得 (CTE使用)
 function M.get_recursive_parent_classes(db, child_class_name)
   local sql = [[
     WITH RECURSIVE parents_cte AS (
-      SELECT name, base_class, file_id, line_number, symbol_type, 0 as level
+      -- 起点のクラス
+      SELECT id, name, 0 as level
       FROM classes
       WHERE name = ?
-      UNION ALL
-      SELECT c.name, c.base_class, c.file_id, c.line_number, c.symbol_type, p.level + 1
-      FROM classes c
-      JOIN parents_cte p ON p.base_class = c.name
+      UNION
+      -- 親を辿る (inheritanceテーブルを使用)
+      SELECT p.id, p.name, c.level + 1
+      FROM classes p
+      JOIN inheritance i ON p.name = i.parent_name
+      JOIN parents_cte c ON i.child_id = c.id
     )
-    SELECT d.name as class_name, d.base_class, d.line_number, f.path as file_path, f.filename, d.symbol_type, m.name as module_name
+    SELECT d.name as class_name, '' as base_class, c.line_number, f.path as file_path, f.filename, c.symbol_type, m.name as module_name, d.level
     FROM parents_cte d
-    JOIN files f ON d.file_id = f.id
+    JOIN classes c ON d.id = c.id
+    JOIN files f ON c.file_id = f.id
     JOIN modules m ON f.module_id = m.id
-    ORDER BY level ASC
+    ORDER BY d.level ASC
   ]]
   return db:eval(sql, { child_class_name })
 end
