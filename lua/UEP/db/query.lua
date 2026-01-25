@@ -1,14 +1,15 @@
 -- lua/UEP/db/query.lua
 local M = {}
 
--- 指定したクラスを継承しているクラスを全て取得
+-- 指定したクラスを継承しているクラスを全て取得 (直系のみ)
 function M.find_derived_classes(db, base_class_name)
   local sql = [[
-    SELECT c.name, c.base_class, f.path, m.name as module_name
+    SELECT c.name, '' as base_class, f.path, m.name as module_name
     FROM classes c
+    JOIN inheritance i ON c.id = i.child_id
     JOIN files f ON c.file_id = f.id
     JOIN modules m ON f.module_id = m.id
-    WHERE c.base_class = ?
+    WHERE i.parent_name = ?
   ]]
   
   -- プリペアドステートメントの使用を推奨（ライブラリによる）
