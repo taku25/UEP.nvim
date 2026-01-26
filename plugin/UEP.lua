@@ -9,8 +9,20 @@ local command_spec = { -- line 10: 開始の '{'
   version = "nvim-0.11.3", -- 必要に応じて更新
   desc = "UEP for Unreal Engine main command",
   dependencies = {
-    { name = "fd", check = function() return vim.fn.executable("fd") == 1 end, msg = "Please install fd." },
-    { name = "rg", check = function() return vim.fn.executable("rg") == 1 end, msg = "Please install ripgrep (rg) for grep commands." },
+    {
+      name = "fd",
+      check = function()
+        return vim.fn.executable("fd") == 1
+      end,
+      msg = "Please install fd.",
+    },
+    {
+      name = "rg",
+      check = function()
+        return vim.fn.executable("rg") == 1
+      end,
+      msg = "Please install ripgrep (rg) for grep commands.",
+    },
   },
 
   subcommands = {
@@ -194,7 +206,7 @@ local command_spec = { -- line 10: 開始の '{'
       args = { { name = "path", required = false } },
     },
     ["implement_virtual"] = {
-      handler = uep_api.implement_virtual, 
+      handler = uep_api.implement_virtual,
       desc = "Override a virtual function from the parent class.",
       args = {
         { name = "class_name", required = false },
@@ -261,7 +273,7 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Create a new Unreal Engine project from a template.",
       args = {},
     },
-   ["gen_compile_commands_fast"] = {
+    ["gen_compile_commands_fast"] = {
       handler = uep_api.gen_compile_commands_fast,
       bang = true,
       desc = "Generate compile_commands.json from existing build artifacts (Fast/Shadow).",
@@ -282,8 +294,16 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Open current file in external IDE (configured in uep.ide.open_command).",
       args = {},
     },
+    ["create_module"] = {
+      handler = function(opts)
+        uep_api.create_module(opts)
+      end,
+      desc = "Create a new class, interactively if args are omitted.",
+      args = {
+        { name = "module_path", required = false },
+      },
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
-
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)
 
 -- コマンド登録

@@ -37,6 +37,7 @@ local cmd_clean_intermediate = require("UEP.cmd.clean_intermediate")
 local cmd_start = require("UEP.cmd.start")
 local cmd_stop = require("UEP.cmd.stop")
 local cmd_open_in_ide = require("UEP.cmd.open_in_ide")
+local cmd_create_module = require("UEP.cmd.create_module")
 local uep_server = require("UEP.cmd.core.server")
 
 local M = {}
@@ -98,11 +99,10 @@ function M.tree(opts)
   cmd_tree.execute(opts or {})
 end
 
-
 function M.close_tree(opts)
   -- 1. UEPの展開状態キャッシュをクリア
   cmd_tree_provider.request({ capability = "uep.clear_tree_state" })
-  
+
   -- 2. neo-tree ウィンドウを閉じる
   local ok, neo_tree_cmd = pcall(require, "neo-tree.command")
   if ok then
@@ -112,7 +112,9 @@ end
 
 function M.update_module_cache(opts, on_complete)
   if not (opts and opts.module_name) then
-    if on_complete then on_complete(false) end
+    if on_complete then
+      on_complete(false)
+    end
     return
   end
   -- refresh.luaにある実装を直接呼び出す
@@ -199,7 +201,6 @@ function M.web_doc(opts)
   cmd_web_doc.execute(opts or {})
 end
 
-
 function M.build_cs(opts)
   cmd_build_cs.execute(opts or {})
 end
@@ -230,6 +231,10 @@ end
 
 function M.open_in_ide(opts)
   cmd_open_in_ide.execute(opts or {})
+end
+
+function M.create_module(opts)
+  cmd_create_module.execute(opts or {})
 end
 
 return M
