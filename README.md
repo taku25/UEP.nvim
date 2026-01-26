@@ -281,6 +281,7 @@ All commands start with `:UEP`.
           * `--no-deps`: Searches only within the modules of the specified scope.
           * `--shallow-deps`: Includes direct dependencies.
           * `--deep-deps`: Includes all dependencies (`deep_dependencies`).
+      * `[mode=source|config|shader|programs|build_cs|target_cs]`: (Optional) Filter by file type.
   * **`:UEP module_files[!]`**:
       * Without `!`: Searches for files in the specified module using the existing cache.
       * With `!`: Performs a lightweight update of the file cache for only the specified module before searching.

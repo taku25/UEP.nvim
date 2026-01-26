@@ -118,7 +118,7 @@ Command Details                                     *UEP-commands-detail*
                 will be scanned automatically first.
       - `Engine`: Scans only the modules of the associated engine.
 
-:UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+:UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps] [mode=...]
     Opens a file search UI based on the cached information.
     - `[!](bang)`: (Optional)
       If `!` is added, it forces a regeneration of the cache before opening
@@ -130,6 +130,8 @@ Command Details                                     *UEP-commands-detail*
       - `--shallow-deps`: Includes direct dependencies in the search.
       - `--deep-deps`: Includes all modules that the base scope's modules
                        depend on (deep dependencies) in the search.
+    - `[mode=...]`: (Optional) Filter by file type.
+      Available modes: `source`, `config`, `programs`, `shader`, `build_cs`, `target_cs`.
 
 :UEP module_files[!] [ModuleName]
     Displays a list of files belonging to a specific module.

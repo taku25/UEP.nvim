@@ -121,7 +121,7 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
                 のスキャンが自動的に実行されます。
       - `Engine`: 関連するエンジンのモジュールのみをスキャンします。
 
-:UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+:UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps] [mode=...]
     キャッシュされた情報に基づいて、ファイル検索UIを開きます。
     - `[!](bang)`: (省略可)
       `!`を付けると、キャッシュを強制的に再生成してからUIを開きます。
@@ -132,6 +132,8 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
       - `--shallow-deps`: 直接の依存関係にあるモジュールを検索対象に含めます。
       - `--deep-deps`: ベーススコープのモジュールが依存する全てのモジュール
                        （推移的依存関係を含む）を検索対象とします。
+    - `[mode=...]`: (省略可) ファイルタイプでフィルタリングします。
+      利用可能なモード: `source`, `config`, `programs`, `shader`, `build_cs`, `target_cs`。
 
 :UEP module_files[!] [ModuleName]
     特定のモジュールに属するファイル一覧を表示します。
