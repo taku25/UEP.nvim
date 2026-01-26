@@ -73,19 +73,16 @@ function M.request(opts, on_complete)
       return {} 
   end
 
-  uep_log.info("Requesting members for class: '%s'", class_name)
-
   -- 再帰的に親クラスのメンバーも含めて取得
   local rows = db_query.get_class_members_recursive(db, class_name)
   
   if type(rows) == "boolean" then
       uep_log.error("Query returned boolean (%s). SQL Error likely.", tostring(rows))
       rows = {}
-  elseif rows then
-      uep_log.info("Query returned %d rows", #rows)
-  else
-      uep_log.warn("Query returned nil")
-      rows = {}
+  end
+  
+  if not rows or type(rows) ~= "table" then 
+      rows = {} 
   end
   
   -- 2. オンデマンド解析 (リクエストされたクラス自身のみ)
