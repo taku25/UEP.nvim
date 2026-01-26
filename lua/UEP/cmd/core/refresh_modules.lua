@@ -100,12 +100,27 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
       -- ▼▼▼ [ここから修正] ▼▼▼
       -- display_name が "xxx" で重複するのを防ぐため、
       -- "Game_xxx" や "Plugin_xxx" のようにコンポーネントタイプでプレフィックスを付ける
-      local pseudo_name = comp_meta.type .. "_" .. comp_meta.display_name
-      -- ▲▲▲ [修正完了] ▲▲▲
-      
+      local base_pseudo_name = comp_meta.type .. "_" .. comp_meta.display_name
+      local pseudo_name = base_pseudo_name
       local pseudo_root = comp_meta.root_path
+
+      -- 重複回避ロジック
       if PSEUDO_MODULES[pseudo_name] then
-        log.warn("Duplicate pseudo-module name detected: %s. Skipping component: %s", pseudo_name, comp_name_hash)
+          -- パスが完全に同じなら単なる重複エントリとして無視
+          if PSEUDO_MODULES[pseudo_name].root ~= pseudo_root then
+              -- 別のパスなら名前を変更して登録 (例: Plugin_MyPlugin_Switch)
+              local parent_dir = vim.fn.fnamemodify(pseudo_root, ":h:t")
+              pseudo_name = base_pseudo_name .. "_" .. parent_dir
+              
+              -- それでも重複する場合はハッシュ
+              if PSEUDO_MODULES[pseudo_name] and PSEUDO_MODULES[pseudo_name].root ~= pseudo_root then
+                  pseudo_name = base_pseudo_name .. "_" .. vim.fn.sha256(pseudo_root):sub(1,6)
+              end
+          end
+      end
+      
+      if PSEUDO_MODULES[pseudo_name] and PSEUDO_MODULES[pseudo_name].root ~= pseudo_root then
+        log.warn("Duplicate pseudo-module name persist: %s. Skipping component: %s", pseudo_name, comp_name_hash)
       elseif not pseudo_root then
         log.warn("Pseudo-module '%s' has nil root_path. Skipping.", pseudo_name)
       else
