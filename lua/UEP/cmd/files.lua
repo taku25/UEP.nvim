@@ -40,7 +40,7 @@ function M.delete_all_picker_caches()
 
   -- コンテキストキーのプレフィックスで検索して削除
   local scopes = { "runtime", "game", "engine", "developer", "editor", "full" }
-  local modes = { "source", "config", "programs", "shader" }
+  local modes = { "source", "config", "programs", "shader", "target_cs", "build_cs" }
   local deps = { "--deep-deps", "--shallow-deps", "--no-deps" }
 
   for _, s in ipairs(scopes) do
@@ -192,7 +192,7 @@ function M.execute(opts)
 
   -- 3. Modeをパース (デフォルト: nil)
   local requested_mode = nil
-  local valid_modes = { source=true, config=true, programs=true, shader=true }
+  local valid_modes = { source=true, config=true, programs=true, shader=true, target_cs=true, build_cs=true }
   if opts.mode then
       local mode_lower = opts.mode:lower()
       if valid_modes[mode_lower] then

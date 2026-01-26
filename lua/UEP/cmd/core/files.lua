@@ -293,6 +293,8 @@ function M.get_files(opts, on_complete)
                     should_include = (category == "source" or category == "programs")
                 elseif requested_mode == "source" then
                     should_include = (category == "source")
+                elseif requested_mode == "target_cs" or requested_mode == "build_cs" then
+                    should_include = (category == "source" or category == "programs" or category == "other")
                 end
             else
                 -- ★★★ 既存ロジック (Legacy) ★★★
@@ -311,6 +313,10 @@ function M.get_files(opts, on_complete)
                     if file_path:match("%.usf$") or file_path:match("%.ush$") then
                         add_file = false
                     end
+                elseif requested_mode == "target_cs" then
+                    add_file = file_path:match("%.Target%.cs$")
+                elseif requested_mode == "build_cs" then
+                    add_file = file_path:match("%.Build%.cs$")
                 end
 
                 if add_file then
@@ -405,6 +411,7 @@ function M.get_files(opts, on_complete)
                     elseif requested_mode == "shader" then should_include = (category == "shader")
                     elseif requested_mode == "programs" then should_include = (category == "source" or category == "programs")
                     elseif requested_mode == "source" then should_include = (category == "source")
+                    elseif requested_mode == "target_cs" or requested_mode == "build_cs" then should_include = (category == "source" or category == "programs" or category == "other")
                     end
                 else
                     -- Legacy
@@ -423,6 +430,10 @@ function M.get_files(opts, on_complete)
                         if file_path:match("%.usf$") or file_path:match("%.ush$") then
                             add_file = false
                         end
+                    elseif requested_mode == "target_cs" then
+                        add_file = file_path:match("%.Target%.cs$")
+                    elseif requested_mode == "build_cs" then
+                        add_file = file_path:match("%.Build%.cs$")
                     end
                     
                     if add_file then

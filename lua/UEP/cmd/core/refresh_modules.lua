@@ -256,7 +256,8 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
                         should_check_source_exclusion = false
                       end
 
-                      if (not should_check_source_exclusion) or (not file:find(fs.joinpath(pseudo_root, "Source"), 1, true)) then
+                      local in_source = file:find(fs.joinpath(pseudo_root, "Source"), 1, true)
+                      if (not should_check_source_exclusion) or (not in_source) or (in_source and file:match("%.cs$")) then
                         local category = core_utils.categorize_path(file)
                         if files_by_path_key[pseudo_root] then
                           if not files_by_path_key[pseudo_root][category] then files_by_path_key[pseudo_root][category] = {} end
