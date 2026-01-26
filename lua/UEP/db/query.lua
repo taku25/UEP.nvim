@@ -510,28 +510,62 @@ function M.update_member_return_type(db, class_name, member_name, return_type)
   db:eval(sql, { return_type, member_name, class_name })
 end
 
--- 再帰的に継承元のメンバーも含めて取得 (CTE)
+-- 再帰的に継承元のメンバーも含めて取得 (Luaループ版)
 function M.get_class_members_recursive(db, class_name)
-  local sql = [[
-    WITH RECURSIVE inheritance_chain(id, name) AS (
-      SELECT id, name FROM classes WHERE name = ?
-      UNION
-      SELECT p.id, p.name
-      FROM classes p
-      JOIN inheritance i ON p.name = i.parent_name
-      JOIN inheritance_chain c ON i.child_id = c.id
-    )
-    SELECT m.name, m.type, m.flags, m.detail, m.return_type, m.is_static, m.access, c.name as class_name
-    FROM members m
-    JOIN inheritance_chain c ON m.class_id = c.id
-    UNION ALL
-    SELECT e.name, 'enum_item' as type, '' as flags, '' as detail, '' as return_type, 0 as is_static, 'public' as access, c.name as class_name
-    FROM enum_values e
-    JOIN inheritance_chain c ON e.enum_id = c.id
-  ]]
-  return db:eval(sql) 
-end
+  local result_members = {}
+  local visited = {}
+  local queue = { class_name }
 
+  while #queue > 0 do
+    local current_name = table.remove(queue, 1)
+    if not visited[current_name] then
+      visited[current_name] = true
+      
+      -- クラスID取得
+      local rows = db:eval("SELECT id FROM classes WHERE name = ?", { current_name })
+      if type(rows) == "table" and rows[1] then
+        local class_id = rows[1].id
+        
+        -- メンバー取得
+        local members = db:eval([[
+          SELECT name, type, flags, detail, return_type, is_static, access 
+          FROM members WHERE class_id = ?
+        ]], { class_id })
+        
+        if type(members) == "table" then
+          for _, m in ipairs(members) do
+            m.class_name = current_name
+            table.insert(result_members, m)
+          end
+        end
+        
+        -- Enum値取得
+        local enums = db:eval([[
+          SELECT name FROM enum_values WHERE enum_id = ?
+        ]], { class_id })
+        
+        if type(enums) == "table" then
+          for _, e in ipairs(enums) do
+            table.insert(result_members, {
+              name = e.name, type = 'enum_item', flags = '', detail = '', 
+              return_type = '', is_static = 0, access = 'public', class_name = current_name
+            })
+          end
+        end
+        
+        -- 親クラス取得 (inheritanceテーブルから)
+        local parents = db:eval("SELECT parent_name FROM inheritance WHERE child_id = ?", { class_id })
+        if type(parents) == "table" then
+          for _, p in ipairs(parents) do
+            table.insert(queue, p.parent_name)
+          end
+        end
+      end
+    end
+  end
+  
+  return result_members
+end
 -- *.Target.cs ファイルを取得
 function M.get_target_files(db)
   local sql = "SELECT path, filename FROM files WHERE filename LIKE '%.Target.cs'"
