@@ -284,7 +284,7 @@ end
 -- クラス名でクラス情報を検索 (完全一致)
 function M.find_class_by_name(db, class_name)
   local sql = [[
-    SELECT c.name as class_name, c.base_class, c.line_number, f.path as file_path, f.filename, c.symbol_type, m.name as module_name, m.root_path as module_root
+    SELECT c.id, c.name as class_name, c.base_class, c.line_number, f.path as file_path, f.filename, c.symbol_type, m.name as module_name, m.root_path as module_root
     FROM classes c
     JOIN files f ON c.file_id = f.id
     JOIN modules m ON f.module_id = m.id
@@ -296,6 +296,55 @@ function M.find_class_by_name(db, class_name)
     return rows[1]
   end
   return nil
+end
+
+-- 全てのクラスを取得
+function M.get_classes(db)
+  local sql = [[
+    SELECT c.id, c.name, c.symbol_type, m.name as module_name
+    FROM classes c
+    JOIN files f ON c.file_id = f.id
+    JOIN modules m ON f.module_id = m.id
+    WHERE c.symbol_type IN ('class', 'struct')
+    ORDER BY c.name ASC
+  ]]
+  return db:eval(sql)
+end
+
+-- クラスのメンバー（関数・変数）を取得
+function M.get_class_members(db, class_name)
+  local sql = [[
+    SELECT m.name, m.type, m.flags, m.access, m.detail, m.return_type, m.is_static
+    FROM members m
+    JOIN classes c ON m.class_id = c.id
+    WHERE c.name = ?
+    ORDER BY m.type, m.name
+  ]]
+  return db:eval(sql, { class_name })
+end
+
+-- クラスのメソッドを取得
+function M.get_class_methods(db, class_name)
+  local sql = [[
+    SELECT m.name, m.flags, m.access, m.detail, m.return_type, m.is_static
+    FROM members m
+    JOIN classes c ON m.class_id = c.id
+    WHERE c.name = ? AND m.type = 'function'
+    ORDER BY m.name
+  ]]
+  return db:eval(sql, { class_name })
+end
+
+-- クラスのプロパティを取得
+function M.get_class_properties(db, class_name)
+  local sql = [[
+    SELECT m.name, m.flags, m.access, m.detail, m.return_type, m.is_static
+    FROM members m
+    JOIN classes c ON m.class_id = c.id
+    WHERE c.name = ? AND (m.type = 'variable' OR m.type = 'property')
+    ORDER BY m.name
+  ]]
+  return db:eval(sql, { class_name })
 end
 
 -- パスの一部でファイルを検索 (open_file フォールバック用)
@@ -311,6 +360,35 @@ function M.search_files_by_path_part(db, partial_path)
   ]]
   -- パスのどこかに含まれるか
   return db:eval(sql, { "%" .. partial_path .. "%" })
+end
+
+-- Enumのメンバーを取得
+function M.get_enum_values(db, enum_name)
+  local sql = [[
+    SELECT ev.name
+    FROM enum_values ev
+    JOIN classes c ON ev.enum_id = c.id
+    WHERE c.name = ?
+      AND c.symbol_type = 'enum'
+  ]]
+  local rows = db:eval(sql, { enum_name })
+  local results = {}
+  if rows then
+    for _, row in ipairs(rows) do
+      table.insert(results, row.name)
+    end
+  end
+  return results
+end
+
+-- 全てのモジュールを取得
+function M.get_modules(db)
+  local sql = [[
+    SELECT m.id, m.name, m.type, m.scope, m.root_path, m.build_cs_path
+    FROM modules m
+    ORDER BY m.name ASC
+  ]]
+  return db:eval(sql)
 end
 
 return M
