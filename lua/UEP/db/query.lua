@@ -299,13 +299,48 @@ function M.find_class_by_name(db, class_name)
 end
 
 -- 全てのクラスを取得
-function M.get_classes(db)
+function M.get_classes(db, extra_where, params)
   local sql = [[
-    SELECT c.id, c.name, c.symbol_type, m.name as module_name
+    SELECT c.id, c.name, c.base_class, c.symbol_type, f.path, m.name as module_name
     FROM classes c
     JOIN files f ON c.file_id = f.id
     JOIN modules m ON f.module_id = m.id
     WHERE c.symbol_type IN ('class', 'struct')
+      AND c.name NOT LIKE '(%'
+  ]]
+  if extra_where and extra_where ~= "" then
+    sql = sql .. " " .. extra_where
+  end
+  sql = sql .. " ORDER BY c.name ASC"
+  return db:eval(sql, params or {})
+end
+
+-- 全ての構造体を取得
+function M.get_structs(db, extra_where, params)
+  local sql = [[
+    SELECT c.id, c.name, c.base_class, c.symbol_type, f.path, m.name as module_name
+    FROM classes c
+    JOIN files f ON c.file_id = f.id
+    JOIN modules m ON f.module_id = m.id
+    WHERE c.symbol_type = 'struct'
+      AND c.name NOT LIKE '(%'
+  ]]
+  if extra_where and extra_where ~= "" then
+    sql = sql .. " " .. extra_where
+  end
+  sql = sql .. " ORDER BY c.name ASC"
+  return db:eval(sql, params or {})
+end
+
+-- 全ての構造体を取得 ( symbol_type = 'struct' のみ)
+function M.get_structs_only(db)
+  local sql = [[
+    SELECT c.id, c.name, c.base_class, c.symbol_type, f.path, m.name as module_name
+    FROM classes c
+    JOIN files f ON c.file_id = f.id
+    JOIN modules m ON f.module_id = m.id
+    WHERE c.symbol_type = 'struct'
+      AND c.name NOT LIKE '(%'
     ORDER BY c.name ASC
   ]]
   return db:eval(sql)
@@ -381,10 +416,18 @@ function M.get_enum_values(db, enum_name)
   return results
 end
 
+-- 全てのコンポーネントを取得
+function M.get_components(db)
+  local sql = [[
+    SELECT * FROM components ORDER BY name ASC
+  ]]
+  return db:eval(sql)
+end
+
 -- 全てのモジュールを取得
 function M.get_modules(db)
   local sql = [[
-    SELECT m.id, m.name, m.type, m.scope, m.root_path, m.build_cs_path
+    SELECT m.id, m.name, m.type, m.scope, m.root_path, m.build_cs_path, m.owner_name, m.component_name, m.deep_dependencies
     FROM modules m
     ORDER BY m.name ASC
   ]]

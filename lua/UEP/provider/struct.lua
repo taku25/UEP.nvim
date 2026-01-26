@@ -1,6 +1,7 @@
 -- lua/UEP/provider/struct.lua
 
 local uep_db = require("UEP.db.init")
+local db_query = require("UEP.db.query")
 local uep_log = require("UEP.logger").get()
 
 local M = {}
@@ -25,17 +26,7 @@ function M.request(opts)
       scope_filter = "AND m.scope = 'Engine'"
   end
 
-  -- symbol_type = 'struct' のものを検索
-  local sql = string.format([[
-      SELECT c.name, c.base_class, f.path, m.name as module_name
-      FROM classes c
-      JOIN files f ON c.file_id = f.id
-      JOIN modules m ON f.module_id = m.id
-      WHERE c.symbol_type = 'struct' %s
-      ORDER BY c.name ASC
-  ]], scope_filter)
-
-  local rows = db:eval(sql)
+  local rows = db_query.get_structs(db, scope_filter)
   if not rows then return {} end
 
   local results = {}

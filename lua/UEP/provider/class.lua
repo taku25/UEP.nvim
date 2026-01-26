@@ -81,28 +81,22 @@ function M.request(opts)
   
   -- STEP 3: Query Classes from DB
   local mod_names = {}
-  for name, _ in pairs(target_module_names) do table.insert(mod_names, "'" .. name .. "'") end
+  for name, _ in pairs(target_module_names) do table.insert(mod_names, name) end
   
   if #mod_names == 0 then return {} end
   
-  local sql = string.format([[
-        SELECT c.name, c.base_class, c.line_number, c.symbol_type, f.path 
-        FROM classes c 
-        JOIN files f ON c.file_id = f.id 
-        JOIN modules m ON f.module_id = m.id 
-        WHERE m.name IN (%s)
-    ]], table.concat(mod_names, ","))
-    
-  local rows = db:eval(sql)
+  local db_query = require("UEP.db.query")
+  local rows = db_query.get_classes_in_modules(db, mod_names)
   local merged_header_details = {}
   
   if rows then
       for _, row in ipairs(rows) do
-        if not merged_header_details[row.path] then
-            merged_header_details[row.path] = { classes = {} }
+        local path = row.file_path
+        if not merged_header_details[path] then
+            merged_header_details[path] = { classes = {} }
         end
-        table.insert(merged_header_details[row.path].classes, {
-            name = row.name,
+        table.insert(merged_header_details[path].classes, {
+            name = row.class_name,
             base_class = row.base_class,
             line = row.line_number,
             type = row.symbol_type

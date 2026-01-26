@@ -57,13 +57,14 @@ M.get_project_maps = function(start_path, on_complete)
     return on_complete(false, "DB not available.")
   end
 
-  local components = db:eval("SELECT * FROM components")
+  local db_query = require("UEP.db.query")
+  local components = db_query.get_components(db)
   if type(components) ~= "table" or #components == 0 then
     log.warn("get_project_maps: No components in DB. Run :UEP refresh.")
     return on_complete(false, "No components in DB.")
   end
 
-  local modules_rows = db:eval("SELECT * FROM modules")
+  local modules_rows = db_query.get_modules(db)
   if type(modules_rows) ~= "table" then modules_rows = {} end
 
   local all_components_map = {}

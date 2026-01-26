@@ -135,8 +135,12 @@ function M.get_all_classes(opts, on_complete)
     
     local all_symbols = {}
     for _, row in ipairs(raw_classes) do
+        -- 表示用の名前をクリーンアップ (Telescopeエラー防止)
+        -- <...> の中身を削除し、* やスペースなども除去
+        local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
+
         table.insert(all_symbols, {
-            display = row.class_name,
+            display = display_name,
             class_name = row.class_name,
             base_class = row.base_class,
             file_path = row.file_path,
@@ -189,8 +193,9 @@ function M.get_derived_classes(base_class_name, opts, on_complete)
     local filtered_symbols = {}
     for _, row in ipairs(raw_derived) do
       if target_module_names[row.module_name] then
+        local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
         table.insert(filtered_symbols, {
-            display = row.class_name,
+            display = display_name,
             class_name = row.class_name,
             base_class = row.base_class,
             file_path = row.file_path,
@@ -239,8 +244,9 @@ function M.get_inheritance_chain(child_symbol_name, opts, on_complete)
     local filtered_chain = {}
     for _, row in ipairs(raw_chain) do
       if target_module_names[row.module_name] then
+        local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
         table.insert(filtered_chain, {
-            display = row.class_name,
+            display = display_name,
             class_name = row.class_name,
             base_class = row.base_class,
             file_path = row.file_path,
