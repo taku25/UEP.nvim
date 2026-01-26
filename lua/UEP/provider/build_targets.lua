@@ -14,7 +14,8 @@ function M.request(opts)
   local db = uep_db.get()
   if not db then return nil end
   
-  local rows = db:eval("SELECT path, filename FROM files WHERE filename LIKE '%.Target.cs'")
+  local db_query = require("UEP.db.query")
+  local rows = db_query.get_target_files(db)
   if not rows then return {} end
   
   local targets = {}

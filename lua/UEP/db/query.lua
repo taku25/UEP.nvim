@@ -434,4 +434,117 @@ function M.get_modules(db)
   return db:eval(sql)
 end
 
+-- モジュールIDを名前から取得
+function M.get_module_id_by_name(db, module_name)
+  local rows = db:eval("SELECT id FROM modules WHERE name = ?", { module_name })
+  if rows and rows[1] then return rows[1].id end
+  return nil
+end
+
+-- モジュールのルートパスを名前から取得
+function M.get_module_root_path(db, module_name)
+  local rows = db:eval("SELECT root_path FROM modules WHERE name = ?", { module_name })
+  if rows and rows[1] then return rows[1].root_path end
+  return nil
+end
+
+-- モジュール内の全ファイルパスを取得
+function M.get_files_in_module(db, module_id)
+  local rows = db:eval("SELECT path FROM files WHERE module_id = ?", { module_id })
+  local paths = {}
+  if rows then for _, r in ipairs(rows) do table.insert(paths, r.path) end end
+  return paths
+end
+
+-- モジュール内の全ディレクトリパスを取得
+function M.get_directories_in_module(db, module_id)
+  local rows = db:eval("SELECT path FROM directories WHERE module_id = ?", { module_id })
+  local paths = {}
+  if rows then for _, r in ipairs(rows) do table.insert(paths, r.path) end end
+  return paths
+end
+
+-- モジュール名とルートパスからファイル一覧を取得 (files.lua用)
+function M.get_module_files_by_name_and_root(db, module_name, module_root)
+  local sql = [[
+    SELECT f.path, f.extension
+    FROM files f
+    JOIN modules m ON f.module_id = m.id
+    WHERE m.name = ? AND m.root_path = ?
+  ]]
+  return db:eval(sql, { module_name, module_root })
+end
+
+-- モジュール名とルートパスからディレクト一覧を取得 (files.lua用)
+function M.get_module_dirs_by_name_and_root(db, module_name, module_root)
+  local sql = [[
+    SELECT d.path, d.category
+    FROM directories d
+    JOIN modules m ON d.module_id = m.id
+    WHERE m.name = ? AND m.root_path = ?
+  ]]
+  return db:eval(sql, { module_name, module_root })
+end
+
+-- クラス定義ファイルのパスを取得
+function M.get_class_file_path(db, class_name)
+  local sql = [[
+    SELECT f.path 
+    FROM files f
+    JOIN classes c ON c.file_id = f.id
+    WHERE c.name = ?
+    LIMIT 1
+  ]]
+  local rows = db:eval(sql, { class_name })
+  if rows and rows[1] then return rows[1].path end
+  return nil
+end
+
+-- メンバーの戻り値型を更新
+function M.update_member_return_type(db, class_name, member_name, return_type)
+  local sql = [[
+    UPDATE members 
+    SET return_type = ? 
+    WHERE name = ? AND class_id = (SELECT id FROM classes WHERE name = ?)
+  ]]
+  db:eval(sql, { return_type, member_name, class_name })
+end
+
+-- 再帰的に継承元のメンバーも含めて取得 (CTE)
+function M.get_class_members_recursive(db, class_name)
+  local sql = [[
+    WITH RECURSIVE inheritance_chain(id, name) AS (
+      SELECT id, name FROM classes WHERE name = ?
+      UNION
+      SELECT p.id, p.name
+      FROM classes p
+      JOIN inheritance i ON p.name = i.parent_name
+      JOIN inheritance_chain c ON i.child_id = c.id
+    )
+    SELECT m.name, m.type, m.flags, m.detail, m.return_type, m.is_static, m.access, c.name as class_name
+    FROM members m
+    JOIN inheritance_chain c ON m.class_id = c.id
+    UNION ALL
+    SELECT e.name, 'enum_item' as type, '' as flags, '' as detail, '' as return_type, 0 as is_static, 'public' as access, c.name as class_name
+    FROM enum_values e
+    JOIN inheritance_chain c ON e.enum_id = c.id
+  ]]
+  return db:eval(sql) 
+end
+
+-- *.Target.cs ファイルを取得
+function M.get_target_files(db)
+  local sql = "SELECT path, filename FROM files WHERE filename LIKE '%.Target.cs'"
+  return db:eval(sql)
+end
+
+-- 全てのファイルパスを取得
+function M.get_all_file_paths(db)
+  local sql = "SELECT path FROM files"
+  local rows = db:eval(sql)
+  local paths = {}
+  if rows then for _, r in ipairs(rows) do table.insert(paths, r.path) end end
+  return paths
+end
+
 return M

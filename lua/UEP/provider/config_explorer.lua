@@ -16,7 +16,8 @@ local function get_project_maps_sync()
     local db = uep_db.get()
     if not db then return nil, "DB not available" end
     
-    local components = db:eval("SELECT * FROM components")
+    local db_query = require("UEP.db.query")
+    local components = db_query.get_components(db)
     if not components then return nil, "No components in DB" end
     
     local maps = { project_root = nil, engine_root = nil }

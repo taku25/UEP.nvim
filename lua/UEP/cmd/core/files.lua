@@ -11,13 +11,8 @@ local function get_module_files_from_db(module_name, module_root)
   local db = uep_db.get()
   if not db then return nil end
 
-  -- root_path まで一致させて重複モジュールを区別する。
-  local rows = db:eval([[ 
-    SELECT f.path, f.extension
-    FROM files f
-    JOIN modules m ON f.module_id = m.id
-    WHERE m.name = ? AND m.root_path = ?
-  ]], { module_name, module_root })
+  local db_query = require("UEP.db.query")
+  local rows = db_query.get_module_files_by_name_and_root(db, module_name, module_root)
 
   if type(rows) ~= "table" or #rows == 0 then
     return nil
@@ -50,12 +45,8 @@ local function get_module_dirs_from_db(module_name, module_root)
   local db = uep_db.get()
   if not db then return nil end
 
-  local rows = db:eval([[ 
-    SELECT d.path, d.category
-    FROM directories d
-    JOIN modules m ON d.module_id = m.id
-    WHERE m.name = ? AND m.root_path = ?
-  ]], { module_name, module_root })
+  local db_query = require("UEP.db.query")
+  local rows = db_query.get_module_dirs_by_name_and_root(db, module_name, module_root)
 
   if type(rows) ~= "table" or #rows == 0 then
     return nil

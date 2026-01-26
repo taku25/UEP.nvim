@@ -70,7 +70,8 @@ function M.execute(opts)
     local db = uep_db.get()
     if not db then return log.error("DB not available") end
 
-    local rows = db:eval("SELECT path, filename FROM files WHERE filename LIKE '%.Target.cs'")
+    local db_query = require("UEP.db.query")
+    local rows = db_query.get_target_files(db)
     if not rows or #rows == 0 then
       return log.warn("No build targets found in DB. Run :UEP refresh.")
     end

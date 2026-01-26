@@ -38,15 +38,16 @@ local function collect_all_files()
   local db = uep_db.get()
   if not db then return {} end
 
-  local rows = db:eval("SELECT path FROM files")
-  if not rows then return {} end
+  local db_query = require("UEP.db.query")
+  local paths = db_query.get_all_file_paths(db)
+  if not paths then return {} end
 
   local files = {}
-  for _, row in ipairs(rows) do
+  for _, path in ipairs(paths) do
     table.insert(files, {
-      display = row.path,
-      value = row.path,
-      filename = row.path
+      display = path,
+      value = path,
+      filename = path
     })
   end
   return files

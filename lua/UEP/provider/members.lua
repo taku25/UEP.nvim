@@ -1,4 +1,5 @@
 local uep_db = require("UEP.db.init")
+local db_query = require("UEP.db.query")
 local uep_log = require("UEP.logger").get()
 local cpp_parser = nil -- 遅延ロード
 
@@ -17,18 +18,8 @@ local function enrich_members_with_parser(db, class_name, members)
   if not missing_return_type then return end
 
   -- 定義ファイルを取得
-  local rows = db:eval([[
-    SELECT f.path 
-    FROM files f
-    JOIN classes c ON c.file_id = f.id
-    WHERE c.name = ?
-    LIMIT 1
-  ]], { class_name })
-
-  if not rows or #rows == 0 then return end
-  local file_path = rows[1].path
-
-  if vim.fn.filereadable(file_path) == 0 then return end
+  local file_path = db_query.get_class_file_path(db, class_name)
+  if not file_path or vim.fn.filereadable(file_path) == 0 then return end
 
   -- パーサーロード
   if not cpp_parser then
@@ -37,7 +28,6 @@ local function enrich_members_with_parser(db, class_name, members)
   end
 
   -- パース実行 (同期)
-  -- 結果: { map = { ClassName = { methods = { public = { ... } } } } }
   local result = cpp_parser.parse(file_path)
   if not result or not result.map then return end
 
@@ -62,14 +52,7 @@ local function enrich_members_with_parser(db, class_name, members)
       local parsed_m = method_map[m.name]
       if parsed_m and parsed_m.return_type then
         m.return_type = parsed_m.return_type
-        -- DB更新 (nameとclass_idで特定する必要があるが、class_idはメンバーリストにないためサブクエリが必要)
-        -- しかし members リストには m.name がある。
-        -- 呼び出し元で class_id を結合していないので、UPDATE文で class_name から特定する
-        db:eval([[
-          UPDATE members 
-          SET return_type = ? 
-          WHERE name = ? AND class_id = (SELECT id FROM classes WHERE name = ?)
-        ]], { m.return_type, m.name, class_name })
+        db_query.update_member_return_type(db, class_name, m.name, m.return_type)
       end
     end
   end
@@ -90,27 +73,8 @@ function M.request(opts, on_complete)
       return {} 
   end
 
-  -- 再帰的に親クラスのIDを取得し、それら全クラスのメンバーを取得するSQL
-  -- [Update] inheritance テーブルを使用した多重継承対応版
-  local sql = [[
-    WITH RECURSIVE inheritance_chain(id, name) AS (
-      SELECT id, name FROM classes WHERE name = ?
-      UNION
-      SELECT p.id, p.name
-      FROM classes p
-      JOIN inheritance i ON p.name = i.parent_name
-      JOIN inheritance_chain c ON i.child_id = c.id
-    )
-    SELECT m.name, m.type, m.flags, m.detail, m.return_type, m.is_static, m.access, c.name as class_name
-    FROM members m
-    JOIN inheritance_chain c ON m.class_id = c.id
-    UNION ALL
-    SELECT e.name, 'enum_item' as type, '' as flags, '' as detail, '' as return_type, 0 as is_static, 'public' as access, c.name as class_name
-    FROM enum_values e
-    JOIN inheritance_chain c ON e.enum_id = c.id
-  ]]
-  
-  local rows = db:eval(sql, { class_name })
+  -- 再帰的に親クラスのメンバーも含めて取得
+  local rows = db_query.get_class_members_recursive(db, class_name)
   
   if not rows or type(rows) ~= "table" then 
       rows = {} 

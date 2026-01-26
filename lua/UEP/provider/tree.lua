@@ -20,21 +20,12 @@ local function load_files_from_db(module_name)
     local db = uep_db.get()
     if not db then return {}, {} end
     
-    local mod_row = db:eval("SELECT id FROM modules WHERE name = ?", { module_name })
-    if type(mod_row) ~= "table" or #mod_row == 0 then return {}, {} end
-    local mod_id = mod_row[1].id
+    local db_query = require("UEP.db.query")
+    local mod_id = db_query.get_module_id_by_name(db, module_name)
+    if not mod_id then return {}, {} end
     
-    local files = {}
-    local file_rows = db:eval("SELECT path FROM files WHERE module_id = ?", { mod_id })
-    if type(file_rows) == "table" then
-        for _, r in ipairs(file_rows) do table.insert(files, r.path) end
-    end
-    
-    local dirs = {}
-    local dir_rows = db:eval("SELECT path FROM directories WHERE module_id = ?", { mod_id })
-    if type(dir_rows) == "table" then
-        for _, r in ipairs(dir_rows) do table.insert(dirs, r.path) end
-    end
+    local files = db_query.get_files_in_module(db, mod_id)
+    local dirs = db_query.get_directories_in_module(db, mod_id)
     
     return files, dirs
 end
@@ -234,8 +225,9 @@ function M.build_tree_model(opts)
   local db = uep_db.get()
   if not db then return {{ id = "_message_", name = "DB not available.", type = "message" }} end
 
-  local components = db:eval("SELECT * FROM components") or {}
-  local modules_rows = db:eval("SELECT * FROM modules") or {}
+  local db_query = require("UEP.db.query")
+  local components = db_query.get_components(db) or {}
+  local modules_rows = db_query.get_modules(db) or {}
 
   local all_modules_map, module_to_component_name, all_components_map = {}, {}, {}
   local game_name, engine_name

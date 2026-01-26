@@ -13,9 +13,8 @@ local M = {}
 local function get_module_root(module_name)
     local db = uep_db.get()
     if not db then return nil end
-    local rows = db:eval("SELECT root_path FROM modules WHERE name = ?", { module_name })
-    if rows and rows[1] then return rows[1].root_path end
-    return nil
+    local db_query = require("UEP.db.query")
+    return db_query.get_module_root_path(db, module_name)
 end
 
 local function open_tree(module_name)
