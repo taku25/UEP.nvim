@@ -393,18 +393,15 @@ function M.get_class_members_recursive(db, class_name)
     if not visited[current_name] then
       visited[current_name] = true
       
-      -- クラスID取得
-      local rows = db:eval("SELECT id FROM classes WHERE name = ?", { current_name })
+      -- クラスID取得 (UCLASSやUSTRUCTを優先)
+      local rows = db:eval([[
+        SELECT id, symbol_type FROM classes 
+        WHERE name = ? 
+        ORDER BY (CASE WHEN symbol_type = 'UCLASS' THEN 0 WHEN symbol_type = 'USTRUCT' THEN 1 ELSE 2 END) ASC
+      ]], { current_name })
       if type(rows) == "table" and rows[1] then
         local class_id = rows[1].id
-        
-        -- メンバー取得
-        local members = db:eval([[
-          SELECT name, type, flags, detail, return_type, is_static, access 
-          FROM members WHERE class_id = ?
-        ]], { class_id })
-        
-        if type(members) == "table" then
+
           for _, m in ipairs(members) do
             m.class_name = current_name
             table.insert(result_members, m)

@@ -111,6 +111,11 @@ M.setup = function()
       name = "UEP.nvim",
       impl = members_provider,
     })
+    unl_api.provider.register({
+      capability = "uep.get_class_members_recursive",
+      name = "UEP.nvim",
+      impl = members_provider,
+    })
 
     local uep_logger = require("UEP.logger").get()
     if uep_logger then
