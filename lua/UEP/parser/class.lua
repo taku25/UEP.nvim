@@ -13,26 +13,33 @@ local M = {}
 ----------------------------------------------------------------------
 
 -- [既存] get_cpu_count
-function M.parse_headers_async(existing_header_details, header_files, progress, on_complete)
+function M.parse_headers_async(existing_header_details, header_files_with_ids, progress, on_complete)
   local uep_log = uep_logger_module.get()
+  local uep_db = require("UEP.db.init")
   local unl_api = require("UNL.api")
   local start_time = os.clock()
 
+  local db_path = uep_db.get_path()
   local new_details = {} 
   existing_header_details = existing_header_details or {}
-  local files_to_parse = {} 
   
+  -- header_files_with_ids: { [path] = module_id }
+  local header_files = vim.tbl_keys(header_files_with_ids)
   local total_header_file = #header_files
-  uep_log.debug("parse_headers_async (Rust Scanner): Starting check for %d files.", total_header_file)
+  
+  uep_log.debug("parse_headers_async (Rust Scanner): Starting check for %d files. DB: %s", total_header_file, db_path)
   progress:stage_define("header_analysis_detail", total_header_file)
 
   local BATCH_SIZE = 1000
   local current_idx = 1
+  local files_to_parse = {} 
   
   local function process_mtime_batch()
       local batch_end = math.min(current_idx + BATCH_SIZE - 1, total_header_file)
       for i = current_idx, batch_end do
           local file_path = header_files[i]
+          local mod_id = header_files_with_ids[file_path]
+          
           if i % 1000 == 0 then
              progress:stage_update("header_analysis_detail", i, ("Checking mtime: %s (%d/%d)..."):format(vim.fn.fnamemodify(file_path, ":t"), i, total_header_file))
           end
@@ -44,7 +51,9 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
                 table.insert(files_to_parse, {
                     path = file_path,
                     mtime = current_mtime,
-                    old_hash = (existing_entry and existing_entry.file_hash) or nil
+                    old_hash = (existing_entry and existing_entry.file_hash) or nil,
+                    module_id = mod_id,
+                    db_path = db_path
                 })
               end
           end
@@ -69,7 +78,8 @@ function M.parse_headers_async(existing_header_details, header_files, progress, 
                   new_details[res.path] = {
                       classes = res.data.classes,
                       file_hash = res.data.new_hash,
-                      mtime = res.mtime
+                      mtime = res.mtime,
+                      module_id = res.module_id -- Rustから戻ってきた値を保持
                   }
               end
               processed_count = processed_count + 1

@@ -95,7 +95,7 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
   PSEUDO_MODULES["_EnginePrograms"] = { name = "_EnginePrograms", root = fs.joinpath(engine_root, "Engine", "Source", "Programs"), type = "Program" }
   
   for comp_name_hash, comp_meta in pairs(all_components_map) do
-    if comp_meta.type == "Game" or comp_meta.type == "Plugin" then
+    if comp_meta.type == "Game" or comp_meta.type == "Plugin" or comp_meta.type == "Engine" then
       
       -- ▼▼▼ [ここから修正] ▼▼▼
       -- display_name が "xxx" で重複するのを防ぐため、
@@ -356,34 +356,97 @@ function M.create_module_caches_for(modules_to_refresh_meta, all_modules_meta_by
             function run_header_analysis_phase() 
               progress:stage_define("header_analysis", #all_found_files)
               
+              local unl_path = require("UNL.path")
               -- [高速化] 全モジュールのファイル状態(mtime)のみをロード
               local all_existing_file_states = {}
               local module_db_counts = {} -- [追加] モジュールごとのDBファイル数を記録
+              local module_id_map = {} -- [追加] 正規化モジュールルート -> module_id
 
+              local db = uep_db.get()
+              local function get_mod_id(name, root)
+                  local norm_root = unl_path.normalize(root)
+                  local rows = db:eval("SELECT id FROM modules WHERE name = ? AND root_path = ?", { name, norm_root })
+                  local id = (type(rows) == "table" and rows[1]) and rows[1].id or nil
+                  
+                  -- フォールバック: 大文字小文字を無視して検索
+                  if not id then
+                      local rows_case = db:eval("SELECT id FROM modules WHERE name = ? AND LOWER(root_path) = LOWER(?)", { name, norm_root })
+                      id = (type(rows_case) == "table" and rows_case[1]) and rows_case[1].id or nil
+                  end
+                  return id
+              end
+
+              -- [追加] 迷子ファイル用の '_Unknown' モジュールを確保
+              local unknown_mod_id = get_mod_id("_Unknown", game_root)
+              if not unknown_mod_id then
+                  db:eval("INSERT OR IGNORE INTO modules (name, type, scope, root_path) VALUES (?, ?, ?, ?)", 
+                          { "_Unknown", "Unknown", "Game", unl_path.normalize(game_root) })
+                  unknown_mod_id = get_mod_id("_Unknown", game_root)
+                  log.debug("[Unknown] Created _Unknown module with ID: %s", tostring(unknown_mod_id))
+              end
+
+              local normalized_real_roots = {}
               for path, mod_meta in pairs(all_modules_meta_by_path) do
                   local states = load_module_file_states(mod_meta)
-                  module_db_counts[path] = vim.tbl_count(states)
+                  local norm_path = unl_path.normalize(path)
+                  module_db_counts[norm_path] = vim.tbl_count(states)
+                  module_id_map[norm_path] = get_mod_id(mod_meta.name, mod_meta.module_root)
+                  table.insert(normalized_real_roots, norm_path)
                   for fp, s in pairs(states) do all_existing_file_states[fp] = s end
               end
+              
+              local normalized_pseudo_roots = {}
               for _, pseudo in pairs(PSEUDO_MODULES) do
                   local pseudo_meta = { name=pseudo.name, module_root=pseudo.root }
                   local states = load_module_file_states(pseudo_meta)
-                  module_db_counts[pseudo.root] = vim.tbl_count(states)
+                  local norm_path = unl_path.normalize(pseudo.root)
+                  module_db_counts[norm_path] = vim.tbl_count(states)
+                  module_id_map[norm_path] = get_mod_id(pseudo.name, pseudo.root)
+                  table.insert(normalized_pseudo_roots, norm_path)
                   for fp, s in pairs(states) do all_existing_file_states[fp] = s end
-              end              
+              end
               
-              local headers_to_parse = {}
-              -- ヘッダー集めも再走査が必要だが、files_by_path_key から集める法が効率的かも？
-              -- いや、all_found_filesからでいい
+              table.sort(normalized_real_roots, function(a,b) return #a > #b end)
+              table.sort(normalized_pseudo_roots, function(a,b) return #a > #b end)
+              
+              local headers_to_parse_with_ids = {}
+              local orphan_count = 0
               for _, file in ipairs(all_found_files) do
                 if file:match("%.h$") and not file:find("NoExportTypes.h", 1, true) then
-                  table.insert(headers_to_parse, file)
+                  -- ファイルが属するモジュールのIDを特定
+                  local assigned_mod_id = nil
+                  local file_norm = unl_path.normalize(file)
+                  for _, mod_root in ipairs(normalized_real_roots) do
+                    if file_norm:find(mod_root, 1, true) then
+                      assigned_mod_id = module_id_map[mod_root]
+                      break
+                    end
+                  end
+                  if not assigned_mod_id then
+                    for _, pseudo_root in ipairs(normalized_pseudo_roots) do
+                      if file_norm:find(pseudo_root, 1, true) then
+                        assigned_mod_id = module_id_map[pseudo_root]
+                        break
+                      end
+                    end
+                  end
+                  
+                  if not assigned_mod_id then
+                      orphan_count = orphan_count + 1
+                      assigned_mod_id = unknown_mod_id
+                  end
+                  headers_to_parse_with_ids[file] = assigned_mod_id
                 end
               end
               
-              log.debug("Identified %d header files to parse out of %d total files found.", #headers_to_parse, #all_found_files)
+              if orphan_count > 0 then
+                  log.info("%d headers assigned to _Unknown module.", orphan_count)
+              end
+              
+              log.debug("Identified %d header files to parse out of %d total files found.", vim.tbl_count(headers_to_parse_with_ids), #all_found_files)
 
-              class_parser.parse_headers_async(all_existing_file_states, headers_to_parse, progress, function(ok, header_details_by_file)
+
+              class_parser.parse_headers_async(all_existing_file_states, headers_to_parse_with_ids, progress, function(ok, header_details_by_file)
                 if not ok then log.error("Header parsing failed, aborting module cache save."); if on_done then on_done(false) end; return end
   
                 -- ▼▼▼ 非同期保存キューの構築 ▼▼▼

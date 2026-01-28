@@ -2,6 +2,7 @@
 local uep_db = require("UEP.db.init")
 local uep_log = require("UEP.logger")
 local fs = require("vim.fs")
+local unl_path = require("UNL.path")
 
 local M = {}
 
@@ -193,8 +194,8 @@ local function process_module_group(insert_fn, modules_map, group_type, scope)
       name = mod_name,
       type = group_type,
       scope = scope,
-      root_path = (mod_data.module_root or ""):gsub("\\", "/"),
-      build_cs_path = (mod_data.path or ""):gsub("\\", "/"),
+      root_path = unl_path.normalize(mod_data.module_root or ""),
+      build_cs_path = unl_path.normalize(mod_data.path or ""),
       deep_dependencies = deep_deps_json
     })
 
@@ -225,14 +226,15 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
   local success, err = pcall(function()
     uep_db.transaction(function(db, insert_fn_base)
       -- 1. モジュールID取得 / 更新 / 作成
-      local rows = db:eval("SELECT id FROM modules WHERE name = ? AND root_path = ?", { module_meta.name, module_meta.module_root })
+      local norm_module_root = unl_path.normalize(module_meta.module_root)
+      local rows = db:eval("SELECT id FROM modules WHERE name = ? AND root_path = ?", { module_meta.name, norm_module_root })
       local module_id = (type(rows) == "table" and rows[1]) and rows[1].id or nil
 
       if module_id then
         db:eval([[UPDATE modules SET type = ?, scope = ?, build_cs_path = ?, owner_name = ?, component_name = ?, deep_dependencies = ? WHERE id = ?]], {
           module_meta.type or "Runtime",
           module_meta.scope or "Individual",
-          (module_meta.path or ""):gsub("\\", "/"),
+          unl_path.normalize(module_meta.path or ""),
           module_meta.owner_name,
           module_meta.component_name,
           module_meta.deep_dependencies and vim.json.encode(module_meta.deep_dependencies) or nil,
@@ -243,8 +245,8 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
           name = module_meta.name,
           type = module_meta.type or "Runtime",
           scope = module_meta.scope or "Individual",
-          root_path = (module_meta.module_root or ""):gsub("\\", "/"),
-          build_cs_path = (module_meta.path or ""):gsub("\\", "/"),
+          root_path = norm_module_root,
+          build_cs_path = unl_path.normalize(module_meta.path or ""),
           owner_name = module_meta.owner_name,
           component_name = module_meta.component_name,
           deep_dependencies = module_meta.deep_dependencies and vim.json.encode(module_meta.deep_dependencies) or nil
@@ -285,7 +287,15 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
             for _, file_path in ipairs(file_list) do
               if file_path and not current_scan_paths[file_path] then
                 current_scan_paths[file_path] = true
-                if not db_files_map[file_path] then
+                
+                -- [変更] Rustスキャナによって既にDB登録されているヘッダーファイルはスキップする
+                local is_processed_by_rust = (header_details and header_details[file_path] ~= nil)
+                
+                if is_processed_by_rust then
+                    -- RustがDBに直接書き込んでいるため、Lua側では何もしない
+                    uep_log.get().trace("[UEP.db] Skipping Lua-side insert for Rust-processed file: %s", file_path)
+                elseif not db_files_map[file_path] then
+                   -- 新規ファイル（かつRust未処理）の場合
                    local status, res = pcall(insert_file_and_classes, insert_fn_base, module_id, file_path, header_details)
                    if not status then
                        local owner_rows = db:eval("SELECT id FROM files WHERE path = ?", { file_path })
@@ -297,12 +307,10 @@ function M.save_module_files(module_meta, files_data, header_details, directorie
                        end
                    end
                 else
-                   if header_details and header_details[file_path] then
-                       local fid = db_files_map[file_path]
-                       db:eval("DELETE FROM classes WHERE file_id = ?", { fid })
-                       db:eval("DELETE FROM files WHERE id = ?", { fid })
-                       insert_file_and_classes(insert_fn_base, module_id, file_path, header_details)
-                   end
+                   -- 既存ファイルで、かつRust未処理の場合（.cppのmtime変更など）
+                   -- 本来は .cpp も Rust で処理すべきだが、現状はヘッダーのみ。
+                   -- ヘッダー以外で内容変更を検知する仕組みがLua側にないので、
+                   -- 必要であればここで mtime チェックなどを行う
                 end
               end
             end

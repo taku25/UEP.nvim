@@ -655,6 +655,13 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
     -- (モジュールキャッシュスキャン実行 ... 変更なし)
     if modules_to_scan_count > 0 or (refresh_opts.bang or refresh_opts.force) then
       log.debug("Starting file scan for %d module(s) (and component roots)...", modules_to_scan_count)
+      
+      -- [追加] ヘッダー解析(Rust)の前に、モジュール構造をDBに保存して ID を確定させる
+      if #result_data.changed_components > 0 then
+        log.debug("Pre-saving %d changed component(s) to establish module IDs...", #result_data.changed_components)
+        db_writer.save_project_scan(result_data.all_data)
+      end
+
       refresh_modules_core.create_module_caches_for(
         modules_to_scan_meta,
         all_modules_meta_map_by_path,
@@ -664,11 +671,10 @@ function M.update_project_structure(refresh_opts, uproject_path, progress, on_do
         function(files_ok)
             if not files_ok then log.error("Module file cache generation failed.") end
             
-            -- SQLiteに変更されたコンポーネントのデータを一括保存
+            -- 解析後の最終保存 (mtime等の更新用)
             if #result_data.changed_components > 0 then
-              log.debug("Saving %d changed component(s) to SQLite database...", #result_data.changed_components)
+              log.debug("Final saving of component data...")
               db_writer.save_project_scan(result_data.all_data)
-              log.debug("SQLite database update completed.")
             end
             
             on_done(files_ok, result_data) 

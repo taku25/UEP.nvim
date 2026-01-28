@@ -117,6 +117,14 @@ M.setup = function()
       impl = members_provider,
     })
 
+    -- ★追加: 検索プロバイダー (補完用)
+    local search_provider = require("UEP.provider.search")
+    unl_api.provider.register({
+      capability = "uep.search_symbols",
+      name = "UEP.nvim",
+      impl = search_provider,
+    })
+
     local uep_logger = require("UEP.logger").get()
     if uep_logger then
       uep_logger.info("Registered UEP providers to UNL.nvim.")
