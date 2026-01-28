@@ -150,16 +150,45 @@ local function on_change(err, filename, events, watched_dir)
             if change_count <= BULK_UPDATE_THRESHOLD then
                  uep_log.get().info("Auto-refreshing %d file(s) in module: %s", change_count, module_name)
                  
-                 local completed = 0
-                 for _, fpath in ipairs(changed_files) do
-                     refresh_modules.update_single_file_cache(module_name, fpath, function(ok)
-                         completed = completed + 1
-                         if completed >= change_count then
-                             processing_modules[module_name] = nil
-                             uep_log.get().info("Auto-refresh (single-file mode) completed for module: %s", module_name)
-                         end
-                     end)
+                 -- [最適化] ループで個別に呼ぶのではなく、まとめてリクエストを作る
+                 local unl_scanner = require("UNL.scanner")
+                 local db_path = uep_db.get_path()
+                 local db = uep_db.get()
+                 local rows = db:eval("SELECT id FROM modules WHERE name = ? LIMIT 1", { module_name })
+                 local module_id = (type(rows) == "table" and rows[1]) and rows[1].id or nil
+
+                 if not module_id then
+                     uep_log.get().warn("Module ID not found for '%s', skipping auto-refresh.", module_name)
+                     processing_modules[module_name] = nil
+                     return
                  end
+
+                 local files = {}
+                 for _, fpath in ipairs(changed_files) do
+                     local mtime = vim.fn.getftime(fpath)
+                     if mtime == -1 then mtime = 0 end
+                     
+                     table.insert(files, {
+                         path = fpath:gsub("\\", "/"),
+                         mtime = math.floor(mtime),
+                         module_id = math.floor(module_id),
+                         db_path = db_path:gsub("\\", "/"),
+                     })
+                 end
+
+                 local payload = {
+                     type = "scan",
+                     files = files
+                 }
+
+                 unl_scanner.run_async(payload, nil, function(success)
+                     processing_modules[module_name] = nil
+                     if success then
+                         uep_log.get().info("Auto-refresh completed for %d file(s) in module: %s", #files, module_name)
+                     else
+                         uep_log.get().error("Auto-refresh failed for module: %s", module_name)
+                     end
+                 end)
             else
                  uep_log.get().info("Auto-refreshing module (bulk mode): %s (%d files changed)", module_name, change_count)
                  refresh_modules.update_single_module_cache(module_name, function(ok) 
