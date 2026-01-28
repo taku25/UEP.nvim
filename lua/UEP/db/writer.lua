@@ -88,9 +88,9 @@ local function insert_file_and_classes(insert_fn, module_id, file_path, header_d
                     local db_conn = uep_db.get()
                     local class_id = nil
           
-                    -- 既存のクラスがあるか確認
-                    local q_check = "SELECT id FROM classes WHERE name = ? AND symbol_type = ?"
-                    local p_check = { class_name, sym_type }
+                    -- 既存のクラスがあるか確認 (ファイルごとに一意)
+                    local q_check = "SELECT id FROM classes WHERE name = ? AND symbol_type = ? AND file_id = ?"
+                    local p_check = { class_name, sym_type, file_id }
                     if namespace then
                         q_check = q_check .. " AND namespace = ?"
                         table.insert(p_check, namespace)

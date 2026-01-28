@@ -298,6 +298,17 @@ function M.find_class_by_name(db, class_name)
   return nil
 end
 
+-- クラス名で前方一致検索 (補完用)
+function M.search_classes_prefix(db, prefix, limit)
+  local sql = [[
+    SELECT name, symbol_type 
+    FROM classes 
+    WHERE name LIKE ? 
+    LIMIT ?
+  ]]
+  return db:eval(sql, { prefix .. "%", limit or 50 })
+end
+
 -- 全てのクラスを取得
 function M.get_classes(db, extra_where, params)
   local sql = [[
@@ -346,6 +357,17 @@ function M.get_structs_only(db)
   return db:eval(sql)
 end
 
+-- クラスのメンバー（関数・変数）を取得 (ID指定版)
+function M.get_class_members_by_id(db, class_id)
+  local sql = [[
+    SELECT m.name, m.type, m.flags, m.access, m.detail, m.return_type, m.is_static
+    FROM members m
+    WHERE m.class_id = ?
+    ORDER BY m.type, m.name
+  ]]
+  return db:eval(sql, { class_id })
+end
+
 -- クラスのメンバー（関数・変数）を取得
 function M.get_class_members(db, class_name)
   local sql = [[
@@ -382,29 +404,58 @@ function M.get_class_properties(db, class_name)
   return db:eval(sql, { class_name })
 end
 
--- 再帰的に継承元のメンバーも含めて取得 (Luaループ版)
-function M.get_class_members_recursive(db, class_name)
+function M.get_class_members_recursive(db, class_name, current_namespace)
   local result_members = {}
   local visited = {}
   local queue = { class_name }
 
   while #queue > 0 do
     local current_name = table.remove(queue, 1)
-    if not visited[current_name] then
-      visited[current_name] = true
+    
+    -- 名前空間付きの名前 (A::B) を処理
+    local search_name = current_name
+    local search_ns = current_namespace
+    if current_name:find("::") then
+        search_ns = current_name:match("^(.*)::[^:]+$")
+        search_name = current_name:match("::([^:]+)$")
+    end
+
+    local visited_key = (search_ns or "") .. "::" .. search_name
+    if not visited[visited_key] then
+      visited[visited_key] = true
       
-      -- クラスID取得 (UCLASSやUSTRUCTを優先)
+      -- クラスID取得 (優先順位: 1.ネームスペース一致, 2.Core/Engine, 3.グローバル)
       local rows = db:eval([[
-        SELECT id, symbol_type FROM classes 
-        WHERE name = ? 
-        ORDER BY (CASE WHEN symbol_type = 'UCLASS' THEN 0 WHEN symbol_type = 'USTRUCT' THEN 1 ELSE 2 END) ASC
-      ]], { current_name })
+        SELECT c.id, c.symbol_type 
+        FROM classes c
+        JOIN files f ON c.file_id = f.id
+        WHERE c.name = ? 
+        ORDER BY 
+          (CASE 
+            WHEN c.namespace = ? THEN 0 
+            WHEN f.path LIKE '%/Runtime/Core/%' THEN 1
+            WHEN f.path LIKE '%/Runtime/Engine/%' THEN 2
+            WHEN c.namespace IS NULL OR c.namespace = '' THEN 3
+            ELSE 4 END) ASC,
+          (CASE WHEN c.symbol_type = 'UCLASS' THEN 0 WHEN c.symbol_type = 'USTRUCT' THEN 1 ELSE 2 END) ASC
+      ]], { search_name, search_ns or "" })
+      
       if type(rows) == "table" and rows[1] then
         local class_id = rows[1].id
 
+        -- メンバー取得 (IDで厳密に指定)
+        local members = M.get_class_members_by_id(db, class_id)
+        if type(members) == "table" then
           for _, m in ipairs(members) do
-            m.class_name = current_name
-            table.insert(result_members, m)
+            -- 重複回避
+            local is_dup = false
+            for _, existing in ipairs(result_members) do
+                if existing.name == m.name then is_dup = true break end
+            end
+            if not is_dup then
+                m.class_name = search_name
+                table.insert(result_members, m)
+            end
           end
         end
         
@@ -417,13 +468,13 @@ function M.get_class_members_recursive(db, class_name)
           for _, e in ipairs(enums) do
             table.insert(result_members, {
               name = e.name, type = 'enum_item', flags = '', detail = '', 
-              return_type = '', is_static = 0, access = 'public', class_name = current_name
+              return_type = '', is_static = 0, access = 'public', class_name = search_name
             })
           end
         end
         
-        -- 親クラス取得 (inheritanceテーブルから)
-        local parents = db:eval("SELECT parent_name FROM inheritance WHERE child_id = ?", { class_id })
+        -- 親クラス取得 (自分自身へのループ防止)
+        local parents = db:eval("SELECT parent_name FROM inheritance WHERE child_id = ? AND parent_name != ?", { class_id, search_name })
         if type(parents) == "table" then
           for _, p in ipairs(parents) do
             table.insert(queue, p.parent_name)

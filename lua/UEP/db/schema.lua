@@ -123,8 +123,9 @@ function M.ensure_tables(db)
   -- namespace カラムを追加
   ensure_column(db, "classes", "namespace", "namespace TEXT")
   
-  -- 重複防止のためのユニーク制約を追加
-  db:eval("CREATE UNIQUE INDEX IF NOT EXISTS idx_classes_unique_name_type ON classes(name, symbol_type, namespace)")
+  -- 重複防止のためのユニーク制約を追加 (file_id を含めることで、複数ファイルでの定義を許可する)
+  db:eval("DROP INDEX IF EXISTS idx_classes_unique_name_type")
+  db:eval("CREATE UNIQUE INDEX IF NOT EXISTS idx_classes_unique_name_file ON classes(name, symbol_type, namespace, file_id)")
 
   -- 4. Members Table (NEW)
   -- クラス/構造体のメンバー（関数、変数、プロパティ）を格納
