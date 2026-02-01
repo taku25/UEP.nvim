@@ -1,0 +1,53 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+using UnrealBuildTool;
+
+public class <ModuleName> : ModuleRules
+{
+<tab>public <ModuleName>(ReadOnlyTargetRules Target) : base(Target)
+<tab>{
+<tab><tab>PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+<tab><tab>
+<tab><tab>PublicIncludePaths.AddRange(
+<tab><tab><tab>new string[] {
+<tab><tab><tab><tab>// ... add public include paths required here ...
+<tab><tab><tab>}
+<tab><tab><tab>);
+<tab><tab><tab><tab>
+<tab><tab>
+<tab><tab>PrivateIncludePaths.AddRange(
+<tab><tab><tab>new string[] {
+<tab><tab><tab><tab>// ... add other private include paths required here ...
+<tab><tab><tab>}
+<tab><tab><tab>);
+<tab><tab><tab>
+<tab><tab>
+<tab><tab>PublicDependencyModuleNames.AddRange(
+<tab><tab><tab>new string[]
+<tab><tab><tab>{
+<tab><tab><tab><tab>"Core",
+<tab><tab><tab><tab>// ... add other public dependencies that you statically link with here ...
+<tab><tab><tab>}
+<tab><tab><tab>);
+<tab><tab><tab>
+<tab><tab>
+<tab><tab>PrivateDependencyModuleNames.AddRange(
+<tab><tab><tab>new string[]
+<tab><tab><tab>{
+<tab><tab><tab><tab>"CoreUObject",
+<tab><tab><tab><tab>"Engine",
+<tab><tab><tab><tab>"Slate",
+<tab><tab><tab><tab>"SlateCore",
+<tab><tab><tab><tab>// ... add private dependencies that you statically link with here ...<tab>
+<tab><tab><tab>}
+<tab><tab><tab>);
+<tab><tab>
+<tab><tab>
+<tab><tab>DynamicallyLoadedModuleNames.AddRange(
+<tab><tab><tab>new string[]
+<tab><tab><tab>{
+<tab><tab><tab><tab>// ... add any modules that your module loads dynamically here ...
+<tab><tab><tab>}
+<tab><tab><tab>);
+<tab>}
+}

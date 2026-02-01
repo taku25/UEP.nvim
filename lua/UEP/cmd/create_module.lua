@@ -1,34 +1,253 @@
 local log = require("UEP.logger")
+local db = require("UEP.db.init").get()
+local db_query = require("UEP.db.query")
+local unl_picker = require("UNL.backend.picker")
+local unl_checker_picker = require("UNL.backend.checker_picker")
+local uep_finder = require("UNL.finder.project")
+local target_parser = require("UEP.parser.target")
+local uproject_parser = require("UEP.parser.uproject")
 
 local M = {}
 
 function M.execute(opts)
   opts = opts or {}
 
-  local function handle_module_path(module_path)
-    local sanitized_input = module_path:gsub("\\", "/")
-    local module_name = vim.fs.basename(sanitized_input)
-    local subdir_path = vim.fs.dirname(sanitized_input)
-    if vim.fn.isdirectory(subdir_path) ~= 0 then
-      vim.print(module_name)
-      vim.print(subdir_path)
+  local function prepare_items(items)
+    local ret = {}
+    for _, item in ipairs(items) do
+      table.insert(ret, {
+        value = item,
+        display = item,
+        text = item,
+      })
+    end
+    return ret
+  end
+
+  local find_and_edit_uproject = function(module_path, module_opts)
+    local project_root = uep_finder.find_project_root(vim.loop.cwd())
+    if project_root == nil then
+      vim.notify("Could not find root of the UE project", "error")
+      return
+    end
+    for dir in vim.fs.parents(module_path) do
+      for name, type in vim.fs.dir(dir) do
+        if
+          type == "file" and (name:sub(-#".uproject") == ".uproject" or name:sub(-#".uplugin") == ".uplugin")
+        then
+          uproject_parser.add_module(vim.fs.joinpath(dir, name), module_opts)
+          return
+        end
+      end
+      if dir == project_root then
+        return
+      end
+    end
+  end
+
+  local create_module = function(module_opts)
+    local project_root = uep_finder.find_project_root(vim.loop.cwd())
+    if project_root == nil then
+      vim.notify("Could not find root of the UE project", "error")
+      return
+    end
+    for _, target in ipairs(module_opts.targets) do
+      target_parser.add_module(vim.fs.joinpath(project_root, target), module_opts)
+    end
+    vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name), "p")
+    vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Public"), "p")
+    vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Private"), "p")
+    local plugin_dir =
+      vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(string.sub(debug.getinfo(1).source, 2, -1)))))
+    local tab
+    if vim.opt.expandtab._value then
+      tab = string.rep(" ", vim.opt.tabstop._value)
     else
-      vim.notify("Folder " .. subdir_path .. "does not exist.", "error")
+      tab = "\t"
+    end
+    local lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.h.template"))
+    local lines_sub = {}
+    for _, line in ipairs(lines) do
+      local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
+      table.insert(lines_sub, line_sub)
+    end
+    vim.fn.writefile(
+      lines_sub,
+      vim.fs.joinpath(
+        project_root,
+        module_opts.subdir_path,
+        module_opts.module_name,
+        "Public",
+        module_opts.module_name .. ".h"
+      )
+    )
+    lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.cpp.template"))
+    lines_sub = {}
+    for _, line in ipairs(lines) do
+      local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
+      table.insert(lines_sub, line_sub)
+    end
+    vim.fn.writefile(
+      lines_sub,
+      vim.fs.joinpath(
+        project_root,
+        module_opts.subdir_path,
+        module_opts.module_name,
+        "Private",
+        module_opts.module_name .. ".cpp"
+      )
+    )
+    lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Build.cs.template"))
+    lines_sub = {}
+    for _, line in ipairs(lines) do
+      local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
+      table.insert(lines_sub, line_sub)
+    end
+    vim.fn.writefile(
+      lines_sub,
+      vim.fs.joinpath(
+        project_root,
+        module_opts.subdir_path,
+        module_opts.module_name,
+        module_opts.module_name .. ".Build.cs"
+      )
+    )
+    find_and_edit_uproject(
+      vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name),
+      module_opts
+    )
+  end
+
+  local function handle_targets(targets_opts)
+    local project_root = uep_finder.find_project_root(vim.loop.cwd())
+    if project_root == nil then
+      vim.notify("Could not find root of the UE project", "error")
+      return
+    end
+    local targets = {}
+    local is_uproject = nil
+    for dir in vim.fs.parents(vim.fs.joinpath(project_root, targets_opts.subdir_path, targets_opts.module_name)) do
+      for name, type in vim.fs.dir(dir) do
+        if type == "file" and name:sub(-#".Target.cs") == ".Target.cs" then
+          table.insert(targets, vim.fs.relpath(project_root, vim.fs.joinpath(dir, name)))
+        elseif is_uproject == nil and type == "file" and name:sub(-#".uproject") == ".uproject" then
+          is_uproject = true
+        elseif is_uproject == nil and type == "file" and name:sub(-#".uplugin") == ".uplugin" then
+          is_uproject = false
+        end
+      end
+      if dir == project_root then
+        break
+      end
+    end
+    if is_uproject == nil then
+      vim.notify("Could not find a 'uproject' or 'uplugin'. Aborting.", "error")
+      return
+    elseif is_uproject then
+      unl_checker_picker.pick({
+        kind = "loading_phase_picker",
+        title = "  Loading Phase",
+        conf = require("UNL.config").get("UEP"),
+        items = prepare_items(targets),
+        logger_name = "UEP",
+        preview_enabled = false,
+        default_check = true,
+        on_submit = function(selected)
+          targets_opts.targets = selected
+          create_module(targets_opts)
+        end,
+      })
+    else
+      targets_opts.targets = {}
+      create_module(targets_opts)
+    end
+  end
+
+  local function handle_loading_phase(loading_phase_opts)
+    local l_loading_phase = db_query.get_enum_values(db, "ELoadingPhase::Type")
+    if loading_phase_opts.loading_phase then
+      local valid_loading_phase = false
+      for _, i_path in ipairs(l_loading_phase) do
+        if i_path == loading_phase_opts.loading_phase then
+          valid_loading_phase = true
+          break
+        end
+      end
+      if valid_loading_phase then
+        handle_targets(loading_phase_opts)
+      else
+        vim.notify(loading_phase_opts.loading_phase .. " is not a valid Loading Phase.", "error")
+      end
+    else
+      unl_picker.pick({
+        kind = "loading_phase_picker",
+        title = "  Loading Phase",
+        conf = require("UNL.config").get("UEP"),
+        items = prepare_items(l_loading_phase),
+        logger_name = "UEP",
+        preview_enabled = false,
+        on_submit = function(selected)
+          if selected then
+            loading_phase_opts.loading_phase = selected
+            handle_targets(loading_phase_opts)
+          end
+        end,
+      })
+    end
+  end
+
+  local function handle_module_path(module_path_opts)
+    local sanitized_input = module_path_opts.module_path:gsub("\\", "/"):gsub("(.-)[/\\]*$", "%1")
+    module_path_opts.module_name = vim.fs.basename(sanitized_input)
+    module_path_opts.subdir_path = vim.fs.dirname(sanitized_input)
+    if vim.fn.isdirectory(module_path_opts.subdir_path) ~= 0 then
+      local l_module_types = db_query.get_enum_values(db, "EHostType::Type")
+      if module_path_opts.module_type then
+        local valid_module_type = false
+        for _, i_path in ipairs(l_module_types) do
+          if i_path == module_path_opts.module_type then
+            valid_module_type = true
+            break
+          end
+        end
+        if valid_module_type then
+          handle_loading_phase(module_path_opts)
+        else
+          vim.notify(module_path_opts.module_type .. " is not a valid module type.", "error")
+        end
+      else
+        unl_picker.pick({
+          kind = "module_type_picker",
+          title = "  Module Type",
+          conf = require("UNL.config").get("UEP"),
+          items = prepare_items(l_module_types),
+          logger_name = "UEP",
+          preview_enabled = false,
+          on_submit = function(selected)
+            if selected then
+              module_path_opts.module_type = selected
+              handle_loading_phase(module_path_opts)
+            end
+          end,
+        })
+      end
+    else
+      vim.notify("Folder " .. module_path_opts.subdir_path .. " does not exist.", "error")
     end
   end
 
   if opts.module_path then
-    handle_module_path(opts.module_path)
+    handle_module_path(opts)
   else
     local function ask_for_module_name_and_path()
       vim.ui.input({
-        prompt = "Enter Module Name (e.g., MyModule or path/to/MyModule):",
+        prompt = "Enter Module Name (e.g., path/to/MyModule):",
         completion = "dir",
       }, function(user_input)
         if not user_input or user_input == "" then
           return log.get().info("Module creation canceled.")
         end
-        handle_module_path(user_input)
+        handle_module_path({ module_path = user_input })
       end)
     end
     ask_for_module_name_and_path()

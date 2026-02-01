@@ -301,6 +301,8 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Create a new class, interactively if args are omitted.",
       args = {
         { name = "module_path", required = false },
+        { name = "module_type", required = false },
+        { name = "loading_phase", required = false },
       },
     },
   }, -- <<< subcommands テーブルを閉じる '}'
