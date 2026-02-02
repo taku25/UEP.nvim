@@ -2,13 +2,13 @@
 
 local core_utils = require("UEP.cmd.core.utils")
 local uep_log = require("UEP.logger")
-local uep_db = require("UEP.db.init")
-local db_query = require("UEP.db.query")
+local remote = require("UNL.db.remote")
 
 local M = {}
 
 -- Helper: Determine target modules based on scope and dependencies
 local function get_target_modules(opts, on_complete)
+-- ... (no changes to get_target_modules logic as it uses core_utils.get_project_maps which is now async)
   local log = uep_log.get()
   opts = opts or {}
   local requested_scope = opts.scope or "runtime"
@@ -121,46 +121,77 @@ function M.get_all_classes(opts, on_complete)
       return
     end
 
-    local db = uep_db.get()
-    if not db then
-        log.error("derived.get_all_classes: DB not available.")
-        if on_complete then on_complete(nil) end
-        return
-    end
-
     local target_module_list = vim.tbl_keys(target_module_names)
-    log.debug("derived: Querying DB for classes in %d modules...", #target_module_list)
+    local symbol_type = opts.symbol_type -- "class", "struct", or "enum" (optional)
+    log.debug("derived: Querying RPC for classes in %d modules (type=%s)...", #target_module_list, tostring(symbol_type))
     
-    local raw_classes = db_query.get_classes_in_modules(db, target_module_list)
-    
-    local all_symbols = {}
-    for _, row in ipairs(raw_classes) do
-        -- 表示用の名前をクリーンアップ (Telescopeエラー防止)
-        -- <...> の中身を削除し、* やスペースなども除去
-        local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
+    remote.get_classes_in_modules(target_module_list, symbol_type, function(raw_classes, err)
+        if err then
+            log.error("derived.get_all_classes: RPC error: %s", tostring(err))
+            if on_complete then on_complete(nil) end
+            return
+        end
 
-        table.insert(all_symbols, {
-            display = display_name,
-            class_name = row.class_name,
-            base_class = row.base_class,
-            file_path = row.file_path,
-            path = row.file_path,
-            lnum = row.line_number or 1,
-            filename = row.file_path,
-            symbol_type = row.symbol_type
-        })
-    end
+        local all_symbols = {}
+        for _, row in ipairs(raw_classes or {}) do
+            if row.i then
+                -- Super-Optimized Grouped format (p=path, i=items[[name, line, type, base], ...])
+                local path = row.p
+                for _, item in ipairs(row.i) do
+                     local name = item[1]
+                     local display_name = name:gsub("<.*>", ""):gsub("[*().%s]", "")
+                     table.insert(all_symbols, {
+                         display = display_name,
+                         class_name = name,
+                         base_class = item[4],
+                         file_path = path,
+                         path = path,
+                         lnum = item[2] or 1,
+                         filename = path,
+                         symbol_type = item[3]
+                     })
+                end
+            elseif type(row) == "table" and #row >= 4 then
+                -- Flat Array format [name, line, path, type, base]
+                local name = row[1]
+                local display_name = name:gsub("<.*>", ""):gsub("[*().%s]", "")
+                table.insert(all_symbols, {
+                    display = display_name,
+                    class_name = name,
+                    base_class = row[5],
+                    file_path = row[3],
+                    path = row[3],
+                    lnum = row[2] or 1,
+                    filename = row[3],
+                    symbol_type = row[4]
+                })
+            else
+                -- Legacy Flat format
+                local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
+                table.insert(all_symbols, {
+                    display = display_name,
+                    class_name = row.class_name,
+                    base_class = row.base_class,
+                    file_path = row.file_path,
+                    path = row.file_path,
+                    lnum = row.line_number or 1,
+                    filename = row.file_path,
+                    symbol_type = row.symbol_type
+                })
+            end
+        end
 
-    local end_time = os.clock()
-    log.info("derived.get_all_classes finished in %.4f seconds. Found %d symbols.", end_time - start_time, #all_symbols)
+        local end_time = os.clock()
+        log.info("derived.get_all_classes finished in %.4f seconds. Found %d symbols.", end_time - start_time, #all_symbols)
 
-    table.sort(all_symbols, function(a, b) return (a.class_name or "") < (b.class_name or "") end)
-    if on_complete then on_complete(all_symbols) end
+        -- Skip sorting if already sorted by server (implied by MsgPack version)
+        if on_complete then on_complete(all_symbols) end
+    end)
   end)
 end
 
 ---
--- Get derived classes recursively using DB CTE
+-- Get derived classes recursively using RPC
 function M.get_derived_classes(base_class_name, opts, on_complete)
   local log = uep_log.get()
   
@@ -170,50 +201,38 @@ function M.get_derived_classes(base_class_name, opts, on_complete)
       return
     end
 
-    local db = uep_db.get()
-    if not db then
-        if on_complete then on_complete(nil) end
-        return
-    end
+    remote.get_recursive_derived_classes(base_class_name, function(raw_derived, err)
+        if err then
+            log.error("derived.get_derived_classes: RPC error: %s", tostring(err))
+            if on_complete then on_complete(nil) end
+            return
+        end
 
-    -- Use recursive SQL query
-    local raw_derived = db_query.get_recursive_derived_classes(db, base_class_name)
-    
-    -- sqlite.lua fix: Handle boolean return (true = success but no rows?)
-    if type(raw_derived) == "boolean" then
-        raw_derived = {}
-    end
+        local filtered_symbols = {}
+        for _, row in ipairs(raw_derived or {}) do
+          if target_module_names[row.module_name] then
+            local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
+            table.insert(filtered_symbols, {
+                display = display_name,
+                class_name = row.class_name,
+                base_class = row.base_class,
+                file_path = row.file_path,
+                path = row.file_path,
+                lnum = row.line_number or 1,
+                filename = row.file_path,
+                symbol_type = row.symbol_type
+            })
+          end
+        end
 
-    if not raw_derived then
-      if on_complete then on_complete({}) end
-      return
-    end
-
-    -- Filter by module scope in Lua
-    local filtered_symbols = {}
-    for _, row in ipairs(raw_derived) do
-      if target_module_names[row.module_name] then
-        local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
-        table.insert(filtered_symbols, {
-            display = display_name,
-            class_name = row.class_name,
-            base_class = row.base_class,
-            file_path = row.file_path,
-            path = row.file_path,
-            lnum = row.line_number or 1,
-            filename = row.file_path,
-            symbol_type = row.symbol_type
-        })
-      end
-    end
-
-    table.sort(filtered_symbols, function(a, b) return (a.class_name or "") < (b.class_name or "") end)
-    if on_complete then on_complete(filtered_symbols) end
+        table.sort(filtered_symbols, function(a, b) return (a.class_name or "") < (b.class_name or "") end)
+        if on_complete then on_complete(filtered_symbols) end
+    end)
   end)
 end
 
 ---
--- Get inheritance chain recursively using DB CTE
+-- Get inheritance chain recursively using RPC
 function M.get_inheritance_chain(child_symbol_name, opts, on_complete)
   local log = uep_log.get()
   
@@ -223,43 +242,32 @@ function M.get_inheritance_chain(child_symbol_name, opts, on_complete)
       return
     end
 
-    local db = uep_db.get()
-    if not db then
-        if on_complete then on_complete(nil) end
-        return
-    end
+    remote.get_recursive_parent_classes(child_symbol_name, function(raw_chain, err)
+        if err then
+            log.error("derived.get_inheritance_chain: RPC error: %s", tostring(err))
+            if on_complete then on_complete(nil) end
+            return
+        end
 
-    local raw_chain = db_query.get_recursive_parent_classes(db, child_symbol_name)
-    
-    -- sqlite.lua fix: Handle boolean return
-    if type(raw_chain) == "boolean" then
-        raw_chain = {}
-    end
+        local filtered_chain = {}
+        for _, row in ipairs(raw_chain or {}) do
+          if target_module_names[row.module_name] then
+            local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
+            table.insert(filtered_chain, {
+                display = display_name,
+                class_name = row.class_name,
+                base_class = row.base_class,
+                file_path = row.file_path,
+                path = row.file_path,
+                lnum = row.line_number or 1,
+                filename = row.file_path,
+                symbol_type = row.symbol_type
+            })
+          end
+        end
 
-    if not raw_chain then
-      if on_complete then on_complete({}) end
-      return
-    end
-
-    local filtered_chain = {}
-    for _, row in ipairs(raw_chain) do
-      if target_module_names[row.module_name] then
-        local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
-        table.insert(filtered_chain, {
-            display = display_name,
-            class_name = row.class_name,
-            base_class = row.base_class,
-            file_path = row.file_path,
-            path = row.file_path,
-            lnum = row.line_number or 1,
-            filename = row.file_path,
-            symbol_type = row.symbol_type
-        })
-      end
-    end
-
-    -- Note: raw_chain is already ordered by level (distance from child)
-    if on_complete then on_complete(filtered_chain) end
+        if on_complete then on_complete(filtered_chain) end
+    end)
   end)
 end
 

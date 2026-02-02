@@ -10,12 +10,12 @@ local core_utils = require("UEP.cmd.core.utils")
 
 local M = {}
 
--- (is_generating_nodeps 等のキャッシュ生成フラグ ... 変更なし)
-local is_generating_nodeps = false -- --no-deps 用 (スコープ別にする必要あり？ -> 後で検討)
-local is_generating_shallowdeps = false -- --shallow-deps 用
-local is_generating_deepdeps = false -- --deep-deps 用
+-- キャッシュ生成フラグ
+local is_generating_nodeps = false
+local is_generating_shallowdeps = false
+local is_generating_deepdeps = false
 
--- ▼▼▼ キャッシュパス/コンテキストキー生成関数を修正 ▼▼▼
+-- パス正規化とコンテキストキー生成
 local function get_context_key(scope, deps_flag, mode)
   local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
   if not project_root then return nil end
@@ -29,26 +29,48 @@ local function get_context_key(scope, deps_flag, mode)
 
   return "files_picker_cache::" .. project_root .. "::" .. scope_suffix .. mode_suffix .. "::" .. deps_suffix
 end
--- ▲▲▲ キャッシュパス/コンテキストキー修正ここまで ▲▲▲
 
+-- 引数パース用ヘルパー
+local function parse_args(args)
+  local scope = "runtime"
+  local mode = nil
+  local deps_flag = "--deep-deps"
+  local filters = {}
 
--- ★追加: 全てのピッカーキャッシュを削除する関数 (hub.luaから呼ばれる)
+  local valid_scopes = { game=true, engine=true, runtime=true, developer=true, editor=true, full=true }
+  local valid_modes = { source=true, config=true, programs=true, shader=true, target_cs=true, build_cs=true }
+  local valid_deps = { ["--deep-deps"]=true, ["--shallow-deps"]=true, ["--no-deps"]=true }
+
+  for _, arg in ipairs(args) do
+    local lower = arg:lower()
+    if valid_scopes[lower] then
+      scope = lower
+    elseif valid_modes[lower] then
+      mode = lower
+    elseif valid_deps[lower] then
+      deps_flag = lower
+    else
+      -- フィルタ文字列として蓄積
+      table.insert(filters, arg)
+    end
+  end
+  return scope, mode, deps_flag, table.concat(filters, " ")
+end
+
+-- 全ピッカーキャッシュを削除する関数
 function M.delete_all_picker_caches()
   local log = uep_log.get()
   local project_root = unl_finder.project.find_project_root(vim.loop.cwd())
   if not project_root then return end
 
-  -- コンテキストキーのプレフィックスで検索して削除
   local scopes = { "runtime", "game", "engine", "developer", "editor", "full" }
   local modes = { "source", "config", "programs", "shader", "target_cs", "build_cs" }
   local deps = { "--deep-deps", "--shallow-deps", "--no-deps" }
 
   for _, s in ipairs(scopes) do
     for _, d in ipairs(deps) do
-      -- モードなし
       local key = get_context_key(s, d, nil)
       if key then uep_context.set(key, nil) end
-      -- モードあり
       for _, m in ipairs(modes) do
         local key_mode = get_context_key(s, d, m)
         if key_mode then uep_context.set(key_mode, nil) end
@@ -58,47 +80,42 @@ function M.delete_all_picker_caches()
   log.debug("All file picker caches cleared.")
 end
 
--- (show_picker, load_cache_from_file は引数に scope を追加)
-local function show_picker(scope, deps_flag, mode)
+local function show_picker(scope, deps_flag, mode, items_override)
   local log = uep_log.get()
   local context_key = get_context_key(scope, deps_flag, mode)
   if not context_key then return log.error("Could not determine context key for picker.") end
 
-  local picker_items = uep_context.get(context_key)
+  local picker_items = items_override or uep_context.get(context_key)
   if not picker_items or #picker_items == 0 then
     return log.info("UEP files: no items for scope=%s, deps=%s, mode=%s (cache empty).", scope, deps_flag, tostring(mode))
   end
 
-  local scope_display = scope:gsub("^%l", string.upper) -- Runtime -> Runtime
+  local scope_display = scope:gsub("^%l", string.upper)
   local mode_display = mode and (" [" .. mode:gsub("^%l", string.upper) .. "]") or ""
   local deps_display = ""
   if deps_flag == "--shallow-deps" then deps_display = " (Shallow Deps)"
   elseif deps_flag == "--no-deps" then deps_display = " (No Deps)"
-  else deps_display = " (Deep Deps)" end -- デフォルト
+  else deps_display = " (Deep Deps)" end
+  
+  -- items_overrideがある場合はタイトルにフィルタ済みであることを示す
+  local filter_suffix = items_override and " (Filtered)" or ""
 
   unl_picker.pick({
     kind = "uep_file_picker",
-    title = (" Files [%s%s]%s"):format(scope_display, mode_display, deps_display),
+    title = (" Files [%s%s]%s%s"):format(scope_display, mode_display, deps_display, filter_suffix),
     items = picker_items,
     conf = uep_config.get(),
     preview_enabled = true, devicons_enabled = true,
     on_submit = function(selection)
       if not selection or selection == "" then return end
-      local file_path = selection:match("[^\t]+$") -- value は "display\tfilepath" 形式
+      local file_path = selection:match("[^\t]+$")
       if file_path and file_path ~= "" then pcall(vim.cmd.edit, vim.fn.fnameescape(file_path)) end
     end,
   })
 end
 
--- (generate_and_load_cache は引数に scope を追加、コアロジック呼び出しを修正)
 local function generate_and_load_cache(scope, deps_flag, mode, on_complete)
   local log = uep_log.get()
-
-  -- スコープとDepsフラグの組み合わせで生成中フラグを管理 (より複雑になる)
-  -- local is_generating_key = scope .. "::" .. deps_flag
-  -- if is_generating[is_generating_key] then return log.info(...) end
-  -- is_generating[is_generating_key] = true
-  -- あまり複雑にしすぎず、Depsフラグだけで管理する？ -> 要検討
   local is_generating_flag
   if deps_flag == "--no-deps" then is_generating_flag = is_generating_nodeps
   elseif deps_flag == "--shallow-deps" then is_generating_flag = is_generating_shallowdeps
@@ -112,17 +129,13 @@ local function generate_and_load_cache(scope, deps_flag, mode, on_complete)
   elseif deps_flag == "--shallow-deps" then is_generating_shallowdeps = true
   else is_generating_deepdeps = true end
 
-  vim.notify(("UEP: Generating file list cache (Scope: %s, Mode: %s, Deps: %s)..."):format(scope, tostring(mode), deps_flag))
   log.info("Generating file list cache (Scope: %s, Mode: %s, Deps: %s)...", scope, tostring(mode), deps_flag)
 
-  -- ★★★ コアロジック呼び出し (後で core_files.get_files を修正する必要あり) ★★★
   core_files.get_files({ scope = scope, deps_flag = deps_flag, mode = mode }, function(ok, result_files_with_context)
-    local items_to_cache = {} -- 先に初期化
+    local items_to_cache = {}
     if ok and result_files_with_context then
       log.debug("Received %d files from core logic.", #result_files_with_context)
       for _, file_data in ipairs(result_files_with_context) do
-          -- 表示ラベルと値を作成 (変更なし、ただし core_utils.create_relative_path が必要)
-          -- ★ file_data に module_root と module_name が含まれていることを期待
           if file_data.file_path and file_data.module_root and file_data.module_name then
               local relative_path = core_utils.create_relative_path(file_data.file_path, file_data.module_root)
               local display_label = string.format("%s/%s (%s)", file_data.module_name, relative_path, file_data.module_name)
@@ -131,22 +144,17 @@ local function generate_and_load_cache(scope, deps_flag, mode, on_complete)
                 value = string.format("%s\t%s", display_label, file_data.file_path),
                 filename = file_data.file_path,
               })
-          else
-              log.debug("UEP files: skipping entry with missing data: %s", vim.inspect(file_data))
           end
       end
     else
-        -- エラーメッセージが "No components in DB" の場合はログを出さない
         if not (type(result_files_with_context) == "string" and result_files_with_context:find("No components in DB")) then
             log.error("Failed to get files from core logic: %s", tostring(result_files_with_context))
         end
-        -- ok が false でも空のキャッシュを保存する？ -> 今回はしない
     end
 
     local context_key = get_context_key(scope, deps_flag, mode)
     if context_key then uep_context.set(context_key, items_to_cache) end
 
-    -- 生成中フラグを解除
     if deps_flag == "--no-deps" then is_generating_nodeps = false
     elseif deps_flag == "--shallow-deps" then is_generating_shallowdeps = false
     else is_generating_deepdeps = false end
@@ -154,80 +162,96 @@ local function generate_and_load_cache(scope, deps_flag, mode, on_complete)
     if ok then
         log.info("Cache generation complete for scope=%s, mode=%s, deps=%s. Found %d items.", scope, tostring(mode), deps_flag, #items_to_cache)
       else
-        vim.notify(("UEP: Failed to generate file list cache (Scope: %s, Mode: %s, Deps: %s). Check logs."):format(scope, tostring(mode), deps_flag), vim.log.levels.ERROR)
+        log.error("Failed to generate file list cache (Scope: %s, Mode: %s, Deps: %s).", scope, tostring(mode), deps_flag)
       end
 
       if on_complete then on_complete(ok) end
   end)
 end
 
--- ▼▼▼ execute 関数を修正 ▼▼▼
 function M.execute(opts)
   opts = opts or {}
   local log = uep_log.get()
 
-  -- 1. スコープをパース (デフォルト: runtime)
-  local requested_scope = "runtime"
-  local valid_scopes = { game=true, engine=true, runtime=true, developer=true, editor=true, full=true }
-  if opts.scope then
-      local scope_lower = opts.scope:lower()
-      if valid_scopes[scope_lower] then
-          requested_scope = scope_lower
-      else
-          log.warn("Invalid scope argument '%s'. Defaulting to 'runtime'.", opts.scope)
-      end
-  end
+  -- 引数のパース (filter_textを追加)
+  local scope, mode, deps_flag, filter_text = parse_args(opts.args or {})
+  
+  -- opts.scope, opts.deps_flag, opts.mode 等が外部から渡されている場合は優先する（API呼び出し用）
+  if opts.scope then scope = opts.scope:lower() end
+  if opts.deps_flag then deps_flag = opts.deps_flag:lower() end
+  if opts.mode then mode = opts.mode:lower() end
 
-  -- 2. Depsフラグをパース (デフォルト: --deep-deps)
-  local requested_deps = "--deep-deps"
-  local valid_deps = { ["--deep-deps"]=true, ["--shallow-deps"]=true, ["--no-deps"]=true }
-  if opts.deps_flag then
-      local deps_lower = opts.deps_flag:lower()
-      if valid_deps[deps_lower] then
-          requested_deps = deps_lower
-      else
-          log.warn("Invalid deps flag '%s'. Defaulting to '--deep-deps'.", opts.deps_flag)
-      end
-  end
+  log.debug("Executing :UEP files with scope=%s, mode=%s, deps_flag=%s, filter='%s', bang=%s",
+    scope, tostring(mode), deps_flag, filter_text, tostring(opts.bang))
 
-  -- 3. Modeをパース (デフォルト: nil)
-  local requested_mode = nil
-  local valid_modes = { source=true, config=true, programs=true, shader=true, target_cs=true, build_cs=true }
-  if opts.mode then
-      local mode_lower = opts.mode:lower()
-      if valid_modes[mode_lower] then
-          requested_mode = mode_lower
-      else
-          log.warn("Invalid mode argument '%s'. Ignoring.", opts.mode)
-      end
-  end
-
-  log.info("Executing :UEP files with scope=%s, mode=%s, deps_flag=%s, bang=%s",
-           requested_scope, tostring(requested_mode), requested_deps, tostring(opts.has_bang))
-
-  -- 4. Bang (!) 処理 (全キャッシュ再生成は複雑なので、指定されたスコープ/Depsのみ再生成)
+  -- Bang (!) 処理: キャッシュ強制再生成 (フィルタがある場合は無視、またはフィルタ付きで再検索)
   if opts.has_bang then
-    log.info("Bang detected. Regenerating cache for scope=%s, mode=%s, deps=%s...", requested_scope, tostring(requested_mode), requested_deps)
-    generate_and_load_cache(requested_scope, requested_deps, requested_mode, function(ok)
-      if ok then show_picker(requested_scope, requested_deps, requested_mode) end
-    end)
-    return
+    if filter_text and filter_text ~= "" then
+        -- フィルタがある場合のBangは「フィルタ付き検索の再実行」とみなす
+        log.info("Searching files (Scope: %s, Mode: %s, Deps: %s, Filter: '%s')...", scope, tostring(mode), deps_flag, filter_text)
+        core_files.search_files({ scope = scope, deps_flag = deps_flag, mode = mode }, filter_text, function(ok, result_files)
+            if ok and result_files then
+                local items = {}
+                for _, file_data in ipairs(result_files) do
+                    local relative_path = core_utils.create_relative_path(file_data.file_path, file_data.module_root)
+                    local display_label = string.format("%s/%s (%s)", file_data.module_name, relative_path, file_data.module_name)
+                    table.insert(items, {
+                        display = display_label,
+                        value = string.format("%s\t%s", display_label, file_data.file_path),
+                        filename = file_data.file_path,
+                    })
+                end
+                show_picker(scope, deps_flag, mode, items)
+            else
+                log.warn("No files found matching filter '%s'.", filter_text)
+            end
+        end)
+        return
+    else
+        log.info("Bang detected. Regenerating cache for scope=%s, mode=%s, deps=%s...", scope, tostring(mode), deps_flag)
+        generate_and_load_cache(scope, deps_flag, mode, function(ok)
+            if ok then show_picker(scope, deps_flag, mode) end
+        end)
+        return
+    end
+  end
+  
+  -- フィルタがある場合: Rust側で検索して即時表示 (キャッシュしない)
+  if filter_text and filter_text ~= "" then
+      log.info("Searching files (Scope: %s, Mode: %s, Deps: %s, Filter: '%s')...", scope, tostring(mode), deps_flag, filter_text)
+      core_files.search_files({ scope = scope, deps_flag = deps_flag, mode = mode }, filter_text, function(ok, result_files)
+          if ok and result_files then
+              local items = {}
+              for _, file_data in ipairs(result_files) do
+                  local relative_path = core_utils.create_relative_path(file_data.file_path, file_data.module_root)
+                  local display_label = string.format("%s/%s (%s)", file_data.module_name, relative_path, file_data.module_name)
+                  table.insert(items, {
+                      display = display_label,
+                      value = string.format("%s\t%s", display_label, file_data.file_path),
+                      filename = file_data.file_path,
+                  })
+              end
+              show_picker(scope, deps_flag, mode, items)
+          else
+              log.warn("No files found matching filter '%s'.", filter_text)
+          end
+      end)
+      return
   end
 
-  -- 5. 通常実行: オンメモリ -> ディスク -> 生成 の順で試行
-  local context_key = get_context_key(requested_scope, requested_deps, requested_mode)
+  -- 通常実行 (全件キャッシュ利用)
+  local context_key = get_context_key(scope, deps_flag, mode)
   if not context_key then return log.error("Not in a UEP-indexed project.") end
 
   if uep_context.get(context_key) then
-    log.debug("Using in-memory cache for scope=%s, mode=%s, deps=%s.", requested_scope, tostring(requested_mode), requested_deps)
-    return show_picker(requested_scope, requested_deps, requested_mode)
+    log.debug("Using in-memory cache for scope=%s, mode=%s, deps=%s.", scope, tostring(mode), deps_flag)
+    return show_picker(scope, deps_flag, mode)
   end
 
-  log.debug("In-memory cache miss. Generating cache for scope=%s, mode=%s, deps=%s...", requested_scope, tostring(requested_mode), requested_deps)
-  generate_and_load_cache(requested_scope, requested_deps, requested_mode, function(gen_ok)
-    if gen_ok then show_picker(requested_scope, requested_deps, requested_mode) end
+  log.debug("In-memory cache miss. Generating cache for scope=%s, mode=%s, deps=%s...", scope, tostring(mode), deps_flag)
+  generate_and_load_cache(scope, deps_flag, mode, function(gen_ok)
+    if gen_ok then show_picker(scope, deps_flag, mode) end
   end)
 end
--- ▲▲▲ execute 関数修正ここまで ▲▲▲
 
 return M

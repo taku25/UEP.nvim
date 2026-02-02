@@ -120,6 +120,8 @@ Command Details                                     *UEP-commands-detail*
 
 :UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps] [mode=...]
     Opens a file search UI based on the cached information.
+    **Filtering**: If you provide filter keywords as arguments (e.g., `:UEP files Game MyActor`),
+    filtering is performed on the server side beforehand, allowing instant results even in large-scale projects.
     - `[!](bang)`: (Optional)
       If `!` is added, it forces a regeneration of the cache before opening
       the UI.
