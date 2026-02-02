@@ -1,9 +1,9 @@
+-- lua/UEP/cmd/target_cs.lua (RPC Optimized)
 local core_utils = require("UEP.cmd.core.utils")
-local uep_db = require("UEP.db.init")
+local unl_api = require("UNL.api")
 local unl_picker = require("UNL.backend.picker")
 local uep_log = require("UEP.logger")
 local uep_config = require("UEP.config")
-local fs = require("vim.fs")
 
 local M = {}
 
@@ -37,22 +37,8 @@ local function show_picker(targets, project_root, title_suffix)
       return string.format("%-30s  %s", item.label, item.display_path)
     end,
     on_submit = function(selection)
-      -- pathがあれば直接開く。なければ検索フォールバック
       if selection and selection.value and selection.value.path then
          vim.cmd.edit(vim.fn.fnameescape(selection.value.path))
-      elseif selection and selection.value and selection.value.name then
-        local target_filename = selection.value.name .. ".Target.cs"
-        local find_cmd = { "fd", "-t", "f", "-p", target_filename, project_root }
-        vim.fn.jobstart(find_cmd, {
-          stdout_buffered = true,
-          on_stdout = function(_, data)
-            if data and data[1] and data[1] ~= "" then
-              vim.schedule(function() vim.cmd.edit(vim.fn.fnameescape(data[1])) end)
-            else
-               uep_log.get().error("Could not find file: %s", target_filename)
-            end
-          end
-        })
       end
     end,
   })
@@ -67,65 +53,53 @@ function M.execute(opts)
       return log.error("Failed to get project maps or game component name.")
     end
 
-    local db = uep_db.get()
-    if not db then return log.error("DB not available") end
-
-    local db_query = require("UEP.db.query")
-    local rows = db_query.get_target_files(db)
-    if not rows or #rows == 0 then
-      return log.warn("No build targets found in DB. Run :UEP refresh.")
-    end
-
-    local all_targets = {}
-    for _, row in ipairs(rows) do
-      local name = row.filename:gsub("%.Target%.cs$", "")
-      table.insert(all_targets, {
-        name = name,
-        path = row.path,
-        type = "Target"
-      })
-    end
-    local filtered_targets = {}
-    local project_root = maps.project_root
-
-    -- ▼▼▼ フィルタリングロジック (pathを利用) ▼▼▼
-    if opts.has_bang then
-      -- Bangあり (!): すべて表示 (Engine含む)
-      filtered_targets = all_targets
-    else
-      -- Bangなし: プロジェクト内のターゲットのみ
-      for _, t in ipairs(all_targets) do
-        -- target.path が プロジェクトルート以下にあるかチェック
-        if t.path and t.path:find(project_root, 1, true) then
-          table.insert(filtered_targets, t)
+    unl_api.db.get_target_files(function(rows, err)
+        if err or not rows or #rows == 0 then
+          return log.warn("No build targets found in DB. Run :UNL refresh.")
         end
-      end
-    end
-    -- ▲▲▲ ここまで ▲▲▲
 
-    if #filtered_targets == 0 then
-      if opts.has_bang then
-        return log.warn("No targets found in cache.")
-      else
-        return log.warn("No project targets found. Try ':UEP target_cs!' to include Engine targets.")
-      end
-    end
-
-    -- ターゲットが1つしかない場合は即座に開く
-    if #filtered_targets == 1 then
-        local target = filtered_targets[1]
-        
-        -- Path情報があれば即オープン
-        if target.path and vim.fn.filereadable(target.path) == 1 then
-            log.info("Opening only target found: %s", target.name)
-            vim.cmd.edit(vim.fn.fnameescape(target.path))
-            return
+        local all_targets = {}
+        for _, row in ipairs(rows) do
+          local name = row.filename:gsub("%.Target%.cs$", "")
+          table.insert(all_targets, {
+            name = name,
+            path = row.path,
+            type = "Target"
+          })
         end
-        -- Pathがない場合のフォールバックは省略（refreshされていればpathはあるはず）
-    end
+        local filtered_targets = {}
+        local project_root = maps.project_root
 
-    local title_suffix = opts.has_bang and " (All/Engine)" or " (Project Only)"
-    show_picker(filtered_targets, maps.project_root, title_suffix)
+        if opts.has_bang then
+          filtered_targets = all_targets
+        else
+          for _, t in ipairs(all_targets) do
+            if t.path and t.path:find(project_root, 1, true) then
+              table.insert(filtered_targets, t)
+            end
+          end
+        end
+
+        if #filtered_targets == 0 then
+          if opts.has_bang then
+            return log.warn("No targets found in cache.")
+          else
+            return log.warn("No project targets found. Try ':UEP target_cs!' to include Engine targets.")
+          end
+        end
+
+        if #filtered_targets == 1 then
+            local target = filtered_targets[1]
+            if target.path and vim.fn.filereadable(target.path) == 1 then
+                log.info("Opening only target found: %s", target.name)
+                vim.cmd.edit(vim.fn.fnameescape(target.path))
+                return
+            end
+        end
+
+        local title_suffix = opts.has_bang and " (All/Engine)" or " (Project Only)"
+        show_picker(filtered_targets, maps.project_root, title_suffix)
+    end)
   end)
 end
 

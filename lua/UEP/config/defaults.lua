@@ -6,7 +6,8 @@ local M = {
   
   server = {
     enable = true,
-    name = "UEP_nvim",
+    port = 3030,
+    auto_start = true,
   },
 
   ide = {
@@ -46,7 +47,7 @@ local M = {
     level = "info",
     echo = { level = "warn" },
     notify = { level = "error", prefix = "[UEP]" },
-    file = { level = "info", enable = true, max_kb = 512, rotate = 3, filename = "uep.log" },
+    file = { level = "debug", enable = true, max_kb = 512, rotate = 3, filename = "uep.log" },
     perf = { enabled = false, patterns = { "^refresh" }, level = "trace" },
   },
 

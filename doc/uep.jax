@@ -123,6 +123,8 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
 
 :UEP files[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps] [mode=...]
     キャッシュされた情報に基づいて、ファイル検索UIを開きます。
+    **高速フィルタリング**: 引数で検索キーワードを指定すると（例: `:UEP files Game MyActor`）、
+    サーバー側で事前にフィルタリングを行い、大規模プロジェクトでも瞬時に結果を表示します。
     - `[!](bang)`: (省略可)
       `!`を付けると、キャッシュを強制的に再生成してからUIを開きます。
     - `[Game|...|Full]`: (省略可、デフォルト: `runtime`)

@@ -53,7 +53,7 @@ end
 -- ▼▼▼ search_and_display を修正 ▼▼▼
 local function search_and_display(module_name)
   local log = uep_log.get()
-  log.info("Searching files for module: %s", module_name)
+  log.debug("Searching files for module: %s", module_name)
 
   -- ★ 新しい files_core.get_files_for_module を呼び出す
   files_core.get_files_for_module(module_name, function(ok, result)
@@ -77,7 +77,7 @@ function M.execute(opts)
   -- (refresh_and_display 関数は変更なし)
   local function refresh_and_display(module_name)
     local refresh_cmd = "UEP refresh!"
-    log.info("Bang detected. Running '%s' first...", refresh_cmd)
+    log.debug("Bang detected. Running '%s' first...", refresh_cmd)
     local sub_id
     sub_id = unl_events.subscribe(unl_types.ON_AFTER_REFRESH_COMPLETED, function()
       unl_events.unsubscribe(sub_id)
@@ -93,7 +93,7 @@ function M.execute(opts)
     main_logic_handler(opts.module_name)
   else
     -- モジュール名がない場合はピッカーを表示
-    log.info("No module name specified, showing picker...")
+    log.debug("No module name specified, showing picker...")
     -- ★ utils.get_project_maps を使ってモジュールリストを取得
     uep_utils.get_project_maps(vim.loop.cwd(), function(map_ok, maps)
         if not map_ok then

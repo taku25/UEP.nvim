@@ -25,6 +25,7 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
       * Ensures the file list is always in sync with the module structure through a `generation` hash system.
   * **Powerful File Searching**:
       * Provides a flexible `:UEP files` command to find your most-used source and config files instantly.
+      * **High-Performance Filtering**: If you provide search keywords as arguments (e.g., `:UEP files Game MyActor`), filtering is performed on the server side beforehand, allowing instant results even in large-scale projects.
       * Offers specialized commands for targeted searches within a single module (`:UEP module_files`).
       * Allows filtering files by scope (**Game**, **Engine**, **Runtime**, **Editor**, **Full**).
       * Supports including module dependencies in the search (**--no-deps**, **--shallow-deps**, **--deep-deps**).

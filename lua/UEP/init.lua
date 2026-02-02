@@ -28,8 +28,6 @@ function M.setup(user_config)
 
   require("UEP.event.hub").setup()
 
-
-
   local unl_events_ok, unl_events = pcall(require, "UNL.event.events")
   if unl_events_ok then
       local unl_types_ok, unl_event_types = pcall(require, "UNL.event.types")

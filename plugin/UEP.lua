@@ -14,11 +14,6 @@ local command_spec = { -- line 10: 開始の '{'
   },
 
   subcommands = {
-    start = {
-      handler = uep_api.start,
-      desc = "Start background file watcher for project.",
-      args = {},
-    },
     stop = {
       handler = uep_api.stop,
       desc = "Stop background file watcher.",
@@ -34,30 +29,13 @@ local command_spec = { -- line 10: 開始の '{'
       desc = "Stop Neovim remote server.",
       args = {},
     },
-    refresh = {
-      handler = uep_api.refresh,
-      bang = true,
-      desc = ":UEP refresh [Scope] [--force]", -- Scope は Game|Engine|Full
-      args = {
-        { name = "scope", required = false },
-        { name = "force_flag", required = false }, -- ★ force -> force_flag に変更 (UNL builder 仕様)
-      },
-    },
     reloadconfig = {
       handler = uep_api.reload_config,
       desc = "Reload the configuration files.",
       args = {},
     },
-    cd = {
-      handler = uep_api.cd,
-      desc = "Select a known project and cd to it.",
-      args = {},
-    },
-    delete = {
-      handler = uep_api.delete,
-      desc = "Select a project to remove it from the known projects list.",
-      args = {},
-    },
+
+
     files = {
       handler = uep_api.files,
       bang = true,
@@ -76,26 +54,6 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "module_name", required = false },
         { name = "dummy_arg", required = false }, -- 必要なら削除
       },
-    },
-    module_tree = {
-      handler = uep_api.module_tree,
-      desc = "Open project filer for a specific module.",
-      args = {
-        { name = "module_name", required = false },
-      },
-    },
-    tree = {
-      handler = uep_api.tree,
-      desc = "Open project filer. Scope: Game|Engine|Runtime(default)|Developer|Editor|Full.",
-      args = {
-        { name = "scope", required = false },
-        { name = "deps_flag", required = false },
-      },
-    },
-    close_tree = {
-      handler = uep_api.close_tree,
-      desc = "Close neo-tree and clear the expanded state.",
-      args = {},
     },
     grep = {
       handler = uep_api.grep,
@@ -137,11 +95,6 @@ local command_spec = { -- line 10: 開始の '{'
       args = {
         { name = "path", required = false },
       },
-    },
-    cleanup = {
-      handler = uep_api.cleanup,
-      desc = "Delete all structural and file caches for the current project.",
-      args = {},
     },
     add_include = {
       handler = uep_api.add_include,
@@ -256,18 +209,10 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "deps_flag", required = false },
       },
     },
-    ["new_project"] = {
+    new_project = {
       handler = uep_api.new_project,
       desc = "Create a new Unreal Engine project from a template.",
       args = {},
-    },
-   ["gen_compile_commands_fast"] = {
-      handler = uep_api.gen_compile_commands_fast,
-      bang = true,
-      desc = "Generate compile_commands.json from existing build artifacts (Fast/Shadow).",
-      args = {
-        { name = "platform", required = false }, -- 必要なら引数拡張
-      },
     },
     ["clean_intermediate"] = {
       handler = uep_api.clean_intermediate,

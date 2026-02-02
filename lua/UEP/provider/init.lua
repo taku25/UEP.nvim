@@ -33,33 +33,6 @@ M.setup = function()
     })
 
     -- ... (以下の既存登録はそのまま) ...
-    local tree_provider = require("UEP.provider.tree")
-    unl_api.provider.register({
-      capability = "uep.get_pending_tree_request",
-      name = "UEP.nvim",
-      impl = tree_provider, 
-    })
-    unl_api.provider.register({
-      capability = "uep.build_tree_model",
-      name = "UEP.nvim",
-      impl = tree_provider, 
-    })
-    unl_api.provider.register({
-      capability = "uep.load_tree_children",
-      name = "UEP.nvim",
-      impl = tree_provider,
-    })
-    unl_api.provider.register({
-      capability = "uep.update_module_cache",
-      name = "UEP.nvim",
-      impl = tree_provider, 
-    })
-    unl_api.provider.register({
-      capability = "uep.clear_tree_state",
-      name = "UEP.nvim",
-      impl = tree_provider,
-    })
-
     local build_targets_provider = require("UEP.provider.build_targets")
     unl_api.provider.register({
       capability = "uep.get_build_targets",
@@ -127,7 +100,7 @@ M.setup = function()
 
     local uep_logger = require("UEP.logger").get()
     if uep_logger then
-      uep_logger.info("Registered UEP providers to UNL.nvim.")
+      uep_logger.debug("Registered UEP providers to UNL.nvim.")
     end
   end
 end
