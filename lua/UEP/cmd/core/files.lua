@@ -155,9 +155,21 @@ function M.get_files(opts, on_complete)
     local target_module_list = vim.tbl_keys(target_module_names)
     if #target_module_list == 0 then return on_complete(true, {}) end
 
-    -- STEP 3: RPC経由で一括取得
+    -- STEP 3: RPC経由で一括取得 (サーバー側でフィルタリング)
     log.debug("core_files.get_files: Querying RPC for files in %d modules...", #target_module_list)
-    remote.get_files_in_modules(target_module_list, function(raw_files, err)
+    
+    local extensions = nil
+    local path_filter = nil
+    
+    if requested_mode == "config" then extensions = { "ini" }
+    elseif requested_mode == "shader" then extensions = { "usf", "ush" }
+    elseif requested_mode == "target_cs" then path_filter = "%.Target.cs"
+    elseif requested_mode == "build_cs" then path_filter = "%.Build.cs"
+    elseif requested_mode == "source" or requested_mode == "programs" then
+        extensions = { "cpp", "c", "cc", "h", "hpp" }
+    end
+    
+    remote.get_files_in_modules(target_module_list, extensions, path_filter, function(raw_files, err)
         if err then
             log.error("core_files.get_files: RPC error: %s", tostring(err))
             return on_complete(false, err)
@@ -166,39 +178,18 @@ function M.get_files(opts, on_complete)
         local merged_files_with_context = {}
         for _, file in ipairs(raw_files or {}) do
             local ext = file.extension:lower()
-            local path = file.file_path
-            
-            -- カテゴリ判定 (Lua側で行う)
+            -- Rust側でフィルタリング済みなので、カテゴリ分けだけ行う
             local category = "other"
             if ext == "cpp" or ext == "c" or ext == "cc" or ext == "h" or ext == "hpp" then category = "source"
             elseif ext == "ini" then category = "config"
             elseif ext == "usf" or ext == "ush" then category = "shader" end
 
-            local should_include = true
-            if requested_mode then
-                if requested_mode == "config" then should_include = (category == "config")
-                elseif requested_mode == "shader" then should_include = (category == "shader")
-                elseif requested_mode == "programs" then should_include = (category == "source")
-                elseif requested_mode == "source" then should_include = (category == "source")
-                elseif requested_mode == "target_cs" then should_include = path:match("%.Target%.cs$")
-                elseif requested_mode == "build_cs" then should_include = path:match("%.Build%.cs$") end
-                
-                -- Shaders filtering for source/programs
-                if (requested_mode == "source" or requested_mode == "programs") and category == "shader" then
-                    should_include = false
-                end
-            else
-                if requested_scope == "config" and category ~= "config" then should_include = false end
-            end
-
-            if should_include then
-                table.insert(merged_files_with_context, {
-                    file_path = path,
-                    module_name = file.module_name,
-                    module_root = file.module_root,
-                    category = category
-                })
-            end
+            table.insert(merged_files_with_context, {
+                file_path = file.file_path,
+                module_name = file.module_name,
+                module_root = file.module_root,
+                category = category
+            })
         end
 
       local end_time = vim.loop.hrtime() / 1e9

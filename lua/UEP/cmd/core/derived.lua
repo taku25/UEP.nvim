@@ -134,48 +134,48 @@ function M.get_all_classes(opts, on_complete)
 
         local all_symbols = {}
         for _, row in ipairs(raw_classes or {}) do
-            if row.i then
+            if type(row) == "table" and row.i then
                 -- Super-Optimized Grouped format (p=path, i=items[[name, line, type, base], ...])
-                local path = row.p
+                local path = tostring(row.p or "")
                 for _, item in ipairs(row.i) do
-                     local name = item[1]
-                     local display_name = name:gsub("<.*>", ""):gsub("[*().%s]", "")
+                     local name = tostring(item[1] or "")
                      table.insert(all_symbols, {
-                         display = display_name,
+                         display = name,
                          class_name = name,
                          base_class = item[4],
                          file_path = path,
                          path = path,
+                         filename = path, -- Telescope previewer needs this
                          lnum = item[2] or 1,
-                         filename = path,
                          symbol_type = item[3]
                      })
                 end
             elseif type(row) == "table" and #row >= 4 then
                 -- Flat Array format [name, line, path, type, base]
-                local name = row[1]
-                local display_name = name:gsub("<.*>", ""):gsub("[*().%s]", "")
+                local name = tostring(row[1] or "")
+                local path = tostring(row[3] or "")
                 table.insert(all_symbols, {
-                    display = display_name,
+                    display = name,
                     class_name = name,
                     base_class = row[5],
-                    file_path = row[3],
-                    path = row[3],
+                    file_path = path,
+                    path = path,
+                    filename = path,
                     lnum = row[2] or 1,
-                    filename = row[3],
                     symbol_type = row[4]
                 })
-            else
+            elseif type(row) == "table" then
                 -- Legacy Flat format
-                local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
+                local name = tostring(row.class_name or "")
+                local path = tostring(row.file_path or row.path or "")
                 table.insert(all_symbols, {
-                    display = display_name,
-                    class_name = row.class_name,
+                    display = name,
+                    class_name = name,
                     base_class = row.base_class,
-                    file_path = row.file_path,
-                    path = row.file_path,
+                    file_path = path,
+                    path = path,
+                    filename = path,
                     lnum = row.line_number or 1,
-                    filename = row.file_path,
                     symbol_type = row.symbol_type
                 })
             end
