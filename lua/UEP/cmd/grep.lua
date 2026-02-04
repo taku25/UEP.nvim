@@ -270,13 +270,13 @@ function M.execute(opts)
         local opt_len = 0
         for _, p in ipairs(optimized) do opt_len = opt_len + #p + 1 end
         if opt_len > 30000 then -- Windows limit is ~32k
-             log.warn("grep: Optimized paths still too long (%d chars). Falling back to Project/Engine roots.", opt_len)
+             log.debug("grep: Optimized paths still too long (%d chars). Falling back to Project/Engine roots.", opt_len)
              optimized = {}
              if project_root then table.insert(optimized, project_root) end
              if engine_root then table.insert(optimized, fs.joinpath(engine_root, "Engine")) end
         end
 
-        log.info("grep: Optimized paths from %d to %d items.", #paths, #optimized)
+        log.debug("grep: Optimized paths from %d to %d items.", #paths, #optimized)
         return optimized
     end
 

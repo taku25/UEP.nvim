@@ -80,6 +80,7 @@ function M.start_live_grep(opts)
       conf = conf,
       search_paths = opts.search_paths,
       title = opts.title,
+      logger_name = "UEP", -- UEPのログ設定を使用する
       initial_query = opts.initial_query or "",
       transform_display = transform_display_func,
       include_extensions = opts.include_extensions or conf.files_extensions,

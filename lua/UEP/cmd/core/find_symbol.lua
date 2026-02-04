@@ -21,25 +21,9 @@ local function process_symbol_list(all_symbols_data, opts)
     return log.error("Failed to get symbol list (scope=%s, deps=%s). (Run :UEP refresh)", scope, deps_flag)
   end
 
-  local filtered_list = {}
-  for _, info in ipairs(all_symbols_data) do
-    local st = info.symbol_type
-    local is_match = false
-    
-    if symbol_type == "class" then
-        is_match = (st == "class" or st == "UCLASS" or st == "UINTERFACE")
-    elseif symbol_type == "struct" then
-        is_match = (st == "struct" or st == "USTRUCT")
-    elseif symbol_type == "enum" then
-        is_match = (st == "enum" or st == "UENUM")
-    else
-        is_match = (st == symbol_type)
-    end
-
-    if is_match then
-      table.insert(filtered_list, info)
-    end
-  end
+  -- Rust側ですでに symbol_type によるフィルタリングは完了しているため、
+  -- ここでの再フィルタリングをスキップして直接渡す
+  local filtered_list = all_symbols_data
 
   if #filtered_list == 0 then
     return log.warn("No %ss found in the cache for scope=%s, deps=%s.", symbol_type, scope, deps_flag)

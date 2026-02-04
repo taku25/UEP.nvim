@@ -80,30 +80,53 @@ function M.get_worker_script_path(script_name)
   return (vim.fn.filereadable(worker_path) == 1) and worker_path or nil
 end
 
-function M.open_file_and_jump(target_file_path, symbol_name)
+function M.open_file_and_jump(target_file_path, symbol_name, optional_line, optional_class_name)
   local log = uep_log.get()
   local ok, err = pcall(vim.cmd.edit, vim.fn.fnameescape(target_file_path))
   if not ok then return log.error("Failed to open file: " .. tostring(err)) end
   
+  -- もし行番号が指定されていれば、直接ジャンプする
+  if optional_line and tonumber(optional_line) > 0 then
+      vim.fn.cursor(tonumber(optional_line), 0)
+      vim.cmd("normal! zz")
+      return
+  end
+  
   local file_content = vim.fn.readfile(target_file_path)
   local line_number = 1; local found = false
   
+  -- 検索パターンの構築
   local pattern_prefix = [[\.\{-}]]
   local pat_class  = pattern_prefix .. [[class\s\+\(.\{-}_API\s\+\)\?\<]] .. symbol_name .. [[\>]]
   local pat_struct = pattern_prefix .. [[struct\s\+\(.\{-}_API\s\+\)\?\<]] .. symbol_name .. [[\>]]
   local pat_enum   = pattern_prefix .. [[enum\s\+\(class\s\+\)\?\<]] .. symbol_name .. [[\>]]
   
+  -- 関数の定義・実装 (ClassName::FunctionName も含む)
+  local pat_func   = [[\<]] .. symbol_name .. [[\s*(]]
+  local pat_scoped = optional_class_name 
+    and ([[\<]] .. optional_class_name .. [[::]] .. symbol_name .. [[\s*(]])
+    or ([[\w\+::]] .. symbol_name .. [[\s*(]])
+  
   for i, line in ipairs(file_content) do
-    if vim.fn.match(line, pat_class) >= 0 or vim.fn.match(line, pat_struct) >= 0 or vim.fn.match(line, pat_enum) >= 0 then
+    if vim.fn.match(line, pat_class) >= 0 or vim.fn.match(line, pat_struct) >= 0 or 
+       vim.fn.match(line, pat_enum) >= 0 or vim.fn.match(line, pat_scoped) >= 0 or 
+       vim.fn.match(line, pat_func) >= 0 then
+      
       local trimmed = line:match("^%s*(.-)%s*$")
+      -- 実装 (.cpp) を探している場合は、セミコロンで終わる行を優先的に排除
+      -- ただし、完全な構文解析ではないため、ヒットした行を記録しておく
       if not (trimmed:match(";%s*(//.*)?$") or trimmed:match(";%s*(/%*.*%*/)?%s*$")) then
          line_number = i; found = true; break
       end
     end
   end
+  
   if not found then
+      -- セミコロン排除で見つからなかった場合、再度全ヒットから探す
       for i, line in ipairs(file_content) do
-          if vim.fn.match(line, pat_class) >= 0 or vim.fn.match(line, pat_struct) >= 0 or vim.fn.match(line, pat_enum) >= 0 then
+          if vim.fn.match(line, pat_class) >= 0 or vim.fn.match(line, pat_struct) >= 0 or 
+             vim.fn.match(line, pat_enum) >= 0 or vim.fn.match(line, pat_scoped) >= 0 or
+             vim.fn.match(line, pat_func) >= 0 then
               line_number = i; break
           end
       end
