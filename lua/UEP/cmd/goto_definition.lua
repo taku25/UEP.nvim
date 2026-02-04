@@ -69,9 +69,9 @@ function M.execute(opts)
 
         local mod_name = search_list[idx]
         unl_api.db.find_symbol_in_module(mod_name, symbol_name, function(res, err)
-            if res and res.file_path then
+            if res and res ~= vim.NIL and res.file_path then
                 log.info("Found in module: %s", mod_name)
-                core_utils.open_file_and_jump(res.file_path, symbol_name)
+                core_utils.open_file_and_jump(res.file_path, symbol_name, res.line_number)
             else
                 try_search(idx + 1)
             end

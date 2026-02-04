@@ -80,10 +80,17 @@ function M.get_worker_script_path(script_name)
   return (vim.fn.filereadable(worker_path) == 1) and worker_path or nil
 end
 
-function M.open_file_and_jump(target_file_path, symbol_name)
+function M.open_file_and_jump(target_file_path, symbol_name, optional_line)
   local log = uep_log.get()
   local ok, err = pcall(vim.cmd.edit, vim.fn.fnameescape(target_file_path))
   if not ok then return log.error("Failed to open file: " .. tostring(err)) end
+  
+  -- もし行番号が指定されていれば、直接ジャンプする
+  if optional_line and optional_line > 0 then
+      vim.fn.cursor(optional_line, 0)
+      vim.cmd("normal! zz")
+      return
+  end
   
   local file_content = vim.fn.readfile(target_file_path)
   local line_number = 1; local found = false
