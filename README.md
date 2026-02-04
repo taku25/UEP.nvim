@@ -61,7 +61,6 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
   * [**UNL.nvim**](https://github.com/taku25/UNL.nvim) (**Required**)
   * [fd](https://github.com/sharkdp/fd) (**Required for project scanning**)
   * [rg](https://github.com/BurntSushi/ripgrep) (**Required for project Grep**)
-  * [**sqlite.lua**](https://github.com/kkharji/sqlite.lua) (**Required for database**)
   * **Optional (Strongly recommended for the full experience):**
       * **UI (Picker):**
           * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
@@ -82,7 +81,6 @@ return {
   -- UNL.nvim is a required dependency
   dependencies = {
      'taku25/UNL.nvim',
-     'kkharji/sqlite.lua',  --Required
      'nvim-telescope/telescope.nvim', -- Optional
   },
   -- All settings are inherited from UNL.nvim, but can be overridden here
