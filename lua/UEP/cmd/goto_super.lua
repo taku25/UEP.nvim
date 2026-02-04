@@ -80,83 +80,49 @@ function M.execute(opts)
     opts = opts or {}
     local mode = opts.mode or "definition" -- "definition" or "implementation"
     
-    -- 1. コンテキスト取得
+    -- 1. コンテキスト取得 (バッファ解析)
     local current_class, current_func = find_current_context()
     
-    if not current_class then return log.warn("Could not determine class context at cursor.") end
-    if not current_func then return log.warn("Could not determine function context at cursor.") end
+    if not current_class then 
+        log.info("DEBUG: current_class detection failed at line %d", vim.fn.line("."))
+        return log.warn("Could not determine class context at cursor.") 
+    end
+    if not current_func then 
+        log.info("DEBUG: current_func detection failed for class %s", current_class.name)
+        return log.warn("Could not determine function context at cursor.") 
+    end
     
     local func_name = current_func.name
     local class_name = current_class.name
     
-    if func_name == class_name or func_name == "~"..class_name then
-        log.info("Super jump for Constructor/Destructor is not fully supported yet.")
-    end
-
     log.info("Looking for Super::%s (Base of %s) [%s]...", func_name, class_name, mode)
 
-    -- 2. 親クラス情報を取得 (DB CTE)
-    derived_core.get_inheritance_chain(class_name, { scope = "Full" }, function(parents_chain)
-        if not parents_chain then return log.error("Failed to get inheritance chain. Run :UEP refresh.") end
-        if #parents_chain == 0 then return log.warn("Class '%s' has no known parent classes in cache.", class_name) end
-
-        -- 4. 親クラスを近い順に走査
-        for _, parent_info in ipairs(parents_chain) do
-            local header_path = parent_info.file_path
-            
-            -- 親クラスの定義(ヘッダー)が見つかった場合
-            if header_path and vim.fn.filereadable(header_path) == 1 then
-                
-                -- モード分岐: 定義(ヘッダー)か、実装(.cpp)か
-                local target_file_path = header_path
-                
-                if mode == "implementation" then
-                    -- .h から .cpp を探す
-                    local ucm_ok, pair = unl_api.provider.request("ucm.get_class_pair", { file_path = header_path })
-                    if ucm_ok and pair and pair.cpp then
-                        target_file_path = pair.cpp
-                    else
-                        log.debug("No implementation file found for %s, falling back to header.", parent_info.class_name)
-                        -- .cppがない場合はヘッダー内実装の可能性があるのでヘッダーを検索
-                    end
-                end
-
-                -- ターゲットファイルをパースして関数を探す
-                local p_result = unl_parser.parse(target_file_path, "UEP")
-                
-                -- cppファイルの場合、クラス名が名前空間的に使われているので map から探す
-                -- ヘッダーの場合、list から探す (find_best_match_class 利用)
-                local p_class_data = nil
-                
-                if mode == "implementation" and target_file_path:match("%.cpp$") then
-                    p_class_data = p_result.map[parent_info.class_name]
-                else
-                    p_class_data = unl_parser.find_best_match_class(p_result, parent_info.class_name)
-                end
-                
-                if p_class_data then
-                    local p_methods = flatten_methods(p_class_data.methods)
-                    
-                    for _, m in ipairs(p_methods) do
-                        if m.name == func_name then
-                            log.info("Found Super::%s in %s", func_name, parent_info.class_name)
-                            
-                            vim.cmd("normal! m'")
-                            unl_buf_open.safe({
-                                file_path = target_file_path,
-                                open_cmd = "edit",
-                                plugin_name = "UEP"
-                            })
-                            vim.api.nvim_win_set_cursor(0, { m.line, 0 })
-                            vim.cmd("normal! zz")
-                            return
-                        end
-                    end
-                end
-            end
+    -- 2. 継承チェーンからシンボルを検索 (DB/RPCで一気に解決)
+    unl_api.db.find_symbol_in_inheritance_chain(class_name, func_name, mode, function(res, err)
+        if err then
+            return log.error("Failed to search inheritance chain: %s", tostring(err))
         end
-        
-        log.warn("Function '%s' not found in any parent class (%s) chain.", func_name, mode)
+
+        if res and res ~= vim.NIL and res.file_path then
+            log.info("Found Super::%s in %s", func_name, res.class_name or "parent class")
+            
+            vim.cmd("normal! m'")
+            unl_buf_open.safe({
+                file_path = res.file_path,
+                open_cmd = "edit",
+                plugin_name = "UEP"
+            })
+            
+            -- ウィンドウの切り替えとバッファの展開を待ってからジャンプを実行
+            vim.schedule(function()
+                local target_line = tonumber(res.line_number) or 0
+                
+                -- class_name も渡して、.cpp 内での Class::Func 検索を確実にする
+                pcall(uep_utils.open_file_and_jump, res.file_path, func_name, target_line, res.class_name)
+            end)
+        else
+            log.warn("Function '%s' not found in any parent class (%s) chain.", func_name, mode)
+        end
     end)
 end
 
