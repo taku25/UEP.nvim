@@ -1,6 +1,5 @@
 -- lua/UEP/cmd/implement_virtual.lua
 local uep_log = require("UEP.logger")
-local derived_core = require("UEP.cmd.core.derived")
 local unl_picker = require("UNL.backend.picker")
 local uep_config = require("UEP.config")
 local unl_api = require("UNL.api")
@@ -60,11 +59,13 @@ local function flatten_methods(methods_bucket)
   return flat
 end
 
-local function get_current_class_from_db(file_path, line, callback)
-  unl_api.db.get_file_symbols(file_path, function(symbols)
-    if not symbols then return callback(nil) end
+-- 現在のバッファのクラス情報をサーバーでリアルタイム解析して取得
+local function get_current_class_from_buffer(line, callback)
+  unl_api.db.parse_buffer(nil, function(res)
+    if not res or not res.symbols then return callback(nil) end
+    
     local best_match = nil
-    for _, cls in ipairs(symbols) do
+    for _, cls in ipairs(res.symbols) do
       local start_line = cls.line or 0
       local end_line = cls.end_line or 999999
       if line >= start_line and line <= end_line then
@@ -91,9 +92,9 @@ function M.execute(opts)
   end
 
   local current_line = vim.fn.line(".")
-  get_current_class_from_db(current_file, current_line, function(current_class_info)
+  get_current_class_from_buffer(current_line, function(current_class_info)
     if not current_class_info then
-      log.warn("Could not detect class definition at cursor via DB. Ensure the file is saved and indexed.")
+      log.warn("Could not detect class definition at cursor.")
       return
     end
     local current_class_name = current_class_info.name
