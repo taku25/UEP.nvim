@@ -1,6 +1,7 @@
 -- lua/UEP/cmd/goto_super.lua
 local uep_log = require("UEP.logger")
 local derived_core = require("UEP.cmd.core.derived")
+local uep_utils = require("UEP.cmd.core.utils")
 local unl_parser = require("UNL.parser.cpp")
 local unl_buf_open = require("UNL.buf.open")
 local unl_api = require("UNL.api")
@@ -84,11 +85,9 @@ function M.execute(opts)
     local current_class, current_func = find_current_context()
     
     if not current_class then 
-        log.info("DEBUG: current_class detection failed at line %d", vim.fn.line("."))
         return log.warn("Could not determine class context at cursor.") 
     end
     if not current_func then 
-        log.info("DEBUG: current_func detection failed for class %s", current_class.name)
         return log.warn("Could not determine function context at cursor.") 
     end
     
