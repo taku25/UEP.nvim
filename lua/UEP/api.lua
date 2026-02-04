@@ -133,6 +133,10 @@ function M.goto_super_impl(opts)
   cmd_goto_super.execute(opts)
 end
 
+function M.goto_impl(opts)
+  require("UEP.cmd.goto_implementation").execute(opts or {})
+end
+
 function M.config_tree(opts)
   cmd_config_tree.execute(opts or {})
 end

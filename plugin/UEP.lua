@@ -112,6 +112,11 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "class_name", required = false },
       },
     },
+    goto_impl = {
+      handler = uep_api.goto_impl,
+      desc = "Jump between declaration and implementation of the symbol under cursor.",
+      args = {},
+    },
     classes = {
       handler = uep_api.classes,
       bang = true,

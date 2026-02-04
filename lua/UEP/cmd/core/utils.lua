@@ -100,9 +100,18 @@ function M.open_file_and_jump(target_file_path, symbol_name, optional_line)
   local pat_struct = pattern_prefix .. [[struct\s\+\(.\{-}_API\s\+\)\?\<]] .. symbol_name .. [[\>]]
   local pat_enum   = pattern_prefix .. [[enum\s\+\(class\s\+\)\?\<]] .. symbol_name .. [[\>]]
   
+  -- 追加: 関数の定義・実装 (ClassName::FunctionName も含む)
+  local pat_func   = [[\<]] .. symbol_name .. [[\s*(]]
+  local pat_scoped = [[\w\+::]] .. symbol_name .. [[\s*(]]
+  
   for i, line in ipairs(file_content) do
-    if vim.fn.match(line, pat_class) >= 0 or vim.fn.match(line, pat_struct) >= 0 or vim.fn.match(line, pat_enum) >= 0 then
+    if vim.fn.match(line, pat_class) >= 0 or vim.fn.match(line, pat_struct) >= 0 or 
+       vim.fn.match(line, pat_enum) >= 0 or vim.fn.match(line, pat_scoped) >= 0 or 
+       vim.fn.match(line, pat_func) >= 0 then
+      
       local trimmed = line:match("^%s*(.-)%s*$")
+      -- セミコロンで終わる行（宣言）は、実装（.cpp）を探している場合はスキップしたいが、
+      -- 汎用的な関数なので、まずは「ヒットした最初の行」を候補にする
       if not (trimmed:match(";%s*(//.*)?$") or trimmed:match(";%s*(/%*.*%*/)?%s*$")) then
          line_number = i; found = true; break
       end
@@ -110,7 +119,9 @@ function M.open_file_and_jump(target_file_path, symbol_name, optional_line)
   end
   if not found then
       for i, line in ipairs(file_content) do
-          if vim.fn.match(line, pat_class) >= 0 or vim.fn.match(line, pat_struct) >= 0 or vim.fn.match(line, pat_enum) >= 0 then
+          if vim.fn.match(line, pat_class) >= 0 or vim.fn.match(line, pat_struct) >= 0 or 
+             vim.fn.match(line, pat_enum) >= 0 or vim.fn.match(line, pat_scoped) >= 0 or
+             vim.fn.match(line, pat_func) >= 0 then
               line_number = i; break
           end
       end
