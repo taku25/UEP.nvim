@@ -253,6 +253,7 @@ function M.get_inheritance_chain(child_symbol_name, opts, on_complete)
         for _, row in ipairs(raw_chain or {}) do
           if target_module_names[row.module_name] then
             local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
+            if display_name == "" then display_name = row.class_name end
             table.insert(filtered_chain, {
                 display = display_name,
                 class_name = row.class_name,

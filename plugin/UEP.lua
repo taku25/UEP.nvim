@@ -158,6 +158,11 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "class_name", required = false },
       },
     },
+    ["goto_super"] = {
+      handler = uep_api.goto_super_def,
+      desc = "Jump to parent definition (Header) or parent class header if no function at cursor.",
+      args = {},
+    },
     ["goto_super_def"] = {
       handler = uep_api.goto_super_def,
       desc = "Jump to the parent class definition of the current function.",
