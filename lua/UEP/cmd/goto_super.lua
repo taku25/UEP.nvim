@@ -24,7 +24,7 @@ end
 
 -- カーソル位置から「現在のクラス」と「現在の関数」を特定する (サーバー解析版)
 local function find_current_context(callback)
-    local cursor_line = vim.fn.line(".")
+    local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
     
     unl_api.db.parse_buffer(nil, function(res)
         if not res or not res.symbols then return callback(nil, nil) end
@@ -38,12 +38,12 @@ local function find_current_context(callback)
                 -- 関数特定
                 local methods = flatten_methods(cls.methods)
                 for _, method in ipairs(methods) do
-                    if method.line == cursor_line then
-                        target_function = method; break
-                    elseif cursor_line > method.line then
-                        if target_function == nil or method.line > target_function.line then
-                            target_function = method
-                        end
+                    local m_start = method.line or 0
+                    local m_end = method.end_line or m_start -- end_lineがない場合は1行のみとみなす
+                    
+                    if cursor_line >= m_start and cursor_line <= m_end then
+                        target_function = method
+                        break
                     end
                 end
                 break
@@ -61,11 +61,43 @@ function M.execute(opts)
     -- 1. コンテキスト取得 (サーバー解析)
     find_current_context(function(current_class, current_func)
         if not current_class then return log.warn("Could not determine class context at cursor.") end
-        if not current_func then return log.warn("Could not determine function context at cursor.") end
+        
+        local class_name = current_class.name
+        local word_under_cursor = vim.fn.expand('<cword>')
+
+        -- クラス名の上にいる場合は、関数の中にいても「親クラス」へのジャンプを優先する
+        if word_under_cursor == class_name then
+            current_func = nil
+        end
+
+        -- 関数がない場合は親クラスのヘッダーに飛ぶ
+        if not current_func then
+            log.info("No function at cursor. Jumping to parent class header of %s...", class_name)
+            unl_api.db.get_inheritance_chain(class_name, function(chain, err)
+                if err then return log.error("Failed to get parent classes: %s", tostring(err)) end
+                -- chain[1] は自分自身、chain[2] が直接の親
+                if chain and #chain >= 2 then
+                    local parent = chain[2]
+                    if parent.file_path then
+                        log.info("Jumping to parent class: %s", parent.class_name)
+                        vim.cmd("normal! m'")
+                        unl_buf_open.safe({
+                            file_path = parent.file_path,
+                            open_cmd = "edit",
+                            plugin_name = "UEP"
+                        })
+                        vim.schedule(function()
+                            uep_utils.open_file_and_jump(parent.file_path, parent.class_name, parent.line_number)
+                        end)
+                    end
+                else
+                    log.warn("No parent class found for %s", class_name)
+                end
+            end)
+            return
+        end
         
         local func_name = current_func.name
-        local class_name = current_class.name
-        
         log.info("Looking for Super::%s (Base of %s) [%s]...", func_name, class_name, mode)
 
         -- 2. 継承チェーンからシンボルを検索 (DB/RPCで一気に解決)
