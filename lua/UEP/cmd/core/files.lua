@@ -199,6 +199,222 @@ function M.get_files(opts, on_complete)
   end)
 end
 
+function M.get_files_async(opts, on_partial, on_complete)
+  local log = uep_log.get()
+  opts = opts or {}
+  local requested_scope = opts.scope or "runtime"
+  local requested_mode = opts.mode
+  local deps_flag = opts.deps_flag or "--deep-deps"
+
+  core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
+    if not ok then return on_complete(false, maps) end
+    
+    -- モジュールフィルタリング (同期版と同じロジックを期待)
+    -- ここでは簡略化のため、既存のモジュールリスト作成ロジックが必要だが、
+    -- 重複を避けるため後ほど整理が必要。一旦動作優先。
+    -- (※本来はモジュールリスト作成だけを別関数にするのが理想)
+    
+    -- [中略: モジュールリスト作成ロジックが必要]
+    -- 便宜上、同期版の M.get_files をラップするか、
+    -- ロジックを抽出して target_module_list を得る。
+    
+    -- 本来あるべき姿は、モジュールリスト作成を共通化すること。
+    -- 一旦 get_files の実装をコピーしてAsync呼び出しに差し替える。
+    
+    -- [モジュールフィルタリングロジック開始]
+    local all_modules_map = maps.all_modules_map
+    local game_name = maps.game_component_name
+    local engine_name = maps.engine_component_name
+    local game_root = (maps.all_components_map[game_name] or {}).root_path
+    local engine_root = (maps.all_components_map[engine_name] or {}).root_path
+    local function path_under_root(path, root)
+      if not path or not root then return false end
+      local p = path:gsub("\\", "/"):lower(); local r = root:gsub("\\", "/"):lower()
+      if not r:sub(-1) == "/" then r = r .. "/" end
+      return p:sub(1, #r) == r
+    end
+    local seed_modules = {}
+    if requested_mode then
+      for n, m in pairs(all_modules_map) do
+        local is_owner_match = false
+        if requested_scope == "game" then is_owner_match = (m.owner_name == game_name or m.component_name == game_name) or path_under_root(m.module_root, game_root)
+        elseif requested_scope == "engine" then is_owner_match = (m.owner_name == engine_name or m.component_name == engine_name) or path_under_root(m.module_root, engine_root)
+        else is_owner_match = true end
+        if is_owner_match then
+          local is_type_match = false
+          if requested_mode == "programs" then is_type_match = (m.type == "Program")
+          elseif requested_mode == "source" then is_type_match = (m.type ~= "Program")
+          else is_type_match = true end
+          if is_type_match then seed_modules[n] = true end
+        end
+      end
+    else
+      if requested_scope == "game" then for n, m in pairs(all_modules_map) do if m.type ~= "Program" and ((m.owner_name == game_name or m.component_name == game_name) or path_under_root(m.module_root, game_root)) then seed_modules[n] = true end end
+      elseif requested_scope == "engine" then for n, m in pairs(all_modules_map) do if m.type ~= "Program" and ((m.owner_name == engine_name or m.component_name == engine_name) or path_under_root(m.module_root, engine_root)) then seed_modules[n] = true end end
+      elseif requested_scope == "runtime" then for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
+      elseif requested_scope == "developer" then for n, m in pairs(all_modules_map) do if m.type == "Runtime" or m.type == "Developer" then seed_modules[n] = true end end
+      elseif requested_scope == "programs" then for n, m in pairs(all_modules_map) do if m.type == "Program" then seed_modules[n] = true end end
+      elseif requested_scope == "config" then for n, m in pairs(all_modules_map) do seed_modules[n] = true end
+      elseif requested_scope == "editor" then for n, m in pairs(all_modules_map) do if m.type and m.type ~= "Program" then local ct = m.type:match("^%s*(.-)%s*$"):lower(); if ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly" then seed_modules[n] = true end end end
+      elseif requested_scope == "full" then for n, m in pairs(all_modules_map) do if m.type ~= "Program" then seed_modules[n] = true end end
+      else for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
+      end
+    end
+    local target_module_names = seed_modules
+    if deps_flag ~= "--no-deps" then
+        local deps_key = (deps_flag == "--deep-deps") and "deep_dependencies" or "shallow_dependencies"
+        for mod_name, _ in pairs(seed_modules) do
+            local mod_meta = all_modules_map[mod_name]
+            if mod_meta and mod_meta[deps_key] then
+                for _, dep_name in ipairs(mod_meta[deps_key]) do
+                    local dep_meta = all_modules_map[dep_name]
+                    if dep_meta then
+                        local should_add = false
+                        if requested_mode then
+                          local is_owner_match = false
+                          if requested_scope == "game" then is_owner_match = (dep_meta.owner_name == game_name or dep_meta.component_name == game_name) or path_under_root(dep_meta.module_root, game_root)
+                          elseif requested_scope == "engine" then is_owner_match = (dep_meta.owner_name == engine_name or dep_meta.component_name == engine_name) or path_under_root(dep_meta.module_root, engine_root)
+                          else is_owner_match = true end
+                          if is_owner_match then if requested_mode == "programs" then should_add = (dep_meta.type == "Program") elseif requested_mode == "source" then should_add = (dep_meta.type ~= "Program") else should_add = true end end
+                        else
+                          if requested_scope == "game" or requested_scope == "engine" then
+                             local root = (requested_scope == "game") and game_root or engine_root; local name = (requested_scope == "game") and game_name or engine_name
+                             if dep_meta.type ~= "Program" and ((dep_meta.owner_name == name or dep_meta.component_name == name) or path_under_root(dep_meta.module_root, root)) then should_add = true end
+                          elseif requested_scope == "editor" or requested_scope == "full" then if dep_meta.type ~= "Program" then should_add = true end
+                          elseif requested_scope == "programs" then if dep_meta.type == "Program" then should_add = true end
+                          elseif requested_scope == "runtime" then should_add = (dep_meta.type == "Runtime")
+                          elseif requested_scope == "developer" then should_add = (dep_meta.type == "Runtime" or dep_meta.type == "Developer") end
+                        end
+                        if should_add then target_module_names[dep_name] = true end
+                    end
+                end
+            end
+        end
+    end
+    if deps_flag ~= "--no-deps" then
+        if engine_root then target_module_names["_EngineConfig"] = true; target_module_names["_EngineShaders"] = true end
+        target_module_names["_GameConfig"] = true; target_module_names["_GameShaders"] = true
+    end
+    local target_module_list = vim.tbl_keys(target_module_names)
+    if #target_module_list == 0 then return on_complete(true, 0) end
+    -- [モジュールフィルタリングロジック終了]
+
+    local extensions = nil; local path_filter = nil
+    if requested_mode == "config" then extensions = { "ini" }
+    elseif requested_mode == "shader" then extensions = { "usf", "ush" }
+    elseif requested_mode == "target_cs" then path_filter = "%.Target.cs"
+    elseif requested_mode == "build_cs" then path_filter = "%.Build.cs"
+    elseif requested_mode == "source" or requested_mode == "programs" then extensions = { "cpp", "c", "cc", "h", "hpp" } end
+    
+    local partial_handler = function(raw_files)
+        local merged = {}
+        for _, file in ipairs(raw_files or {}) do
+            table.insert(merged, { file_path = file.file_path, module_name = file.module_name, module_root = file.module_root })
+        end
+        on_partial(merged)
+    end
+
+    remote.get_files_in_modules_async(target_module_list, extensions, path_filter, partial_handler, on_complete)
+  end)
+end
+
+function M.search_files_async(opts, filter_text, on_partial, on_complete)
+  local log = uep_log.get()
+  opts = opts or {}
+  local requested_scope = opts.scope or "runtime"
+  local requested_mode = opts.mode
+  local deps_flag = opts.deps_flag or "--deep-deps"
+  local limit = opts.limit or 1000
+
+  core_utils.get_project_maps(vim.loop.cwd(), function(ok, maps)
+    if not ok then return on_complete(false, maps) end
+    
+    -- モジュールフィルタリング (get_files_async と同様)
+    -- [モジュールフィルタリングロジック開始]
+    local all_modules_map = maps.all_modules_map; local game_name = maps.game_component_name; local engine_name = maps.engine_component_name
+    local game_root = (maps.all_components_map[game_name] or {}).root_path; local engine_root = (maps.all_components_map[engine_name] or {}).root_path
+    local function path_under_root(path, root)
+      if not path or not root then return false end
+      local p = path:gsub("\\", "/"):lower(); local r = root:gsub("\\", "/"):lower()
+      if not r:sub(-1) == "/" then r = r .. "/" end
+      return p:sub(1, #r) == r
+    end
+    local seed_modules = {}
+    if requested_mode then
+      for n, m in pairs(all_modules_map) do
+        local is_owner_match = false
+        if requested_scope == "game" then is_owner_match = (m.owner_name == game_name or m.component_name == game_name) or path_under_root(m.module_root, game_root)
+        elseif requested_scope == "engine" then is_owner_match = (m.owner_name == engine_name or m.component_name == engine_name) or path_under_root(m.module_root, engine_root)
+        else is_owner_match = true end
+        if is_owner_match then
+          local is_type_match = false
+          if requested_mode == "programs" then is_type_match = (m.type == "Program") elseif requested_mode == "source" then is_type_match = (m.type ~= "Program") else is_type_match = true end
+          if is_type_match then seed_modules[n] = true end
+        end
+      end
+    else
+      if requested_scope == "game" then for n, m in pairs(all_modules_map) do if m.type ~= "Program" and ((m.owner_name == game_name or m.component_name == game_name) or path_under_root(m.module_root, game_root)) then seed_modules[n] = true end end
+      elseif requested_scope == "engine" then for n, m in pairs(all_modules_map) do if m.type ~= "Program" and ((m.owner_name == engine_name or m.component_name == engine_name) or path_under_root(m.module_root, engine_root)) then seed_modules[n] = true end end
+      elseif requested_scope == "runtime" then for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
+      elseif requested_scope == "developer" then for n, m in pairs(all_modules_map) do if m.type == "Runtime" or m.type == "Developer" then seed_modules[n] = true end end
+      elseif requested_scope == "programs" then for n, m in pairs(all_modules_map) do if m.type == "Program" then seed_modules[n] = true end end
+      elseif requested_scope == "config" then for n, m in pairs(all_modules_map) do seed_modules[n] = true end
+      elseif requested_scope == "editor" then for n, m in pairs(all_modules_map) do if m.type and m.type ~= "Program" then local ct = m.type:match("^%s*(.-)%s*$"):lower(); if ct=="runtime" or ct=="developer" or ct:find("editor",1,true) or ct=="uncookedonly" then seed_modules[n] = true end end end
+      elseif requested_scope == "full" then for n, m in pairs(all_modules_map) do if m.type ~= "Program" then seed_modules[n] = true end end
+      else for n, m in pairs(all_modules_map) do if m.type == "Runtime" then seed_modules[n] = true end end
+      end
+    end
+    local target_module_names = seed_modules
+    if deps_flag ~= "--no-deps" then
+        local deps_key = (deps_flag == "--deep-deps") and "deep_dependencies" or "shallow_dependencies"
+        for mod_name, _ in pairs(seed_modules) do
+            local mod_meta = all_modules_map[mod_name]
+            if mod_meta and mod_meta[deps_key] then
+                for _, dep_name in ipairs(mod_meta[deps_key]) do
+                    local dep_meta = all_modules_map[dep_name]
+                    if dep_meta then
+                        local should_add = false
+                        if requested_mode then
+                          local is_owner_match = false
+                          if requested_scope == "game" then is_owner_match = (dep_meta.owner_name == game_name or dep_meta.component_name == game_name) or path_under_root(dep_meta.module_root, game_root)
+                          elseif requested_scope == "engine" then is_owner_match = (dep_meta.owner_name == engine_name or dep_meta.component_name == engine_name) or path_under_root(dep_meta.module_root, engine_root)
+                          else is_owner_match = true end
+                          if is_owner_match then if requested_mode == "programs" then should_add = (dep_meta.type == "Program") elseif requested_mode == "source" then should_add = (dep_meta.type ~= "Program") else should_add = true end end
+                        else
+                          if requested_scope == "game" or requested_scope == "engine" then
+                             local root = (requested_scope == "game") and game_root or engine_root; local name = (requested_scope == "game") and game_name or engine_name
+                             if dep_meta.type ~= "Program" and ((dep_meta.owner_name == name or dep_meta.component_name == name) or path_under_root(dep_meta.module_root, root)) then should_add = true end
+                          elseif requested_scope == "editor" or requested_scope == "full" then if dep_meta.type ~= "Program" then should_add = true end
+                          elseif requested_scope == "programs" then if dep_meta.type == "Program" then should_add = true end
+                          elseif requested_scope == "runtime" then should_add = (dep_meta.type == "Runtime")
+                          elseif requested_scope == "developer" then should_add = (dep_meta.type == "Runtime" or dep_meta.type == "Developer") end
+                        end
+                        if should_add then target_module_names[dep_name] = true end
+                    end
+                end
+            end
+        end
+    end
+    if deps_flag ~= "--no-deps" then
+        if engine_root then target_module_names["_EngineConfig"] = true; target_module_names["_EngineShaders"] = true end
+        target_module_names["_GameConfig"] = true; target_module_names["_GameShaders"] = true
+    end
+    local target_module_list = vim.tbl_keys(target_module_names)
+    if #target_module_list == 0 then return on_complete(true, 0) end
+    -- [モジュールフィルタリングロジック終了]
+
+    local partial_handler = function(raw_files)
+        local merged = {}
+        for _, file in ipairs(raw_files or {}) do
+            table.insert(merged, { file_path = file.file_path, module_name = file.module_name, module_root = file.module_root })
+        end
+        on_partial(merged)
+    end
+
+    remote.search_files_in_modules_async(target_module_list, filter_text, limit, partial_handler, on_complete)
+  end)
+end
+
 ---
 -- 指定されたスコープ、依存関係フラグ、フィルタ文字列に基づいてファイルリストを取得するコア関数
 function M.search_files(opts, filter_text, on_complete)

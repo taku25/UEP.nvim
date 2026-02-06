@@ -190,6 +190,37 @@ function M.get_all_classes(opts, on_complete)
   end)
 end
 
+function M.get_all_classes_async(opts, on_partial, on_complete)
+  get_target_modules(opts, function(target_module_names)
+    if not target_module_names or vim.tbl_count(target_module_names) == 0 then
+      if on_complete then on_complete(true, 0) end
+      return
+    end
+
+    local target_module_list = vim.tbl_keys(target_module_names)
+    local symbol_type = opts.symbol_type
+    
+    local partial_handler = function(raw_rows)
+        local symbols = {}
+        for _, row in ipairs(raw_rows or {}) do
+            table.insert(symbols, {
+                display = row.name,
+                class_name = row.name,
+                base_class = row.base,
+                file_path = row.path,
+                path = row.path,
+                filename = row.path,
+                lnum = row.line or 1,
+                symbol_type = row.type
+            })
+        end
+        on_partial(symbols)
+    end
+
+    remote.get_classes_in_modules_async(target_module_list, symbol_type, partial_handler, on_complete)
+  end)
+end
+
 ---
 -- Get derived classes recursively using RPC
 function M.get_derived_classes(base_class_name, opts, on_complete)

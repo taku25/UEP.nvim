@@ -4,12 +4,6 @@ local M = {
     -- refreshコマンド実行時に自動で設定をリロードするかどうか
     auto_reload_config_on_refresh = true,
   
-  server = {
-    enable = true,
-    port = 3030,
-    auto_start = true,
-  },
-
   ide = {
     -- Command template to open file in IDE.
     -- Placeholders: {file}, {line}
