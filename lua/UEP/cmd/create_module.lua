@@ -23,6 +23,7 @@ function M.execute(opts)
     return ret
   end
 
+  -- Add the module to the uproject or upligin file
   local find_and_edit_uproject = function(module_path, module_opts)
     local project_root = uep_finder.find_project_root(vim.loop.cwd())
     if project_root == nil then
@@ -44,26 +45,35 @@ function M.execute(opts)
     end
   end
 
+  -- Apply the modification to the project
   local create_module = function(module_opts)
     local project_root = uep_finder.find_project_root(vim.loop.cwd())
     if project_root == nil then
       vim.notify("Could not find root of the UE project", "error")
       return
     end
+
+    -- Modify the provided targets
     for _, target in ipairs(module_opts.targets) do
       target_parser.add_module(vim.fs.joinpath(project_root, target), module_opts)
     end
+
+    -- Create the folder for the module
     vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name), "p")
     vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Public"), "p")
     vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Private"), "p")
     local plugin_dir =
       vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(string.sub(debug.getinfo(1).source, 2, -1)))))
+
+    -- Get the default value for indentation
     local tab
     if vim.opt.expandtab._value then
       tab = string.rep(" ", vim.opt.tabstop._value)
     else
       tab = "\t"
     end
+
+    -- Create the module's .h file
     local lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.h.template"))
     local lines_sub = {}
     for _, line in ipairs(lines) do
@@ -80,6 +90,8 @@ function M.execute(opts)
         module_opts.module_name .. ".h"
       )
     )
+
+    -- Create the module's .cpp file
     lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.cpp.template"))
     lines_sub = {}
     for _, line in ipairs(lines) do
@@ -96,6 +108,8 @@ function M.execute(opts)
         module_opts.module_name .. ".cpp"
       )
     )
+
+    -- Create the module's Build.cs file
     lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Build.cs.template"))
     lines_sub = {}
     for _, line in ipairs(lines) do
@@ -111,6 +125,8 @@ function M.execute(opts)
         module_opts.module_name .. ".Build.cs"
       )
     )
+
+    -- Modify the uplugin or uproject file
     find_and_edit_uproject(
       vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name),
       module_opts
@@ -154,6 +170,7 @@ function M.execute(opts)
         default_check = true,
         multi_check = true,
         on_submit = function(selected)
+          vim.print(selected)
           targets_opts.targets = selected
           create_module(targets_opts)
         end,
