@@ -53,84 +53,90 @@ function M.execute(opts)
       return
     end
 
-    -- Modify the provided targets
-    for _, target in ipairs(module_opts.targets) do
-      target_parser.add_module(vim.fs.joinpath(project_root, target), module_opts)
-    end
+    vim.print("name: " .. module_opts.module_name)
+    vim.print("path: " .. module_opts.subdir_path)
+    vim.print("type: " .. module_opts.module_type)
+    vim.print("loading phase: " .. module_opts.loading_phase)
+    vim.print("targets" .. table.concat(module_opts.tagets, ", "))
 
-    -- Create the folder for the module
-    vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name), "p")
-    vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Public"), "p")
-    vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Private"), "p")
-    local plugin_dir =
-      vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(string.sub(debug.getinfo(1).source, 2, -1)))))
-
-    -- Get the default value for indentation
-    local tab
-    if vim.opt.expandtab._value then
-      tab = string.rep(" ", vim.opt.tabstop._value)
-    else
-      tab = "\t"
-    end
-
-    -- Create the module's .h file
-    local lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.h.template"))
-    local lines_sub = {}
-    for _, line in ipairs(lines) do
-      local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
-      table.insert(lines_sub, line_sub)
-    end
-    vim.fn.writefile(
-      lines_sub,
-      vim.fs.joinpath(
-        project_root,
-        module_opts.subdir_path,
-        module_opts.module_name,
-        "Public",
-        module_opts.module_name .. ".h"
-      )
-    )
-
-    -- Create the module's .cpp file
-    lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.cpp.template"))
-    lines_sub = {}
-    for _, line in ipairs(lines) do
-      local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
-      table.insert(lines_sub, line_sub)
-    end
-    vim.fn.writefile(
-      lines_sub,
-      vim.fs.joinpath(
-        project_root,
-        module_opts.subdir_path,
-        module_opts.module_name,
-        "Private",
-        module_opts.module_name .. ".cpp"
-      )
-    )
-
-    -- Create the module's Build.cs file
-    lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Build.cs.template"))
-    lines_sub = {}
-    for _, line in ipairs(lines) do
-      local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
-      table.insert(lines_sub, line_sub)
-    end
-    vim.fn.writefile(
-      lines_sub,
-      vim.fs.joinpath(
-        project_root,
-        module_opts.subdir_path,
-        module_opts.module_name,
-        module_opts.module_name .. ".Build.cs"
-      )
-    )
-
-    -- Modify the uplugin or uproject file
-    find_and_edit_uproject(
-      vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name),
-      module_opts
-    )
+    -- -- Modify the provided targets
+    -- for _, target in ipairs(module_opts.targets) do
+    -- 	target_parser.add_module(vim.fs.joinpath(project_root, target), module_opts)
+    -- end
+    --
+    -- -- Create the folder for the module
+    -- vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name), "p")
+    -- vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Public"), "p")
+    -- vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Private"), "p")
+    -- local plugin_dir =
+    -- 	vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(string.sub(debug.getinfo(1).source, 2, -1)))))
+    --
+    -- -- Get the default value for indentation
+    -- local tab
+    -- if vim.opt.expandtab._value then
+    -- 	tab = string.rep(" ", vim.opt.tabstop._value)
+    -- else
+    -- 	tab = "\t"
+    -- end
+    --
+    -- -- Create the module's .h file
+    -- local lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.h.template"))
+    -- local lines_sub = {}
+    -- for _, line in ipairs(lines) do
+    -- 	local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
+    -- 	table.insert(lines_sub, line_sub)
+    -- end
+    -- vim.fn.writefile(
+    -- 	lines_sub,
+    -- 	vim.fs.joinpath(
+    -- 		project_root,
+    -- 		module_opts.subdir_path,
+    -- 		module_opts.module_name,
+    -- 		"Public",
+    -- 		module_opts.module_name .. ".h"
+    -- 	)
+    -- )
+    --
+    -- -- Create the module's .cpp file
+    -- lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.cpp.template"))
+    -- lines_sub = {}
+    -- for _, line in ipairs(lines) do
+    -- 	local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
+    -- 	table.insert(lines_sub, line_sub)
+    -- end
+    -- vim.fn.writefile(
+    -- 	lines_sub,
+    -- 	vim.fs.joinpath(
+    -- 		project_root,
+    -- 		module_opts.subdir_path,
+    -- 		module_opts.module_name,
+    -- 		"Private",
+    -- 		module_opts.module_name .. ".cpp"
+    -- 	)
+    -- )
+    --
+    -- -- Create the module's Build.cs file
+    -- lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Build.cs.template"))
+    -- lines_sub = {}
+    -- for _, line in ipairs(lines) do
+    -- 	local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
+    -- 	table.insert(lines_sub, line_sub)
+    -- end
+    -- vim.fn.writefile(
+    -- 	lines_sub,
+    -- 	vim.fs.joinpath(
+    -- 		project_root,
+    -- 		module_opts.subdir_path,
+    -- 		module_opts.module_name,
+    -- 		module_opts.module_name .. ".Build.cs"
+    -- 	)
+    -- )
+    --
+    -- -- Modify the uplugin or uproject file
+    -- find_and_edit_uproject(
+    -- 	vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name),
+    -- 	module_opts
+    -- )
   end
 
   local function handle_targets(targets_opts)

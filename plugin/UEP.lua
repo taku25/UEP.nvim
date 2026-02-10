@@ -257,6 +257,7 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "module_path", required = false },
         { name = "module_type", required = false },
         { name = "loading_phase", required = false },
+        { name = "tagets", variadic = true },
       },
     },
   }, -- <<< subcommands テーブルを閉じる '}'
