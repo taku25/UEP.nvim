@@ -1,7 +1,7 @@
 -- lua/UEP/cmd/find_parents.lua (完成版)
 
 local derived_core = require("UEP.cmd.core.derived")
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
 local unl_buf_open = require("UNL.buf.open")
 local log = require("UEP.logger")
@@ -30,7 +30,7 @@ local function find_and_show_parents(child_class_name)
       })
     end
 
-    unl_picker.pick({
+    unl_picker.open({
       kind = "uep_parent_classes",
       title = "Inheritance Chain of: " .. child_class_name,
       conf = uep_config.get(),
@@ -62,7 +62,7 @@ function M.execute(opts)
         return log.get().error("No classes found. Please run :UEP refresh.")
       end
 
-      unl_picker.pick({
+      unl_picker.open({
         kind = "uep_select_child_class",
         title = "Select a Class to Find its Parents",
         conf = uep_config.get(),
@@ -95,3 +95,4 @@ function M.execute(opts)
 end
 
 return M
+

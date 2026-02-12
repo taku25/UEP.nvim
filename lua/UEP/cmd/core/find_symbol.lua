@@ -1,7 +1,7 @@
 -- lua/UEP/cmd/core/find_symbol.lua (DB一元化版)
 
 local derived_core = require("UEP.cmd.core.derived")
-local dsp = require("UNL.backend.dynamic_stack_picker")
+local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
 local uep_log = require("UEP.logger")
 local core_utils = require("UEP.cmd.core.utils")
@@ -31,7 +31,7 @@ function M.find_and_jump(opts)
 
   log.info("Fetching symbols from DB (scope=%s, deps=%s)...", opts.scope, opts.deps_flag)
 
-  dsp.pick({
+  unl_picker.open({
     kind = "uep_select_" .. symbol_type,
     title = picker_title,
     conf = uep_config.get(),
@@ -57,3 +57,5 @@ function M.find_and_jump(opts)
 end
 
 return M
+
+

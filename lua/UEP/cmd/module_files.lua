@@ -1,7 +1,7 @@
 -- lua/UEP/cmd/module_files.lua (新コアロジック対応版)
 
 local files_core = require("UEP.cmd.core.files") -- ★ 新しい core/files を使う
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_log = require("UEP.logger")
 local uep_config = require("UEP.config")
 local unl_events = require("UNL.event.events")
@@ -32,7 +32,7 @@ local function show_file_picker(items, module_meta)
 
   table.sort(picker_items, function(a, b) return a.label < b.label end)
 
-  unl_picker.pick({
+  unl_picker.open({
     kind = "uep_module_file_picker", -- kind 名を変更
     title = (" Files in Module: %s"):format(module_meta.name), -- タイトルにモジュール名
     items = picker_items,
@@ -118,7 +118,7 @@ function M.execute(opts)
         if #all_modules_picker == 0 then return log.error("No modules found for picker.") end
         table.sort(all_modules_picker, function(a, b) return a.label < b.label end)
 
-        unl_picker.pick({
+        unl_picker.open({
           kind = "uep_select_module", -- kind 名を変更
           title = "Select a Module",
           items = all_modules_picker,
@@ -137,3 +137,4 @@ end
 -- ▲▲▲ execute 関数修正ここまで ▲▲▲
 
 return M
+

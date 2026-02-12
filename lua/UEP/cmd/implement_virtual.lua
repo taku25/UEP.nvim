@@ -1,6 +1,6 @@
 -- lua/UEP/cmd/implement_virtual.lua
 local uep_log = require("UEP.logger")
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
 local unl_api = require("UNL.api")
 
@@ -61,7 +61,10 @@ end
 
 -- 現在のバッファのクラス情報をサーバーでリアルタイム解析して取得
 local function get_current_class_from_buffer(line, callback)
-  unl_api.db.parse_buffer(nil, function(res)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local content = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+  
+  unl_api.db.parse_buffer({ content = content, file_path = vim.api.nvim_buf_get_name(bufnr) }, function(res)
     if not res or not res.symbols then return callback(nil) end
     
     local best_match = nil
@@ -138,7 +141,7 @@ function M.execute(opts)
         })
       end
 
-      unl_picker.pick({
+      unl_picker.open({
         kind = "uep_virtual_override",
         title = string.format("Override Virtual Function (Current: %s)", current_class_name),
         items = picker_items,
@@ -157,3 +160,4 @@ function M.execute(opts)
 end
 
 return M
+

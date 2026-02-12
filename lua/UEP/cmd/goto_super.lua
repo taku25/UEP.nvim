@@ -2,7 +2,6 @@
 local uep_log = require("UEP.logger")
 local derived_core = require("UEP.cmd.core.derived")
 local uep_utils = require("UEP.cmd.core.utils")
-local unl_parser = require("UNL.parser.cpp")
 local unl_buf_open = require("UNL.buf.open")
 local unl_api = require("UNL.api")
 
@@ -24,9 +23,11 @@ end
 
 -- カーソル位置から「現在のクラス」と「現在の関数」を特定する (サーバー解析版)
 local function find_current_context(callback)
+    local bufnr = vim.api.nvim_get_current_buf()
     local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+    local content = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
     
-    unl_api.db.parse_buffer(nil, function(res)
+    unl_api.db.parse_buffer({ content = content, file_path = vim.api.nvim_buf_get_name(bufnr) }, function(res)
         if not res or not res.symbols then return callback(nil, nil) end
         
         local target_class = nil

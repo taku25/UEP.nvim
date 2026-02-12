@@ -1,7 +1,7 @@
 -- lua/UEP/cmd/target_cs.lua (RPC Optimized)
 local core_utils = require("UEP.cmd.core.utils")
 local unl_api = require("UNL.api")
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_log = require("UEP.logger")
 local uep_config = require("UEP.config")
 
@@ -27,7 +27,7 @@ local function show_picker(targets, project_root, title_suffix)
 
   table.sort(picker_items, function(a, b) return a.label < b.label end)
 
-  unl_picker.pick({
+  unl_picker.open({
     kind = "uep_target_cs",
     title = "Select Target.cs" .. (title_suffix or ""),
     items = picker_items,

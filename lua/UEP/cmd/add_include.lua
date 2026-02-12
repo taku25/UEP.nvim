@@ -3,7 +3,7 @@ local unl_api = require("UNL.api")
 local derived_core = require("UEP.cmd.core.derived")
 local core_utils = require("UEP.cmd.core.utils")
 local uep_log = require("UEP.logger")
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
 
 local M = {}
@@ -123,7 +123,7 @@ function M.execute(opts)
         })
       end
 
-      unl_picker.pick({
+      unl_picker.open({
         kind = "uep_select_class_to_include",
         title = "Select Class to #include",
         items = picker_items,
