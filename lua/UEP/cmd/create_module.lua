@@ -57,7 +57,7 @@ function M.execute(opts)
     vim.print("path: " .. module_opts.subdir_path)
     vim.print("type: " .. module_opts.module_type)
     vim.print("loading phase: " .. module_opts.loading_phase)
-    vim.print("targets" .. table.concat(module_opts.tagets, ", "))
+    vim.print("targets: " .. table.concat(module_opts.targets, ", "))
 
     -- -- Modify the provided targets
     -- for _, target in ipairs(module_opts.targets) do
@@ -146,12 +146,16 @@ function M.execute(opts)
       return
     end
     -- Look for all the Target.cs in the hierachy and find if it is a uproject or uplgin
-    local targets = {}
+    local available_targets = {}
+    local targets = targets_opts.targets or nil
+    if targets ~= nil and #targets == 1 and targets[1] == "none" then
+      targets = {}
+    end
     local is_uproject = nil
     for dir in vim.fs.parents(vim.fs.joinpath(project_root, targets_opts.subdir_path, targets_opts.module_name)) do
       for name, type in vim.fs.dir(dir) do
         if type == "file" and name:sub(-#".Target.cs") == ".Target.cs" then
-          table.insert(targets, vim.fs.relpath(project_root, vim.fs.joinpath(dir, name)))
+          table.insert(available_targets, vim.fs.relpath(project_root, vim.fs.joinpath(dir, name)))
         elseif is_uproject == nil and type == "file" and name:sub(-#".uproject") == ".uproject" then
           is_uproject = true
         elseif is_uproject == nil and type == "file" and name:sub(-#".uplugin") == ".uplugin" then
@@ -162,25 +166,43 @@ function M.execute(opts)
         break
       end
     end
+
+    for _, targ in ipairs(targets) do
+      local found = false
+      for _, avail_targ in ipairs(available_targets) do
+        if targ == avail_targ then
+          found = true
+          break
+        end
+      end
+      if not found then
+        vim.notify(targ .. " is not in the available_targets.", "error")
+        return
+      end
+    end
     if is_uproject == nil then
       vim.notify("Could not find a 'uproject' or 'uplugin'. Aborting.", "error")
       return
     elseif is_uproject then
-      unl_checker_picker.pick({
-        kind = "loading_phase_picker",
-        title = "  Loading Phase",
-        conf = require("UNL.config").get("UEP"),
-        items = prepare_items(targets),
-        logger_name = "UEP",
-        preview_enabled = false,
-        default_check = true,
-        multi_check = true,
-        on_submit = function(selected)
-          vim.print(selected)
-          targets_opts.targets = selected
-          create_module(targets_opts)
-        end,
-      })
+      if targets == nil then
+        unl_checker_picker.pick({
+          kind = "targets_picker",
+          title = "  Targets",
+          conf = require("UNL.config").get("UEP"),
+          items = prepare_items(available_targets),
+          logger_name = "UEP",
+          preview_enabled = false,
+          default_check = true,
+          multi_check = true,
+          on_submit = function(selected)
+            targets_opts.targets = selected
+            create_module(targets_opts)
+          end,
+        })
+      else
+        targets_opts.targets = targets
+        create_module(targets_opts)
+      end
     else
       targets_opts.targets = {}
       create_module(targets_opts)
@@ -255,7 +277,6 @@ function M.execute(opts)
         vim.notify(module_opts.module_type .. " is not a valid module type.", "error")
       end
     else
-      vim.print(host_types)
       -- Open picker for Host Types
       unl_picker.pick({
         kind = "module_type_picker",
