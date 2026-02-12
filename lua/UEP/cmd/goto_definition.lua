@@ -3,7 +3,7 @@ local unl_api = require("UNL.api")
 local core_utils = require("UEP.cmd.core.utils")
 local uep_log = require("UEP.logger")
 local derived_core = require("UEP.cmd.core.derived")
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
 
 local M = {}
@@ -21,7 +21,7 @@ function M.execute(opts)
         return log.error("No symbols found. Please run :UNL refresh.")
       end
 
-      unl_picker.pick({
+      unl_picker.open({
         kind = "uep_select_symbol_to_jump",
         title = "Select Symbol (Class, Struct, or Enum) to Jump",
         items = all_symbols_data,

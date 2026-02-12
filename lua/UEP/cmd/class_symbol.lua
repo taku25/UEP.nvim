@@ -1,5 +1,5 @@
 local derived_core = require("UEP.cmd.core.derived")
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
 local uep_log = require("UEP.logger")
 local unl_api = require("UNL.api")
@@ -71,7 +71,7 @@ local function show_symbol_picker(file_path, symbols)
     return vim.notify("No symbols found in selected class.", vim.log.levels.WARN)
   end
 
-  unl_picker.pick({
+  unl_picker.open({
     kind = "uep_class_symbol_detail",
     title = "Symbols in " .. vim.fn.fnamemodify(file_path, ":t"),
     items = items,
@@ -125,7 +125,7 @@ function M.execute(opts)
           })
       end
 
-      unl_picker.pick({
+      unl_picker.open({
           kind = "uep_class_symbol",
           title = "Select Class to Find Symbols",
           items = items,
@@ -162,3 +162,4 @@ function M.execute(opts)
 end
 
 return M
+

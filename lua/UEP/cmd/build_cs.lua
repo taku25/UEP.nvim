@@ -1,5 +1,5 @@
 local core_utils = require("UEP.cmd.core.utils")
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_log = require("UEP.logger")
 local uep_config = require("UEP.config")
 
@@ -32,7 +32,7 @@ local function show_picker(all_modules_map)
 
   table.sort(picker_items, function(a, b) return a.label < b.label end)
 
-  unl_picker.pick({
+  unl_picker.open({
     kind = "uep_build_cs",
     title = "Select Build.cs",
     items = picker_items,
@@ -90,3 +90,4 @@ function M.execute(opts)
 end
 
 return M
+

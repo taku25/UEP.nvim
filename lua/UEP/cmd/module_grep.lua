@@ -3,7 +3,7 @@
 local grep_core = require("UEP.cmd.core.grep")
 local uep_core_utils = require("UEP.cmd.core.utils") -- ★ Use utils
 local uep_log = require("UEP.logger")
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
 
 local M = {}
@@ -56,7 +56,7 @@ function M.execute(opts)
       if #picker_items == 0 then return log.error("No modules found for picker.") end
       table.sort(picker_items, function(a, b) return a.label < b.label end)
 
-      unl_picker.pick({
+      unl_picker.open({
         kind = "uep_select_module_for_grep",
         title = "Select a Module to Grep",
         items = picker_items,
@@ -73,3 +73,4 @@ function M.execute(opts)
 end
 
 return M
+

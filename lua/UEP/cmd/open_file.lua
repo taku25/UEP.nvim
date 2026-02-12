@@ -1,7 +1,7 @@
 -- lua/UEP/cmd/open_file.lua (RPC Optimized)
 local unl_api = require("UNL.api")
 local core_utils = require("UEP.cmd.core.utils")
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
 local uep_log = require("UEP.logger")
 local fs = require("vim.fs")
@@ -22,7 +22,7 @@ local function present_picker(candidates, partial_path)
     end
   end
 
-  unl_picker.pick({
+  unl_picker.open({
     kind = "uep_select_include_file",
     title = "Select a file to open",
     items = picker_items,

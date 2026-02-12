@@ -1,4 +1,4 @@
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
 local uep_log = require("UEP.logger")
 local fs = require("vim.fs")
@@ -131,7 +131,7 @@ function M.execute(opts)
       })
   end
 
-  unl_picker.pick({
+  unl_picker.open({
     kind = "uep_new_project_engine",
     title = "Select Engine for New Project",
     items = engine_items,
@@ -165,7 +165,7 @@ function M.execute(opts)
             return 
         end
 
-        unl_picker.pick({
+        unl_picker.open({
             kind = "uep_new_project_template",
             title = "Select Template",
             items = templates,
@@ -240,3 +240,4 @@ function M.execute(opts)
 end
 
 return M
+

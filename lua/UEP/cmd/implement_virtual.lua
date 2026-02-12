@@ -1,6 +1,6 @@
 -- lua/UEP/cmd/implement_virtual.lua
 local uep_log = require("UEP.logger")
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
 local unl_api = require("UNL.api")
 
@@ -138,7 +138,7 @@ function M.execute(opts)
         })
       end
 
-      unl_picker.pick({
+      unl_picker.open({
         kind = "uep_virtual_override",
         title = string.format("Override Virtual Function (Current: %s)", current_class_name),
         items = picker_items,
@@ -157,3 +157,4 @@ function M.execute(opts)
 end
 
 return M
+

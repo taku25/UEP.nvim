@@ -1,7 +1,7 @@
 -- lua/UEP/cmd/system_open.lua (RPC Optimized)
 local unl_api = require("UNL.api")
 local uep_log = require("UEP.logger")
-local unl_picker = require("UNL.backend.picker")
+local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
 
 local M = {}
@@ -48,7 +48,7 @@ local function pick_and_open()
         })
       end
 
-      unl_picker.pick({
+      unl_picker.open({
         kind = "uep_system_open",
         title = "Select File to Reveal (UEP)",
         items = items,
