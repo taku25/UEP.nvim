@@ -4,7 +4,7 @@ local uep_log = require("UEP.logger")
 local uep_config = require("UEP.config")
 local uep_context = require("UEP.context")
 local unl_finder = require("UNL.finder")
-local dsp = require("UNL.backend.dynamic_stack_picker") -- 新しいピッカーを使用
+local unl_picker = require("UNL.picker") -- 統合されたピッカーを使用
 local core_files = require("UEP.cmd.core.files")
 local core_utils = require("UEP.cmd.core.utils")
 
@@ -95,41 +95,40 @@ local function show_picker(scope, deps_flag, mode, items_override, start_fn)
   local filter_suffix = (items_override or start_fn) and " (Search)" or ""
   local title = (" Files [%s%s]%s%s"):format(scope_display, mode_display, deps_display, filter_suffix)
 
-  -- dynamic_stack_picker を使用
-  dsp.pick({
-    kind = "uep_file_picker",
+  -- 統合ピッカーを使用
+  unl_picker.open({
     title = title,
     conf = uep_config.get(),
-    -- items がある場合はそれを初期値とし、なければ空で開始
-    items = items_override, 
-    -- start_fn があればそれを使い、なければキャッシュから push するダミーを作る
-    start = function(push)
-      if start_fn then
-        start_fn(push)
-      elseif items_override then
-        -- すでにアイテムがある場合は何もしない（picker側で初期表示される）
-      else
-        -- キャッシュから取得して push (数千件ずつ小分けにして UI を固めない)
-        local context_key = get_context_key(scope, deps_flag, mode)
-        local cached_items = context_key and uep_context.get(context_key)
-        if cached_items then
-          local chunk = {}
-          for i, item in ipairs(cached_items) do
-            table.insert(chunk, item)
-            if i % 500 == 0 then
-              push(chunk)
-              chunk = {}
+    source = {
+      type = "callback",
+      fn = function(push)
+        if start_fn then
+          start_fn(push)
+        elseif items_override then
+          push(items_override)
+        else
+          local context_key = get_context_key(scope, deps_flag, mode)
+          local cached_items = context_key and uep_context.get(context_key)
+          if cached_items then
+            local chunk = {}
+            for i, item in ipairs(cached_items) do
+              table.insert(chunk, item)
+              if i % 500 == 0 then
+                push(chunk)
+                chunk = {}
+              end
             end
+            push(chunk)
           end
-          push(chunk)
         end
-      end
-    end,
+      end,
+    },
     preview_enabled = true,
     devicons_enabled = true,
-    on_submit = function(selection)
+    on_confirm = function(selection)
       if not selection or selection == "" then return end
-      local file_path = selection:match("[^\t]+$")
+      local value = type(selection) == "table" and (selection.value or selection) or selection
+      local file_path = value:match("[^\t]+$")
       if file_path and file_path ~= "" then pcall(vim.cmd.edit, vim.fn.fnameescape(file_path)) end
     end,
   })
