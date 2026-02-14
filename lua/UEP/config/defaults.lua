@@ -49,15 +49,11 @@ local M = {
 
     picker = {
       mode = "auto",
-      prefer = { "snacks", "native", "dummy" },
+      prefer = { "telescope", "fzf-lua", "snacks", "native", "dummy" },
     },
     grep_picker = {
       mode = "auto",
-      prefer = { "snacks", }
-    },
-    dynamic_picker = {
-      mode = "auto",
-      prefer = {  "snacks", }
+      prefer = { "telescope", "fzf-lua", "snacks" }
     },
 
     progress = {
