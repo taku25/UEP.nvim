@@ -1,7 +1,7 @@
 local log = require("UEP.logger")
+local uep_config = require("UEP.config")
 local unl_api = require("UNL.api")
-local unl_picker = require("UNL.backend.picker")
-local unl_checker_picker = require("UNL.backend.checker_picker")
+local unl_picker = require("UNL.picker")
 local uep_finder = require("UNL.finder.project")
 local target_parser = require("UEP.parser.target")
 local uproject_parser = require("UEP.parser.uproject")
@@ -278,18 +278,22 @@ function M.execute(opts)
       end
     else
       -- Open picker for Host Types
-      unl_picker.pick({
+      unl_picker.open({
         kind = "module_type_picker",
         title = "  Module Type",
-        conf = require("UNL.config").get("UEP"),
+        conf = uep_config.get(),
         items = prepare_items(host_types),
         logger_name = "UEP",
         preview_enabled = false,
+        format = function(item)
+          return item.display
+        end,
         on_submit = function(selected)
-          if selected then
-            module_opts.module_type = selected
-            prepare_loading_phase(module_opts)
-          end
+          -- if selected then
+          -- 	module_opts.module_type = selected
+          -- 	prepare_loading_phase(module_opts)
+          -- end
+          vim.notify(selected)
         end,
       })
     end
