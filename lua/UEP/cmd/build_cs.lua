@@ -34,26 +34,19 @@ local function show_picker(all_modules_map)
     return a.label < b.label
   end)
 
-  -- unl_picker.open({
-  -- 	kind = "uep_build_cs",
-  -- 	title = "Select Build.cs",
-  -- 	items = picker_items,
-  -- 	conf = uep_config.get(),
-  -- 	preview_enabled = true,
-  -- 	format = function(item)
-  -- 		return string.format("%-30s  %s", item.label, item.display_path)
-  -- 	end,
-  -- 	on_submit = function(selection)
-  -- 		if selection and selection ~= "" then
-  -- 			vim.cmd.edit(vim.fn.fnameescape(selection))
-  -- 		end
-  -- 	end,
-  -- })
   unl_picker.open({
-    title = "Select Module",
-    items = { "Core", "Engine", "Project" }, -- Static list
-    on_confirm = function(selection)
-      print("Selected: " .. selection)
+    kind = "uep_build_cs",
+    title = "Select Build.cs",
+    items = picker_items,
+    conf = uep_config.get(),
+    preview_enabled = true,
+    format = function(item)
+      return string.format("%-30s  %s", item.label, item.display_path)
+    end,
+    on_submit = function(selection)
+      if selection and selection ~= "" then
+        vim.cmd.edit(vim.fn.fnameescape(selection))
+      end
     end,
   })
 end

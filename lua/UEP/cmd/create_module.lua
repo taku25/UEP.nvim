@@ -11,18 +11,6 @@ local M = {}
 function M.execute(opts)
   opts = opts or {}
 
-  local function prepare_items(items)
-    local ret = {}
-    for _, item in ipairs(items) do
-      table.insert(ret, {
-        value = item,
-        display = item,
-        text = item,
-      })
-    end
-    return ret
-  end
-
   -- Add the module to the uproject or upligin file
   local find_and_edit_uproject = function(module_path, module_opts)
     local project_root = uep_finder.find_project_root(vim.loop.cwd())

@@ -106,6 +106,8 @@ Command List                                           *UEP-commands-list*
     Open the Target.cs file.
 :UEP web_doc[!]
     Search Unreal Engine Web Docs.
+:UEP create_module [module_path] [module_type] [loading_phase] [targets]
+    Create a new module.
 ------------------------------------------------------------------------------
 Command Details                                     *UEP-commands-detail*
 
@@ -317,6 +319,17 @@ Command Details                                     *UEP-commands-detail*
     Opens the Unreal Engine Web Documentation.
     - Without `!`: Searches for the word under the cursor.
     - With `!`: Opens a picker to select a class from the project.
+
+:UEP create_module [module_path] [module_type] [loading_phase] [targets]
+    Create a new module. The module can be in the source folder or inside a plugin.
+    - [module_path]: (Optional)
+      path to the module folder, relative to the project root. If omitted, opens an input box.
+    - [module_type]: (Optional)
+      type of the module to create. See Unreal's documentation for more details. If omitted, opens a picker.
+    - [loading_phase]: (Optional)
+      loading phase of the module. See Unreal's documentation for more details. If omitted, opens a picker.
+    - [targets]: (Optional)
+      list of the targets that will build the module. If omitted, opens a picker.
 ==============================================================================
 3. Configuration                                       *UEP-configuration*
 
