@@ -16,12 +16,12 @@ local function show_picker(all_modules_map)
       -- core_utils.create_relative_path を使って表示を綺麗にする
       -- (path は Build.cs のフルパス)
       local relative_path = core_utils.create_relative_path(meta.path, meta.module_root)
-      
+
       table.insert(picker_items, {
         label = string.format("%s (%s)", name, meta.type or "Unknown"),
         display_path = relative_path,
         value = meta.path,
-        filename = meta.path
+        filename = meta.path,
       })
     end
   end
@@ -30,21 +30,30 @@ local function show_picker(all_modules_map)
     return log.warn("No modules with Build.cs found.")
   end
 
-  table.sort(picker_items, function(a, b) return a.label < b.label end)
+  table.sort(picker_items, function(a, b)
+    return a.label < b.label
+  end)
 
+  -- unl_picker.open({
+  -- 	kind = "uep_build_cs",
+  -- 	title = "Select Build.cs",
+  -- 	items = picker_items,
+  -- 	conf = uep_config.get(),
+  -- 	preview_enabled = true,
+  -- 	format = function(item)
+  -- 		return string.format("%-30s  %s", item.label, item.display_path)
+  -- 	end,
+  -- 	on_submit = function(selection)
+  -- 		if selection and selection ~= "" then
+  -- 			vim.cmd.edit(vim.fn.fnameescape(selection))
+  -- 		end
+  -- 	end,
+  -- })
   unl_picker.open({
-    kind = "uep_build_cs",
-    title = "Select Build.cs",
-    items = picker_items,
-    conf = uep_config.get(),
-    preview_enabled = true,
-    format = function(item)
-      return string.format("%-30s  %s", item.label, item.display_path)
-    end,
-    on_submit = function(selection)
-      if selection and selection ~= "" then
-        vim.cmd.edit(vim.fn.fnameescape(selection))
-      end
+    title = "Select Module",
+    items = { "Core", "Engine", "Project" }, -- Static list
+    on_confirm = function(selection)
+      print("Selected: " .. selection)
     end,
   })
 end
@@ -90,4 +99,3 @@ function M.execute(opts)
 end
 
 return M
-

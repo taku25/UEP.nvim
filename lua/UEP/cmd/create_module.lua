@@ -53,90 +53,84 @@ function M.execute(opts)
       return
     end
 
-    vim.print("name: " .. module_opts.module_name)
-    vim.print("path: " .. module_opts.subdir_path)
-    vim.print("type: " .. module_opts.module_type)
-    vim.print("loading phase: " .. module_opts.loading_phase)
-    vim.print("targets: " .. table.concat(module_opts.targets, ", "))
+    -- Modify the provided targets
+    for _, target in ipairs(module_opts.targets) do
+      target_parser.add_module(vim.fs.joinpath(project_root, target), module_opts)
+    end
 
-    -- -- Modify the provided targets
-    -- for _, target in ipairs(module_opts.targets) do
-    -- 	target_parser.add_module(vim.fs.joinpath(project_root, target), module_opts)
-    -- end
-    --
-    -- -- Create the folder for the module
-    -- vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name), "p")
-    -- vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Public"), "p")
-    -- vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Private"), "p")
-    -- local plugin_dir =
-    -- 	vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(string.sub(debug.getinfo(1).source, 2, -1)))))
-    --
-    -- -- Get the default value for indentation
-    -- local tab
-    -- if vim.opt.expandtab._value then
-    -- 	tab = string.rep(" ", vim.opt.tabstop._value)
-    -- else
-    -- 	tab = "\t"
-    -- end
-    --
-    -- -- Create the module's .h file
-    -- local lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.h.template"))
-    -- local lines_sub = {}
-    -- for _, line in ipairs(lines) do
-    -- 	local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
-    -- 	table.insert(lines_sub, line_sub)
-    -- end
-    -- vim.fn.writefile(
-    -- 	lines_sub,
-    -- 	vim.fs.joinpath(
-    -- 		project_root,
-    -- 		module_opts.subdir_path,
-    -- 		module_opts.module_name,
-    -- 		"Public",
-    -- 		module_opts.module_name .. ".h"
-    -- 	)
-    -- )
-    --
-    -- -- Create the module's .cpp file
-    -- lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.cpp.template"))
-    -- lines_sub = {}
-    -- for _, line in ipairs(lines) do
-    -- 	local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
-    -- 	table.insert(lines_sub, line_sub)
-    -- end
-    -- vim.fn.writefile(
-    -- 	lines_sub,
-    -- 	vim.fs.joinpath(
-    -- 		project_root,
-    -- 		module_opts.subdir_path,
-    -- 		module_opts.module_name,
-    -- 		"Private",
-    -- 		module_opts.module_name .. ".cpp"
-    -- 	)
-    -- )
-    --
-    -- -- Create the module's Build.cs file
-    -- lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Build.cs.template"))
-    -- lines_sub = {}
-    -- for _, line in ipairs(lines) do
-    -- 	local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
-    -- 	table.insert(lines_sub, line_sub)
-    -- end
-    -- vim.fn.writefile(
-    -- 	lines_sub,
-    -- 	vim.fs.joinpath(
-    -- 		project_root,
-    -- 		module_opts.subdir_path,
-    -- 		module_opts.module_name,
-    -- 		module_opts.module_name .. ".Build.cs"
-    -- 	)
-    -- )
-    --
-    -- -- Modify the uplugin or uproject file
-    -- find_and_edit_uproject(
-    -- 	vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name),
-    -- 	module_opts
-    -- )
+    -- Create the folder for the module
+    vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name), "p")
+    vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Public"), "p")
+    vim.fn.mkdir(vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name, "Private"), "p")
+    local plugin_dir =
+      vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(string.sub(debug.getinfo(1).source, 2, -1)))))
+
+    -- Get the default value for indentation
+    local tab
+    if vim.opt.expandtab._value then
+      tab = string.rep(" ", vim.opt.tabstop._value)
+    else
+      tab = "\t"
+    end
+
+    -- Create the module's .h file
+    local lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.h.template"))
+    local lines_sub = {}
+    for _, line in ipairs(lines) do
+      local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
+      table.insert(lines_sub, line_sub)
+    end
+    vim.fn.writefile(
+      lines_sub,
+      vim.fs.joinpath(
+        project_root,
+        module_opts.subdir_path,
+        module_opts.module_name,
+        "Public",
+        module_opts.module_name .. ".h"
+      )
+    )
+
+    -- Create the module's .cpp file
+    lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Module.cpp.template"))
+    lines_sub = {}
+    for _, line in ipairs(lines) do
+      local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
+      table.insert(lines_sub, line_sub)
+    end
+    vim.fn.writefile(
+      lines_sub,
+      vim.fs.joinpath(
+        project_root,
+        module_opts.subdir_path,
+        module_opts.module_name,
+        "Private",
+        module_opts.module_name .. ".cpp"
+      )
+    )
+
+    -- Create the module's Build.cs file
+    lines = vim.fn.readfile(vim.fs.joinpath(plugin_dir, "templates", "Build.cs.template"))
+    lines_sub = {}
+    for _, line in ipairs(lines) do
+      local line_sub, _ = line:gsub("<tab>", tab):gsub("<ModuleName>", module_opts.module_name)
+      table.insert(lines_sub, line_sub)
+    end
+    vim.fn.writefile(
+      lines_sub,
+      vim.fs.joinpath(
+        project_root,
+        module_opts.subdir_path,
+        module_opts.module_name,
+        module_opts.module_name .. ".Build.cs"
+      )
+    )
+
+    -- Modify the uplugin or uproject file
+    find_and_edit_uproject(
+      vim.fs.joinpath(project_root, module_opts.subdir_path, module_opts.module_name),
+      module_opts
+    )
   end
 
   local function handle_targets(targets_opts)
@@ -167,39 +161,42 @@ function M.execute(opts)
       end
     end
 
-    for _, targ in ipairs(targets) do
-      local found = false
-      for _, avail_targ in ipairs(available_targets) do
-        if targ == avail_targ then
-          found = true
-          break
-        end
-      end
-      if not found then
-        vim.notify(targ .. " is not in the available_targets.", "error")
-        return
-      end
-    end
     if is_uproject == nil then
       vim.notify("Could not find a 'uproject' or 'uplugin'. Aborting.", "error")
       return
     elseif is_uproject then
       if targets == nil then
-        unl_checker_picker.pick({
+        unl_picker.open({
           kind = "targets_picker",
           title = "  Targets",
           conf = require("UNL.config").get("UEP"),
-          items = prepare_items(available_targets),
+          items = available_targets,
           logger_name = "UEP",
           preview_enabled = false,
-          default_check = true,
-          multi_check = true,
+          devicons_enabled = true,
+          multiselect = "multiselect_empty",
           on_submit = function(selected)
-            targets_opts.targets = selected
+            targets_opts.targets = {}
+            for _, val in ipairs(selected) do
+              table.insert(targets_opts.targets, val)
+            end
             create_module(targets_opts)
           end,
         })
       else
+        for _, targ in ipairs(targets) do
+          local found = false
+          for _, avail_targ in ipairs(available_targets) do
+            if targ == avail_targ then
+              found = true
+              break
+            end
+          end
+          if not found then
+            vim.notify(targ .. " is not in the available_targets.", "error")
+            return
+          end
+        end
         targets_opts.targets = targets
         create_module(targets_opts)
       end
@@ -209,16 +206,16 @@ function M.execute(opts)
     end
   end
 
-  local function get_loading_phase(module_opts, host_types, err)
+  local function get_loading_phase(module_opts, loading_phases, err)
     -- Check if we were able to get host types
-    if err or host_types == nil then
-      vim.notify("Could not get EHostType::Type", "error")
+    if err or loading_phases == nil then
+      vim.notify("Could not get ELoadingPhase::Type", "error")
       return
     end
     -- Check if provided by the user
     if module_opts.loading_phase then
       local valid_loading_phase = false
-      for _, i_path in ipairs(host_types) do
+      for _, i_path in ipairs(loading_phases) do
         if i_path == module_opts.loading_phase then
           valid_loading_phase = true
           break
@@ -230,13 +227,15 @@ function M.execute(opts)
         vim.notify(module_opts.loading_phase .. " is not a valid Loading Phase.", "error")
       end
     else
-      unl_picker.pick({
+      unl_picker.open({
         kind = "loading_phase_picker",
         title = "  Loading Phase",
         conf = require("UNL.config").get("UEP"),
-        items = prepare_items(host_types),
+        items = loading_phases,
         logger_name = "UEP",
         preview_enabled = false,
+        devicons_enabled = false,
+        multiselect = "single",
         on_submit = function(selected)
           if selected then
             module_opts.loading_phase = selected
@@ -249,8 +248,8 @@ function M.execute(opts)
 
   -- Get host type if not provided by the user
   local function prepare_loading_phase(module_opts)
-    unl_api.db.get_enum_values("ELoadingPhase::Type", function(host_types, err)
-      get_loading_phase(module_opts, host_types, err)
+    unl_api.db.get_enum_values("ELoadingPhase::Type", function(loading_phases, err)
+      get_loading_phase(module_opts, loading_phases, err)
     end)
   end
 
@@ -282,18 +281,19 @@ function M.execute(opts)
         kind = "module_type_picker",
         title = "  Module Type",
         conf = uep_config.get(),
-        items = prepare_items(host_types),
+        items = host_types,
         logger_name = "UEP",
         preview_enabled = false,
+        devicons_enabled = false,
+        multiselect = "single",
         format = function(item)
           return item.display
         end,
         on_submit = function(selected)
-          -- if selected then
-          -- 	module_opts.module_type = selected
-          -- 	prepare_loading_phase(module_opts)
-          -- end
-          vim.notify(selected)
+          if selected then
+            module_opts.module_type = selected
+            prepare_loading_phase(module_opts)
+          end
         end,
       })
     end
