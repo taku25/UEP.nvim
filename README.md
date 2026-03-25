@@ -251,6 +251,9 @@ All commands start with `:UEP`.
 
 " Open the current file in an external IDE (Rider, VS, etc.).
 :UEP open_in_ide
+
+" Create a new module.
+:UEP create_module [module_path] [module_type] [loading_phase] [targets]
 ```
 
 ### Command Details
@@ -393,6 +396,12 @@ All commands start with `:UEP`.
   * **`:UEP open_in_ide`**:
       * Opens the current file at the current line in an external IDE configured in `uep.ide.open_command`.
       * Defaults to Rider, but can be configured for VS Code, Visual Studio, etc.
+  * **`:UEP create_module [module_path] [module_type] [loading_phase] [targets]`**:
+      * Create a new module. The module can be in the source folder or inside a plugin.
+      * `[module_path]`: path to the module folder, relative to the project root.
+      * `[module_type]`: type of the module to create. See Unreal's documentation for more details.
+      * `[loading_phase]`: loading phase of the module. See Unreal's documentation for more details.
+      * `[targets]`: list of the targets that will build the module.
   * **Neovim Server (Named Pipe)**:
       * When `:UEP start` is executed, UEP automatically starts a Neovim server.
       * This allows external tools (like Rider/VS) to send commands back to Neovim.

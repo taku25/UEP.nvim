@@ -16,12 +16,12 @@ local function show_picker(all_modules_map)
       -- core_utils.create_relative_path を使って表示を綺麗にする
       -- (path は Build.cs のフルパス)
       local relative_path = core_utils.create_relative_path(meta.path, meta.module_root)
-      
+
       table.insert(picker_items, {
         label = string.format("%s (%s)", name, meta.type or "Unknown"),
         display_path = relative_path,
         value = meta.path,
-        filename = meta.path
+        filename = meta.path,
       })
     end
   end
@@ -30,7 +30,9 @@ local function show_picker(all_modules_map)
     return log.warn("No modules with Build.cs found.")
   end
 
-  table.sort(picker_items, function(a, b) return a.label < b.label end)
+  table.sort(picker_items, function(a, b)
+    return a.label < b.label
+  end)
 
   unl_picker.open({
     kind = "uep_build_cs",
@@ -90,4 +92,3 @@ function M.execute(opts)
 end
 
 return M
-

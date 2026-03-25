@@ -1,0 +1,17 @@
+#include "<ModuleName>.h"
+
+#define LOCTEXT_NAMESPACE "F<ModuleName>Module"
+
+void F<ModuleName>Module::StartupModule()
+{
+
+}
+
+void F<ModuleName>Module::ShutdownModule()
+{
+
+}
+
+#undef LOCTEXT_NAMESPACE
+
+IMPLEMENT_MODULE(F<ModuleName>Module, <ModuleName>)

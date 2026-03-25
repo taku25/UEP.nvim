@@ -1,7 +1,5 @@
 -- lua/UEP/api.lua (薄いAPI層として修正)
 
-
-
 local cmd_reload_config = require("UEP.cmd.reload_config")
 local cmd_files = require("UEP.cmd.files")
 local cmd_module_files = require("UEP.cmd.module_files")
@@ -30,6 +28,7 @@ local cmd_class_symbol = require("UEP.cmd.class_symbol")
 local cmd_new_project = require("UEP.cmd.new_project")
 local cmd_clean_intermediate = require("UEP.cmd.clean_intermediate")
 local cmd_open_in_ide = require("UEP.cmd.open_in_ide")
+local cmd_create_module = require("UEP.cmd.create_module")
 local uep_server = require("UEP.cmd.core.server")
 
 local M = {}
@@ -52,10 +51,6 @@ function M.reload_config(opts)
   cmd_reload_config.execute(opts)
 end
 
-
-
-
-
 function M.files(opts)
   cmd_files.execute(opts or {})
 end
@@ -66,7 +61,9 @@ end
 
 function M.update_module_cache(opts, on_complete)
   if not (opts and opts.module_name) then
-    if on_complete then on_complete(false) end
+    if on_complete then
+      on_complete(false)
+    end
     return
   end
   -- refresh.luaにある実装を直接呼び出す
@@ -149,7 +146,6 @@ function M.web_doc(opts)
   cmd_web_doc.execute(opts or {})
 end
 
-
 function M.build_cs(opts)
   cmd_build_cs.execute(opts or {})
 end
@@ -176,6 +172,10 @@ end
 
 function M.open_in_ide(opts)
   cmd_open_in_ide.execute(opts or {})
+end
+
+function M.create_module(opts)
+  cmd_create_module.execute(opts or {})
 end
 
 return M

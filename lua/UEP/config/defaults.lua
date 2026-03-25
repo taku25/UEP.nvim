@@ -1,17 +1,17 @@
 local M = {
-  
+
   -- UEPプラグイン固有の設定テーブルを追加
-    -- refreshコマンド実行時に自動で設定をリロードするかどうか
-    auto_reload_config_on_refresh = true,
-  
+  -- refreshコマンド実行時に自動で設定をリロードするかどうか
+  auto_reload_config_on_refresh = true,
+
   ide = {
     -- Command template to open file in IDE.
     -- Placeholders: {file}, {line}
     -- Examples:
-    -- Rider: "rider --line {line} {file}" 
+    -- Rider: "rider --line {line} {file}"
     -- VS Code: "code -g {file}:{line}"
     -- Visual Studio: "devenv /edit {file} /command \"Edit.GoTo {line}\"" (Adjust path to devenv if needed)
-    open_command = "rider --line {line} \"{file}\"", 
+    open_command = 'rider --line {line} "{file}"',
   },
 
   shader = {
@@ -21,20 +21,34 @@ local M = {
   },
   config_explorer = {
     -- 強制的に表示対象とする主要プラットフォームのリスト
-    major_platforms = { 
-      "Windows", "Mac", "Linux", "Android", "IOS", "TVOS", "Apple", "Unix" 
+    major_platforms = {
+      "Windows",
+      "Mac",
+      "Linux",
+      "Android",
+      "IOS",
+      "TVOS",
+      "Apple",
+      "Unix",
     },
   },
   cache = { dirname = "UEP" },
-  
+
   include_extensions = { "uproject", "cpp", "h", "hpp", "inl", "ini", "cs", "usf", "ush" },
   include_directory = { "Source", "Plugins", "Config", "Shaders", "Programs", "Platforms" },
-  excludes_directory  = {  "Intermediate", "Binaries", "Saved", ".git", ".vs", "Templates" },
+  excludes_directory = { "Intermediate", "Binaries", "Saved", ".git", ".vs", "Templates" },
 
   engine_path = nil,
 
   files_extensions = {
-    "cpp", "h", "hpp", "inl", "ini", "cs", "usf", "ush",
+    "cpp",
+    "h",
+    "hpp",
+    "inl",
+    "ini",
+    "cs",
+    "usf",
+    "ush",
   },
 
   logging = {
@@ -53,7 +67,7 @@ local M = {
     },
     grep_picker = {
       mode = "auto",
-      prefer = { "telescope", "fzf-lua", "snacks" }
+      prefer = { "telescope", "fzf-lua", "snacks" },
     },
 
     progress = {
@@ -70,7 +84,7 @@ local M = {
         -- create_file_cache = 0.15,
         -- header_analysis = 0.3,
         -- header_analysis_detail = 0.15,
-        save_cache    = 0.05, -- キャッシュの保存
+        save_cache = 0.05, -- キャッシュの保存
       },
     },
   },
