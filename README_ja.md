@@ -251,6 +251,9 @@ opts = {
 
 " 現在のファイルを外部IDE (Rider, VS等) で開きます。
 :UEP open_in_ide
+
+" 新規モジュールの作成.
+:UEP create_module [module_path] [module_type] [loading_phase] [targets]
 ```
 
 ### コマンド詳細
@@ -397,6 +400,12 @@ opts = {
   * **`:UEP open_in_ide`**:
       * `uep.ide.open_command` で設定された外部IDEで、現在のファイルと行番号を開きます。
       * デフォルトは Rider 用の設定になっていますが、VS Code や Visual Studio 等にも変更可能です。
+  * **`:UEP create_module [module_path] [module_type] [loading_phase] [targets]`**:
+    * 新しいモジュールを作成します。モジュールはソースフォルダ内、またはプラグイン内のいずれにも作成可能です。
+    * `[module_path]`: モジュールフォルダへのパス（プロジェクトのルートディレクトリからの相対パス）。
+    * `[module_type]`: 作成するモジュールのタイプ。詳細は Unreal の公式ドキュメントを参照してください。
+    * `[loading_phase]`: モジュールのロードフェーズ。詳細は Unreal の公式ドキュメントを参照してください。
+    * `[targets]`: このモジュールをビルドするターゲットのリスト。
   * **Neovim サーバー (名前付きパイプ)**:
       * `:UEP start` 実行時に、自動的に Neovim サーバーを起動します。
       * これにより、外部ツール (Rider/VS等) から Neovim に対してコマンド（ファイルを開く等）を送信できるようになります。
