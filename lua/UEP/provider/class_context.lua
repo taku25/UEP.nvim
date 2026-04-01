@@ -46,36 +46,65 @@ local function process_request_async(opts, on_complete)
         on_complete(true, result)
     end
 
-    -- 1. 継承チェーンを取得 (DB CTE)
-    local function try_get_chain(name, callback)
-        derived_core.get_inheritance_chain(name, { scope = "Full" }, callback)
+    -- 1. クラス名の解決 (find_class_by_name)
+    local function resolve_class_name(name, callback)
+        unl_api.provider.request("ucm.find_class_by_name", { name = name }, function(ok, res)
+            if ok and res then
+                callback(res.class_name)
+            else
+                callback(nil)
+            end
+        end)
     end
 
-    try_get_chain(raw_class_name, function(chain)
-        if chain and #chain > 0 then
-            process_chain(chain)
+    local function try_resolve(callback)
+        -- そのままの名前で試行
+        resolve_class_name(raw_class_name, function(resolved)
+            if resolved then callback(resolved); return end
+            
+            -- プレフィックスを付けて試行
+            local prefixes = { "U", "A", "F", "E", "I", "S" }
+            local function try_next_prefix(idx)
+                if idx > #prefixes then
+                    callback(nil)
+                    return
+                end
+                local candidate = prefixes[idx] .. raw_class_name
+                resolve_class_name(candidate, function(resolved2)
+                    if resolved2 then
+                        callback(resolved2)
+                    else
+                        try_next_prefix(idx + 1)
+                    end
+                end)
+            end
+            try_next_prefix(1)
+        end)
+    end
+
+    try_resolve(function(resolved_name)
+        if not resolved_name then
+            uep_log.debug("Class '%s' not found in project.", raw_class_name)
+            on_complete(false, "Class not found")
             return
         end
 
-        -- 2. プレフィックス対応
-        local prefixes = { "U", "A", "F", "E", "I", "S" }
-        local function try_next_prefix(idx)
-            if idx > #prefixes then
-                uep_log.debug("Class '%s' not found in project.", raw_class_name)
-                on_complete(false, "Class not found")
-                return
+        -- 2. 確定した名前で継承チェーンを取得
+        uep_log.debug("Found resolved class name: %s", resolved_name)
+        derived_core.get_inheritance_chain(resolved_name, { scope = "Full" }, function(chain)
+            if chain and #chain > 0 then
+                process_chain(chain)
+            else
+                -- チェーンが取れなくても、現在のクラス情報だけで返す
+                unl_api.provider.request("ucm.find_class_by_name", { name = resolved_name }, function(ok, info)
+                    if ok and info then
+                        process_chain({ { class_name = info.class_name, file_path = info.file_path } })
+                    else
+                        on_complete(false, "Failed to get class info")
+                    end
+                end)
             end
-            local candidate = prefixes[idx] .. raw_class_name
-            try_get_chain(candidate, function(chain2)
-                if chain2 and #chain2 > 0 then
-                    uep_log.debug("Resolved class name '%s' -> '%s'", raw_class_name, candidate)
-                    process_chain(chain2)
-                    return
-                end
-                try_next_prefix(idx + 1)
-            end)
-        end
-        try_next_prefix(1)
+        end)
     end)
 end
 
