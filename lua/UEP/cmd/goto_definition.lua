@@ -5,6 +5,7 @@ local uep_log = require("UEP.logger")
 local derived_core = require("UEP.cmd.core.derived")
 local unl_picker = require("UNL.picker")
 local uep_config = require("UEP.config")
+local uep_ts = require("UEP.cmd.core.treesitter")
 
 local M = {}
 
@@ -44,48 +45,69 @@ function M.execute(opts)
   local current_buf_path = vim.api.nvim_buf_get_name(0)
   log.info("Attempting to find true definition for: '%s' (from %s)", symbol_name, current_buf_path)
 
-  unl_api.project.get_maps(vim.loop.cwd(), function(ok, maps)
-    if not ok then
-      return log.error("Could not get project maps: %s. (Run :UNL refresh)", tostring(maps))
-    end
+  local function fallback_to_module_search()
+    unl_api.project.get_maps(vim.loop.cwd(), function(ok, maps)
+      if not ok then
+        return log.error("Could not get project maps: %s. (Run :UNL refresh)", tostring(maps))
+      end
 
-    local current_module = core_utils.find_module_for_path(current_buf_path, maps.all_modules_map)
-    
-    -- 検索対象リストの作成 (順序: 現モジュール -> 浅い依存 -> 深い依存)
-    local search_list = {}
-    if current_module then
-        table.insert(search_list, current_module.name)
-        for _, m in ipairs(current_module.shallow_dependencies or {}) do table.insert(search_list, m) end
-        for _, m in ipairs(current_module.deep_dependencies or {}) do table.insert(search_list, m) end
-    end
+      local current_module = core_utils.find_module_for_path(current_buf_path, maps.all_modules_map)
+      
+      -- 検索対象リストの作成 (順序: 現モジュール -> 浅い依存 -> 深い依存)
+      local search_list = {}
+      if current_module then
+          table.insert(search_list, current_module.name)
+          for _, m in ipairs(current_module.shallow_dependencies or {}) do table.insert(search_list, m) end
+          for _, m in ipairs(current_module.deep_dependencies or {}) do table.insert(search_list, m) end
+      end
 
-    local function try_search(idx)
-        if idx > #search_list then
-            -- 全て失敗
-            log.warn("Symbol '%s' not found in UEP's dependency cache. Falling back to LSP...", symbol_name)
-            vim.lsp.buf.definition()
-            return
+      local function try_search(idx)
+          if idx > #search_list then
+              -- 全て失敗
+              log.warn("Symbol '%s' not found in UEP's dependency cache. Falling back to LSP...", symbol_name)
+              vim.lsp.buf.definition()
+              return
+          end
+
+          local mod_name = search_list[idx]
+          unl_api.db.find_symbol_in_module(mod_name, symbol_name, function(res, err)
+              if res and res ~= vim.NIL and res.file_path then
+                  log.info("Found in module: %s", mod_name)
+                  core_utils.open_file_and_jump(res.file_path, symbol_name, res.line_number)
+              else
+                  try_search(idx + 1)
+              end
+          end)
+      end
+
+      if #search_list > 0 then
+          try_search(1)
+      else
+          -- モジュール特定不能
+          log.warn("Could not determine current module. Falling back to LSP...")
+          vim.lsp.buf.definition()
+      end
+    end)
+  end
+
+  -- 1. まず現在のクラスコンテキスト内のメンバ（継承含む）を検索
+  local current_class = uep_ts.get_current_class_name()
+  if current_class then
+    log.debug("Current class context detected: %s. Searching inheritance chain...", current_class)
+    unl_api.db.request("FindSymbolInInheritanceChain", { 
+        class_name = current_class, 
+        symbol_name = symbol_name 
+    }, function(ok, res)
+        if ok and res and res ~= vim.NIL and res.file_path then
+            log.info("Found in inheritance chain of %s", current_class)
+            core_utils.open_file_and_jump(res.file_path, symbol_name, res.line_number)
+        else
+            fallback_to_module_search()
         end
-
-        local mod_name = search_list[idx]
-        unl_api.db.find_symbol_in_module(mod_name, symbol_name, function(res, err)
-            if res and res ~= vim.NIL and res.file_path then
-                log.info("Found in module: %s", mod_name)
-                core_utils.open_file_and_jump(res.file_path, symbol_name, res.line_number)
-            else
-                try_search(idx + 1)
-            end
-        end)
-    end
-
-    if #search_list > 0 then
-        try_search(1)
-    else
-        -- モジュール特定不能
-        log.warn("Could not determine current module. Falling back to LSP...")
-        vim.lsp.buf.definition()
-    end
-  end)
+    end)
+  else
+    fallback_to_module_search()
+  end
 end
 
 return M
