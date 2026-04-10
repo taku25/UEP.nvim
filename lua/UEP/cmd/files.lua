@@ -142,10 +142,10 @@ local function fetch_and_push(opts, filter_text, push)
     local chunk = {}
     for _, file_data in ipairs(result_files or {}) do
       local relative_path = core_utils.create_relative_path(file_data.file_path, file_data.module_root)
-      local display_label = string.format("%s/%s (%s)", file_data.module_name, relative_path, file_data.module_name)
+      local display_label = string.format("[%s] %s", file_data.module_name, relative_path)
       table.insert(chunk, {
         display = display_label,
-        value = string.format("%s\t%s", display_label, file_data.file_path),
+        value = file_data.file_path,
         filename = file_data.file_path,
       })
     end

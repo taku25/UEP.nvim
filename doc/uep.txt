@@ -55,6 +55,8 @@ Command List                                           *UEP-commands-list*
     Searches for common source and config files using a UI.
 :UEP module_files[!] [ModuleName]
     Searches for files belonging to a specific module.
+:UEP depend_files [game|full] [recursive|shallow]
+    List dependent files of the current file.
 :UEP shaders[!] [Scope]
     Searches for shader files (.usf, .ush).
 :UEP grep [Game|Engine|Runtime|Editor|Full]
@@ -145,6 +147,15 @@ Command Details                                     *UEP-commands-detail*
     - `[ModuleName]`: (Optional)
       If omitted, a UI will open to select from all modules, and then the
       files for the selected module will be displayed.
+
+:UEP depend_files [game|full] [recursive|shallow]
+    Displays a list of files that the current file depends on (via #include).
+    - `[game|full]`: (Optional, default: `full`)
+      - `game`: Shows only files within the project (Source/Plugins).
+      - `full`: Includes Engine and external library files.
+    - `[recursive|shallow]`: (Optional, default: `shallow`)
+      - `shallow`: Shows only files directly included by the current file.
+      - `recursive`: Recursively traces all dependencies.
 
 :UEP shaders[!] [Scope]
     Searches for shader files (`.usf`, `.ush`) within the specified scope.
@@ -434,6 +445,12 @@ Require the API module:
       - `has_bang` (boolean, optional): If `true`, performs a lightweight
         update of the module cache.
       - `module_name` (string, optional): Directly specify the module name.
+
+*uep_api.depend_files({opts})*
+    Opens the dependent files search UI.
+    `opts` table:
+      - `scope` (string, optional): `"game"` or `"full"`.
+      - `recursive` (string, optional): `"recursive"` or `"shallow"`.
 
 *uep_api.grep({opts})*
     Opens the live grep UI.

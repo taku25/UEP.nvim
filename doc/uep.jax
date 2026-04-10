@@ -56,6 +56,8 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
   日常的に使うソースや設定ファイルをUIで検索します。
 :UEP module_files[!] [ModuleName]
   指定したモジュールに属するファイルを検索します。
+:UEP depend_files [game|full] [recursive|shallow]
+  現在のファイルが依存しているファイルの一覧を表示します。
 :UEP grep [Game|Engine|Runtime|Editor|Full]
   プロジェクトまたはエンジン全体からLiveGrepします。
 :UEP module_grep [ModuleName]
@@ -145,6 +147,17 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
     - `[ModuleName]`: (省略可)
       省略した場合、全モジュールを選択するUIが開き、選択後にそのモジュー
       ルのファイルが表示されます。
+
+:UEP depend_files [game|full] [recursive|shallow]
+    現在編集中のファイルが依存している（#includeしている）ファイルの一覧を表
+    示します。
+    - `[game|full]`: (省略可、デフォルト: `full`)
+      - `game`: プロジェクト内（Source/Plugins）のファイルのみを表示します。
+      - `full`: エンジンや外部ライブラリのファイルも含めて表示します。
+    - `[recursive|shallow]`: (Optional、デフォルト: `shallow`)
+      - `shallow`: 現在のファイルが直接インクルードしているファイルのみ表
+                   示します。
+      - `recursive`: 依存関係を再帰的に辿って全て表示します。
 
 :UEP shaders[!] [Scope]
     指定されたスコープ内のシェーダーファイル (.usf, .ush) を検索します。
@@ -423,6 +436,12 @@ APIモジュールを`require`する:
     `opts`テーブル:
       - `has_bang` (boolean, optional): `true`でモジュールキャッシュを軽量更新。
       - `module_name` (string, optional): モジュール名を直接指定。
+
+*uep_api.depend_files({opts})*
+    依存ファイル検索UIを開きます。
+    `opts`テーブル:
+      - `scope` (string, optional): `"game"` または `"full"`。
+      - `recursive` (string, optional): `"recursive"` または `"shallow"`。
 
 *uep_api.grep({opts})*
     LiveGrepのUIを開きます。optsでscope ("Game", "Engine", "runtime"など)

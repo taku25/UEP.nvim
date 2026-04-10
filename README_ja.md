@@ -162,6 +162,9 @@ opts = {
 " 特定のモジュールに属するファイルを検索します。
 :UEP module_files[!] [ModuleName]
 
+" 現在のバッファのファイルが依存しているファイルの一覧を表示します。
+:UEP depend_files [game|full] [recursive|shallow]
+
 " プロジェクトまたはエンジンのソースコード全体からLiveGrepします。
 :UEP grep [Game|Engine|Runtime|Editor|Full]
 
@@ -287,6 +290,14 @@ opts = {
   * **`:UEP module_files[!]`**:
       * `!`なし: 既存のキャッシュを使って指定されたモジュールのファイルを検索します。
       * `!`あり: 検索前に、指定されたモジュールのファイルキャッシュのみを軽量に更新します。
+  * **`:UEP depend_files [game|full] [recursive|shallow]`**:
+      * 現在編集中のファイルが依存している（#includeしている）ファイルの一覧を表示します。
+      * `[game|full]` (デフォルト `full`):
+          * `game`: プロジェクト内（Source/Plugins）のファイルのみを表示します。
+          * `full`: エンジンや外部ライブラリのファイルも含めて表示します。
+      * `[recursive|shallow]` (デフォルト `shallow`):
+          * `shallow`: 現在のファイルが直接インクルードしているファイルのみ表示します。
+          * `recursive`（または `deep`）: 依存関係を再帰的に辿って全て表示します。
   * **`:UEP tree`**:
       * `neo-tree-unl.nvim` がインストールされている場合にのみ機能します。
       * プロジェクト全体の「Game」「Plugins」「Engine」のカテゴリを含む、完全な論理ツリーを`neo-tree`で開きます。

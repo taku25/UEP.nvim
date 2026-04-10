@@ -57,6 +57,14 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "deps_flag", required = false },
       },
     },
+    depend_files = {
+      handler = uep_api.depend_files,
+      desc = "List dependent files of the current file. Options: [game|full] [recursive|shallow]",
+      args = {
+        { name = "scope", required = false },
+        { name = "recursive", required = false },
+      },
+    },
     module_files = {
       handler = uep_api.module_files,
       bang = true,

@@ -162,6 +162,9 @@ All commands start with `:UEP`.
 " Search for files belonging to a specific module.
 :UEP module_files[!] [ModuleName]
 
+" List dependent files of the current file.
+:UEP depend_files [game|full] [recursive|shallow]
+
 " LiveGrep across the project or engine source code.
 :UEP grep [Game|Engine|Runtime|Editor|Full]
 
@@ -287,6 +290,14 @@ All commands start with `:UEP`.
   * **`:UEP module_files[!]`**:
       * Without `!`: Searches for files in the specified module using the existing cache.
       * With `!`: Performs a lightweight update of the file cache for only the specified module before searching.
+  * **`:UEP depend_files [game|full] [recursive|shallow]`**:
+      * Displays a list of files that the current file depends on (via `#include`).
+      * `[game|full]` (default `full`):
+          * `game`: Shows only files within the project (Source/Plugins).
+          * `full`: Includes Engine and external library files.
+      * `[recursive|shallow]` (default `shallow`):
+          * `shallow`: Shows only files directly included by the current file.
+          * `recursive` (or `deep`): Recursively traces all dependencies.
   * **`:UEP program_files`**:
       * Searches for files within all `Programs` directories related to the project and engine (e.g., UnrealBuildTool, AutomationTool).
       * Useful for investigating the code of build tools.
