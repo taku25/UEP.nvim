@@ -3,8 +3,7 @@ local uep_config = require("UEP.config")
 local unl_api = require("UNL.api")
 local unl_picker = require("UNL.picker")
 local uep_finder = require("UNL.finder.project")
-local target_parser = require("UEP.parser.target")
-local uproject_parser = require("UEP.parser.uproject")
+local rpc = require("UNL.rpc")
 
 local M = {}
 
@@ -23,7 +22,17 @@ function M.execute(opts)
         if
           type == "file" and (name:sub(-#".uproject") == ".uproject" or name:sub(-#".uplugin") == ".uplugin")
         then
-          uproject_parser.add_module(vim.fs.joinpath(dir, name), module_opts)
+          rpc.request("modify_uproject_add_module", {
+            type = "modify_uproject_add_module",
+            file_path = vim.fs.joinpath(dir, name),
+            module_name = module_opts.module_name,
+            module_type = module_opts.module_type,
+            loading_phase = module_opts.loading_phase,
+          }, nil, function(success, result)
+            if not success then
+              vim.notify("Failed to modify uproject: " .. tostring(result), vim.log.levels.ERROR)
+            end
+          end)
           return
         end
       end
@@ -43,7 +52,15 @@ function M.execute(opts)
 
     -- Modify the provided targets
     for _, target in ipairs(module_opts.targets) do
-      target_parser.add_module(vim.fs.joinpath(project_root, target), module_opts)
+      rpc.request("modify_target_add_module", {
+        type = "modify_target_add_module",
+        file_path = vim.fs.joinpath(project_root, target),
+        module_name = module_opts.module_name,
+      }, nil, function(success, result)
+        if not success then
+          vim.notify("Failed to modify target: " .. tostring(result), vim.log.levels.ERROR)
+        end
+      end)
     end
 
     -- Create the folder for the module
