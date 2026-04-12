@@ -268,6 +268,13 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "targets", variadic = true },
       },
     },
+    find_usage = {
+      handler = uep_api.find_usage,
+      desc = "Find all usages of the symbol under cursor in the project.",
+      args = {
+        { name = "symbol_name", required = false },
+      },
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)
 

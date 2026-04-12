@@ -30,6 +30,7 @@ local cmd_clean_intermediate = require("UEP.cmd.clean_intermediate")
 local cmd_open_in_ide = require("UEP.cmd.open_in_ide")
 local cmd_create_module = require("UEP.cmd.create_module")
 local cmd_depend_files = require("UEP.cmd.depend_files")
+local cmd_find_usage = require("UEP.cmd.find_usage")
 local uep_server = require("UEP.cmd.core.server")
 
 local M = {}
@@ -181,6 +182,10 @@ end
 
 function M.depend_files(opts)
   cmd_depend_files.execute(opts or {})
+end
+
+function M.find_usage(opts)
+  cmd_find_usage.execute(opts or {})
 end
 
 return M
