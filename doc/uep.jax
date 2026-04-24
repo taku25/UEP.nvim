@@ -70,7 +70,9 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
   指定した基底クラスの全ての派生クラスを検索します。
 :UEP find_parents[!] [ClassName]
   指定したクラスの継承チェーンを検索します。
-:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+:UEP find_includers [FileName]
+  指定したヘッダーファイルを#includeしている全ファイルを逆引き検索します。
+:UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
   指定したスコープ内のC++クラスを検索します。
 :UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
   指定したスコープ内のC++構造体を検索します。
@@ -220,7 +222,16 @@ UEP.nvim のコマンドはすべて `:UEP` から始まります。
     - `[ClassName]`: (省略可) 省略した場合、カーソル下の単語 (`<cword>`)
       が使用されます。
 
-:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+:UEP find_includers [FileName]
+    プロジェクト内で指定したヘッダーファイルを `#include` している全ファイルを
+    逆引きで検索します。
+    - `[FileName]`: (省略可) 検索するヘッダーファイル名。省略した場合は
+      現在のバッファのファイル名が使用されます。現在のバッファが `.cpp` の
+      場合は、対応する `.h` ファイルが自動的に使用されます。
+    - 結果は `[ModuleName] Public/Foo.h` 形式のラベルでストリーミングピッカー
+      に表示されます。エントリを選択するとそのファイルが開きます。
+
+:UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     C++クラスの定義を選択し、ジャンプするためのピッカーを表示します。
     - 使い方: |:UEP files| と同様に動作し、スコープと依存関係の深さに
       基づいて、既知のシンボルリストをフィルタリングします。
@@ -529,6 +540,13 @@ APIモジュールを`require`する:
     `opts`テーブル:
       - `has_bang` (boolean, optional): `true`でクラスピッカーを使用。
       - `query` (string, optional): 検索クエリ。
+
+*uep_api.find_includers({opts})*
+    指定したヘッダーファイルを `#include` している全ファイルを逆引きで検索します。
+    `opts`テーブル:
+      - `file_name` (string, optional): 検索するヘッダーファイル名。省略した
+        場合は現在のバッファのファイル名を使用します。`.cpp` バッファの場合は
+        対応する `.h` ファイルが自動的に使用されます。
 
 ==============================================================================
 5. 連携サンプル (neo-tree)                 *UEP-integration-examples*

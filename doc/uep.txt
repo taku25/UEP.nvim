@@ -71,7 +71,9 @@ Command List                                           *UEP-commands-list*
     Finds all derived classes of a specified base class.
 :UEP find_parents[!] [ClassName]
     Finds the inheritance chain for a specified class.
-:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+:UEP find_includers [FileName]
+    Finds all files that #include the specified header (reverse include lookup).
+:UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Searches for C++ classes within the specified scope.
 :UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Searches for C++ structs within the specified scope.
@@ -221,7 +223,16 @@ Command Details                                     *UEP-commands-detail*
     - `[ClassName]`: (Optional) If omitted, uses the word under the cursor
       (`<cword>`).
 
-:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
+:UEP find_includers [FileName]
+    Finds all files in the project that `#include` the specified header file
+    (reverse include lookup).
+    - `[FileName]`: (Optional) The header filename to search for. If omitted,
+      the current buffer's filename is used. If the current buffer is a `.cpp`
+      file, the corresponding `.h` header is automatically resolved.
+    - Results are streamed into a picker with `[ModuleName] Public/Foo.h`
+      style labels. Selecting an entry opens the file.
+
+:UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Displays a picker to select and jump to the definition of a C++ class.
     - Usage: Similar to |:UEP files|, this command filters the list of all
       known symbols by scope and dependency depth.
@@ -540,6 +551,15 @@ Require the API module:
     `opts` table:
       - `has_bang` (boolean, optional): If `true`, opens class picker.
       - `query` (string, optional): The search query.
+
+*uep_api.find_includers({opts})*
+    Finds all files that `#include` the specified header (reverse include
+    lookup).
+    `opts` table:
+      - `file_name` (string, optional): The header filename to search for.
+        If omitted, the current buffer's filename is used. If the current
+        buffer is a `.cpp` file, the corresponding `.h` is resolved
+        automatically.
 ==============================================================================
 5. Integration Examples (neo-tree)         *UEP-integration-examples*
 

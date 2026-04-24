@@ -33,6 +33,7 @@
   * **インテリジェントなコードナビゲーション**:
       * `:UEP find_derived` コマンドで、指定した基底クラスを継承する全ての子クラスを瞬時に発見します。
       * `:UEP find_parents` コマンドで、指定したクラスから`UObject`に至るまでの全継承チェーンを表示します。
+      * `:UEP find_includers` コマンドで、指定したヘッダーファイルを `#include` している全ファイルをプロジェクト全体から逆引きで検索します。
       * `:UEP refresh` によってキャッシュされたクラス継承データを活用し、高速なナビゲーションを実現します。
       * `:UEP add_include` コマンドで、カーソル下のクラス名やリストから選択したクラスの `#include` ディレクティブを自動で挿入します。
       * `:UEP find_module` コマンドで、クラス一覧から選択したクラスが所属するモジュール名（例: "Core", "Engine"）をクリップボードにコピーします。`Build.cs`の編集に便利です。
@@ -185,6 +186,9 @@ opts = {
 
 " 継承チェーンを検索します。[!]で起点クラスのピッカーを開きます。
 :UEP find_parents[!] [ClassName]
+
+" 指定したヘッダーファイルを#includeしている全ファイルを逆引き検索します。
+:UEP find_includers [FileName]
 
 " C++クラスを検索します（'!'でキャッシュを強制更新）。
 :UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
@@ -345,7 +349,10 @@ opts = {
   * **`:UEP find_parents[!] [ClassName]`**: 指定したクラスの継承チェーンを表示します。
       * `!`なし: `[ClassName]`引数が指定されていればそれを使用し、なければカーソル下の単語を使用します。
       * `!`あり: 引数を無視し、常にプロジェクト全体のクラスから起点となるクラスを選択するためのピッカーUIを開きます。
-  * **`:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: C++クラスの定義を選択し、ジャンプするためのピッカーを開きます。
+  * **`:UEP find_includers [FileName]`**: プロジェクト内で指定したヘッダーファイルを `#include` している全ファイルを逆引きで検索します。
+      * `[FileName]` を省略した場合、現在のバッファのファイル名を使用します。`.cpp` ファイルを開いているときは、対応する `.h` ファイルが自動的に使用されます。
+      * 結果は `[ModuleName] Public/Foo.h` 形式のラベルでストリーミングピッカーに表示されます。
+  * **`:UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: C++クラスの定義を選択し、ジャンプするためのピッカーを開きます。
       * フラグ: キャッシュの再生成とスコープのフィルタリングを制御します。
       * スコープ: デフォルトは\*\*`runtime`\*\*です。
       * Deps: デフォルトは\*\*`--deep-deps`\*\*です。
@@ -459,6 +466,15 @@ vim.keymap.set('n', 'gf', require('UEP.api').open_file, { noremap = true, silent
 ```lua
 -- init.lua や keymaps.lua などに記述
 vim.keymap.set('n', '<leader>ai', require('UEP.api').add_include, { noremap = true, silent = true, desc = "UEP: #includeディレクティブを追加" })
+```
+
+#### 逆インクルード検索 (Find Includers)
+
+カーソル下のヘッダーファイルを `#include` している全ファイルを逆引き検索します。
+
+```lua
+-- init.lua や keymaps.lua などに記述
+vim.keymap.set('n', '<leader>fi', require('UEP.api').find_includers, { noremap = true, silent = true, desc = "UEP: ヘッダーのインクルード元を検索" })
 ```
 
 #### ファイル検索

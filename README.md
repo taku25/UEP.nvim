@@ -33,6 +33,7 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
   * **Intelligent Code Navigation**:
       * The `:UEP find_derived` command instantly finds all child classes that inherit from a specified base class.
       * The `:UEP find_parents` command displays the entire inheritance chain from a specified class up to `UObject`.
+      * The `:UEP find_includers` command finds all files that `#include` a specified header, enabling reverse-include lookup across the project.
       * The `:UEP add_include` command automatically finds and inserts the correct `#include` directive for a class name under the cursor or one chosen from a list.
       * The `:UEP find_module` command allows you to select a class from a list and copies the name of the module it belongs to (e.g., "Core", "Engine") to the clipboard, making it easy to edit `Build.cs`.
       * Leverages the class inheritance data cached by `:UEP refresh` for high-speed navigation.
@@ -185,6 +186,9 @@ All commands start with `:UEP`.
 
 " Find the inheritance chain. Use [!] to open the starting class picker.
 :UEP find_parents[!] [ClassName]
+
+" Find all files that #include a specified header (reverse include lookup).
+:UEP find_includers [FileName]
 
 " Search for C++ classes (use '!' to refresh cache).
 :UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
@@ -345,7 +349,10 @@ All commands start with `:UEP`.
   * **`:UEP find_parents[!] [ClassName]`**: Displays the inheritance chain for a specified class.
       * Without `!`: Uses the `[ClassName]` argument if provided, otherwise it uses the word under the cursor.
       * With `!`: Ignores arguments and opens a picker UI to select the starting class.
-  * **`:UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: Opens a picker to select and jump to the definition of a C++ class.
+  * **`:UEP find_includers [FileName]`**: Finds all files in the project that `#include` the specified header.
+      * If `[FileName]` is omitted, the current buffer's filename is used. If the current file is a `.cpp`, the corresponding `.h` is automatically looked up.
+      * Results are displayed in a streaming picker showing `[ModuleName] Public/Foo.h` style labels.
+  * **`:UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: Opens a picker to select and jump to the definition of a C++ class.
       * Flags: Controls cache regeneration and scope filtering.
       * Scope: Default is **`runtime`**.
       * Deps: Default is **`--deep-deps`**.
@@ -441,6 +448,15 @@ Quickly add an \#include directive for the class under the cursor.
 ```lua
 -- in init.lua or keymaps.lua
 vim.keymap.set('n', '<leader>ai', require('UEP.api').add_include, { noremap = true, silent = true, desc = "UEP: Add #include directive" })
+```
+
+#### Find Includers
+
+Find all files that `#include` the header under the cursor (reverse include lookup).
+
+```lua
+-- in init.lua or keymaps.lua
+vim.keymap.set('n', '<leader>fi', require('UEP.api').find_includers, { noremap = true, silent = true, desc = "UEP: Find includers of current header" })
 ```
 
 #### File Search
