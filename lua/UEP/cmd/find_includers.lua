@@ -107,9 +107,10 @@ local function show_includers(file_path)
         },
         on_confirm = function(selection)
             if not selection then return end
-            local data = (type(selection) == "table" and selection.value) or nil
-            local path  = data and data.file_path or (type(selection) == "string" and selection)
+            local path = (type(selection) == "table" and selection.file_path)
+                or (type(selection) == "string" and selection)
             if path then
+                path = unl_path.normalize(path)
                 vim.cmd("edit " .. vim.fn.fnameescape(path))
             end
         end,
