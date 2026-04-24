@@ -12,16 +12,27 @@ local function open_in_system_explorer(path)
   logger.info("System Open: %s", abs_path)
 
   if vim.fn.has("win32") == 1 or vim.fn.has("wsl") == 1 then
-    local win_path = abs_path:gsub("/", "\\")
-    local cmd = string.format('explorer /select,"%s"', win_path)
-    vim.fn.jobstart({"cmd.exe", "/c", cmd}, {
-      detach = true,
-      on_exit = function(_, code) 
-        if code ~= 0 and code ~= 1 then
-          logger.warn("Explorer command finished with code: %d", code)
-        end
-      end
-    })
+    -- PATH_CTE が生成する C:///path 形式を正規化してバックスラッシュに統一
+    local win_path = abs_path
+      :gsub("^\\\\?\\", "")        -- \\?\ UNC ロングパスプレフィックスを除去
+      :gsub("^(%a:)/+", "%1/")     -- C:///path → C:/path (先にスラッシュ数を正規化)
+      :gsub("/", "\\")             -- / → \ (explorer /select は \ が必須)
+    win_path = win_path:gsub("^(%a)", function(d) return d:upper() end)  -- ドライブレター大文字化
+    logger.debug("Explorer select path: [%s]", win_path)
+
+    -- temp .bat ファイル経由で起動: libuv / shell のクォーティング問題を完全回避
+    local tmp = vim.fn.tempname() .. ".bat"
+    local f = io.open(tmp, "w")
+    if f then
+      f:write(string.format('@explorer /select,"%s"\r\n', win_path))
+      f:close()
+      vim.fn.jobstart({"cmd.exe", "/c", tmp}, {
+        detach = true,
+        on_exit = function() vim.fn.delete(tmp) end,
+      })
+    else
+      logger.warn("Failed to create temp bat file: %s", tmp)
+    end
   elseif vim.fn.has("mac") == 1 then
     vim.fn.jobstart({"open", "-R", abs_path}, { detach = true })
   else
