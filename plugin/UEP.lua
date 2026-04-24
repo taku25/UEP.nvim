@@ -275,6 +275,13 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "symbol_name", required = false },
       },
     },
+    find_includers = {
+      handler = uep_api.find_includers,
+      desc = "Find all files that include the current file (or a picked file with !).",
+      args = {
+        { name = "file_path", required = false },
+      },
+    },
     copy_absolute_path = {
       handler = uep_api.copy_absolute_path,
       desc = "Copy absolute path of current file to clipboard.",

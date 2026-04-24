@@ -31,6 +31,7 @@ local cmd_open_in_ide = require("UEP.cmd.open_in_ide")
 local cmd_create_module = require("UEP.cmd.create_module")
 local cmd_depend_files = require("UEP.cmd.depend_files")
 local cmd_find_usage = require("UEP.cmd.find_usage")
+local cmd_find_includers = require("UEP.cmd.find_includers")
 local cmd_copy_path = require("UEP.cmd.copy_path")
 local uep_server = require("UEP.cmd.core.server")
 
@@ -187,6 +188,10 @@ end
 
 function M.find_usage(opts)
   cmd_find_usage.execute(opts or {})
+end
+
+function M.find_includers(opts)
+  cmd_find_includers.execute(opts or {})
 end
 
 function M.copy_absolute_path(opts)
