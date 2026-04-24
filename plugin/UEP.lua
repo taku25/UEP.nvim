@@ -275,6 +275,21 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "symbol_name", required = false },
       },
     },
+    copy_absolute_path = {
+      handler = uep_api.copy_absolute_path,
+      desc = "Copy absolute path of current file to clipboard.",
+      args = { { name = "file_path", required = false } },
+    },
+    copy_cwd_relative_path = {
+      handler = uep_api.copy_cwd_relative_path,
+      desc = "Copy cwd-relative path of current file to clipboard.",
+      args = { { name = "file_path", required = false } },
+    },
+    copy_module_path = {
+      handler = uep_api.copy_module_path,
+      desc = "Copy module-relative path (ModuleName/Public/SubDir/File.h) to clipboard.",
+      args = { { name = "file_path", required = false } },
+    },
   }, -- <<< subcommands テーブルを閉じる '}'
 } -- <<< command_spec テーブル全体を閉じる '}' (★ これが抜けていた可能性)
 
