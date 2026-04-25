@@ -34,6 +34,8 @@ This is a core plugin in the **Unreal Neovim Plugin suite** and depends on [UNL.
       * The `:UEP find_derived` command instantly finds all child classes that inherit from a specified base class.
       * The `:UEP find_parents` command displays the entire inheritance chain from a specified class up to `UObject`.
       * The `:UEP find_includers` command finds all files that `#include` a specified header, enabling reverse-include lookup across the project.
+      * The `:UEP find_usage` command finds all usages of the symbol under the cursor (type references or method call sites) using tree-sitter analysis.
+      * The `:UEP rename_symbol` command renames the symbol under the cursor across all usage files using the same search scope as `find_usage` (code only — file names are not changed).
       * The `:UEP add_include` command automatically finds and inserts the correct `#include` directive for a class name under the cursor or one chosen from a list.
       * The `:UEP find_module` command allows you to select a class from a list and copies the name of the module it belongs to (e.g., "Core", "Engine") to the clipboard, making it easy to edit `Build.cs`.
       * Leverages the class inheritance data cached by `:UEP refresh` for high-speed navigation.
@@ -189,6 +191,12 @@ All commands start with `:UEP`.
 
 " Find all files that #include a specified header (reverse include lookup).
 :UEP find_includers [FileName]
+
+" Find all usages of the symbol under the cursor (type or method mode).
+:UEP find_usage
+
+" Rename the symbol under the cursor across all usage files (code only).
+:UEP rename_symbol
 
 " Search for C++ classes (use '!' to refresh cache).
 :UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
@@ -352,6 +360,16 @@ All commands start with `:UEP`.
   * **`:UEP find_includers [FileName]`**: Finds all files in the project that `#include` the specified header.
       * If `[FileName]` is omitted, the current buffer's filename is used. If the current file is a `.cpp`, the corresponding `.h` is automatically looked up.
       * Results are displayed in a streaming picker showing `[ModuleName] Public/Foo.h` style labels.
+  * **`:UEP find_usage`**: Finds all usages of the symbol under the cursor using tree-sitter based analysis.
+      * **Type mode** (cursor on a class/struct name, e.g. `AMyActor`): searches type references — variable declarations, parameters, return types, template arguments, inheritance.
+      * **Method mode** (cursor on a method name, e.g. `GetHealth`): searches call sites — `obj->GetHealth()`, `obj.GetHealth()`, `AMyActor::GetHealth()`. Scope is verified via `qualified_identifier` to minimise false positives.
+      * Search scope in both modes: all files that `#include` the owning header.
+      * Results stream into a picker with `[ModuleName] path:line  context` labels.
+  * **`:UEP rename_symbol`**: Renames the symbol under the cursor across all usage files (code only — file names are **not** changed).
+      * Prompts for a new name via `vim.ui.input` with the current name pre-filled.
+      * Uses the same search scope as `:UEP find_usage` (type mode or method mode).
+      * Applies column-precise replacement in usage files; the definition header is updated with whole-word replacement to cover the class/method declaration.
+      * Progress is shown while processing; open buffers are reloaded automatically on completion.
   * **`:UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: Opens a picker to select and jump to the definition of a C++ class.
       * Flags: Controls cache regeneration and scope filtering.
       * Scope: Default is **`runtime`**.
@@ -455,8 +473,19 @@ vim.keymap.set('n', '<leader>ai', require('UEP.api').add_include, { noremap = tr
 Find all files that `#include` the header under the cursor (reverse include lookup).
 
 ```lua
--- in init.lua or keymaps.lua
 vim.keymap.set('n', '<leader>fi', require('UEP.api').find_includers, { noremap = true, silent = true, desc = "UEP: Find includers of current header" })
+```
+
+Find all usages of the symbol under the cursor (type references or method call sites).
+
+```lua
+vim.keymap.set('n', '<leader>fu', require('UEP.api').find_usage, { noremap = true, silent = true, desc = "UEP: Find usages of symbol under cursor" })
+```
+
+Rename the symbol under the cursor across all usage files.
+
+```lua
+vim.keymap.set('n', '<leader>rn', require('UEP.api').rename_symbol, { noremap = true, silent = true, desc = "UEP: Rename symbol under cursor" })
 ```
 
 #### File Search

@@ -34,6 +34,8 @@
       * `:UEP find_derived` コマンドで、指定した基底クラスを継承する全ての子クラスを瞬時に発見します。
       * `:UEP find_parents` コマンドで、指定したクラスから`UObject`に至るまでの全継承チェーンを表示します。
       * `:UEP find_includers` コマンドで、指定したヘッダーファイルを `#include` している全ファイルをプロジェクト全体から逆引きで検索します。
+      * `:UEP find_usage` コマンドで、カーソル下のシンボルの全使用箇所を tree-sitter ベースで検索します（型参照またはメソッド呼び出し元を自動判定）。
+      * `:UEP rename_symbol` コマンドで、カーソル下のシンボルを全使用ファイルにわたって一括リネームします（コードのみ変更 — ファイル名は変更しません）。
       * `:UEP refresh` によってキャッシュされたクラス継承データを活用し、高速なナビゲーションを実現します。
       * `:UEP add_include` コマンドで、カーソル下のクラス名やリストから選択したクラスの `#include` ディレクティブを自動で挿入します。
       * `:UEP find_module` コマンドで、クラス一覧から選択したクラスが所属するモジュール名（例: "Core", "Engine"）をクリップボードにコピーします。`Build.cs`の編集に便利です。
@@ -189,6 +191,12 @@ opts = {
 
 " 指定したヘッダーファイルを#includeしている全ファイルを逆引き検索します。
 :UEP find_includers [FileName]
+
+" カーソル下のシンボルの全使用箇所を検索します（型参照 / メソッド呼び出し元を自動判定）。
+:UEP find_usage
+
+" カーソル下のシンボルを全使用ファイルで一括リネームします（コードのみ — ファイル名は変更しません）。
+:UEP rename_symbol
 
 " C++クラスを検索します（'!'でキャッシュを強制更新）。
 :UEP classes[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
@@ -352,6 +360,16 @@ opts = {
   * **`:UEP find_includers [FileName]`**: プロジェクト内で指定したヘッダーファイルを `#include` している全ファイルを逆引きで検索します。
       * `[FileName]` を省略した場合、現在のバッファのファイル名を使用します。`.cpp` ファイルを開いているときは、対応する `.h` ファイルが自動的に使用されます。
       * 結果は `[ModuleName] Public/Foo.h` 形式のラベルでストリーミングピッカーに表示されます。
+  * **`:UEP find_usage`**: カーソル下のシンボルの全使用箇所を tree-sitter ベースで検索します。
+      * **型モード**（クラス・構造体名の上、例: `AMyActor`）: 変数宣言・引数・戻り値・テンプレート引数・継承など、型として参照している全箇所を検索します。
+      * **メソッドモード**（メソッド名の上、例: `GetHealth`）: 呼び出し元 — `obj->GetHealth()`、`obj.GetHealth()`、`AMyActor::GetHealth()` を検索します。`qualified_identifier` のスコープ照合により誤検知を最小化します。
+      * 検索スコープ（両モード共通）: オーナークラスのヘッダーを `#include` している全ファイル。
+      * 結果はストリーミングでピッカーに表示されます（`[ModuleName] path:行番号  コンテキスト` 形式）。
+  * **`:UEP rename_symbol`**: カーソル下のシンボルを全使用ファイルにわたって一括リネームします（コードのみ — ファイル名は**変更しません**）。
+      * `vim.ui.input` で新しい名前を入力します（現在の名前が事前入力されています）。
+      * `:UEP find_usage` と同じ検索スコープを使用します（型モード / メソッドモード）。
+      * 使用箇所ファイルは列ベースの精密置換、定義ヘッダーはホール・ワード置換で対応します（クラス・メソッドの宣言行も更新されます）。
+      * 処理中はプログレス表示、完了後は開いているバッファが自動リロードされます。
   * **`:UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]`**: C++クラスの定義を選択し、ジャンプするためのピッカーを開きます。
       * フラグ: キャッシュの再生成とスコープのフィルタリングを制御します。
       * スコープ: デフォルトは\*\*`runtime`\*\*です。
@@ -473,8 +491,19 @@ vim.keymap.set('n', '<leader>ai', require('UEP.api').add_include, { noremap = tr
 カーソル下のヘッダーファイルを `#include` している全ファイルを逆引き検索します。
 
 ```lua
--- init.lua や keymaps.lua などに記述
 vim.keymap.set('n', '<leader>fi', require('UEP.api').find_includers, { noremap = true, silent = true, desc = "UEP: ヘッダーのインクルード元を検索" })
+```
+
+カーソル下のシンボルの全使用箇所を検索します（型参照 / メソッド呼び出し元を自動判定）。
+
+```lua
+vim.keymap.set('n', '<leader>fu', require('UEP.api').find_usage, { noremap = true, silent = true, desc = "UEP: シンボルの使用箇所を検索" })
+```
+
+カーソル下のシンボルを全使用ファイルで一括リネームします。
+
+```lua
+vim.keymap.set('n', '<leader>rn', require('UEP.api').rename_symbol, { noremap = true, silent = true, desc = "UEP: シンボルをリネーム" })
 ```
 
 #### ファイル検索
