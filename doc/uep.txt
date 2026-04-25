@@ -73,6 +73,10 @@ Command List                                           *UEP-commands-list*
     Finds the inheritance chain for a specified class.
 :UEP find_includers [FileName]
     Finds all files that #include the specified header (reverse include lookup).
+:UEP find_usage
+    Finds all usages of the symbol under the cursor using tree-sitter.
+    Automatically detects whether to search for type references or method
+    call sites depending on the cursor position.
 :UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Searches for C++ classes within the specified scope.
 :UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
@@ -231,6 +235,26 @@ Command Details                                     *UEP-commands-detail*
       file, the corresponding `.h` header is automatically resolved.
     - Results are streamed into a picker with `[ModuleName] Public/Foo.h`
       style labels. Selecting an entry opens the file.
+
+:UEP find_usage
+    Finds all usages of the symbol under the cursor using tree-sitter based
+    analysis. Results are streamed into a picker.
+
+    **Mode auto-detection** (based on `goto_definition` resolution):
+    - **Type mode** (cursor on a class/struct name, e.g. `AMyActor`):
+      Searches for all places the type is referenced — variable declarations,
+      function parameters, return types, template arguments, and inheritance.
+      Search scope: all files that `#include` the header where the class is
+      defined.
+    - **Method mode** (cursor on a method/member name, e.g. `GetHealth`):
+      Searches for call sites of `ClassName::MethodName()`:
+        - `obj->GetHealth()` / `obj.GetHealth()`  (field_expression)
+        - `AMyActor::GetHealth()`                 (qualified_identifier,
+                                                   scope-checked for accuracy)
+      Search scope: same as type mode (files that include the owning header).
+
+    The picker title shows `"Find Usages: AMyActor"` (type mode) or
+    `"Find Usages: AMyActor::GetHealth"` (method mode).
 
 :UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Displays a picker to select and jump to the definition of a C++ class.
@@ -560,6 +584,14 @@ Require the API module:
         If omitted, the current buffer's filename is used. If the current
         buffer is a `.cpp` file, the corresponding `.h` is resolved
         automatically.
+
+*uep_api.find_usage({opts})*
+    Finds all usages of the symbol under the cursor using tree-sitter.
+    Automatically switches between **type mode** (class name on cursor →
+    searches type references) and **method mode** (method name on cursor →
+    searches `ClassName::method()` call sites).
+    `opts` table: currently unused; cursor position is read from the active
+    window.
 ==============================================================================
 5. Integration Examples (neo-tree)         *UEP-integration-examples*
 
