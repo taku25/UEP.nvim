@@ -282,6 +282,11 @@ local command_spec = { -- line 10: 開始の '{'
         { name = "file_path", required = false },
       },
     },
+    rename_symbol = {
+      handler = uep_api.rename_symbol,
+      desc = "Rename the symbol under cursor in all usage files (code only, no file rename).",
+      args = {},
+    },
     copy_absolute_path = {
       handler = uep_api.copy_absolute_path,
       desc = "Copy absolute path of current file to clipboard.",

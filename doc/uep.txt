@@ -77,6 +77,12 @@ Command List                                           *UEP-commands-list*
     Finds all usages of the symbol under the cursor using tree-sitter.
     Automatically detects whether to search for type references or method
     call sites depending on the cursor position.
+:UEP rename_symbol
+    Renames the symbol under the cursor across all usage files.
+    Prompts for a new name (pre-filled with the current name), then replaces
+    all occurrences using the same search scope as |:UEP find_usage|.
+    Progress is shown while files are being modified.
+    Note: Only code is modified — file/directory names are NOT changed.
 :UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Searches for C++ classes within the specified scope.
 :UEP structs[!] [Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
@@ -255,6 +261,29 @@ Command Details                                     *UEP-commands-detail*
 
     The picker title shows `"Find Usages: AMyActor"` (type mode) or
     `"Find Usages: AMyActor::GetHealth"` (method mode).
+
+:UEP rename_symbol                                       *UEP-rename_symbol*
+    Renames the symbol under the cursor in all usage files (code only).
+
+    **Workflow:**
+    1. Resolves the symbol via tree-sitter (`goto_definition`).
+    2. Prompts for a new name via `vim.ui.input` with the current name
+       pre-filled.
+    3. Collects all usage locations using the same scope as |:UEP find_usage|.
+    4. Applies column-precise text replacement in all usage files.
+    5. The definition header file is also updated with whole-word replacement
+       (covers the class/method declaration itself).
+    6. Progress is displayed while files are being processed.
+    7. Open buffers are reloaded automatically after completion.
+
+    **Important**: File and directory names are NOT renamed. Unreal Engine
+    class renames require additional steps (Asset Redirectors, etc.) that
+    are outside the scope of this command.
+
+    **Mode auto-detection**: identical to |:UEP find_usage|.
+    - Type mode: cursor on `AMyActor` → renames all type references.
+    - Method mode: cursor on `GetHealth` → renames all call sites of
+      `AMyActor::GetHealth`.
 
 :UEP classes[!][Game|Engine|Runtime|Editor|Full] [--no-deps|--shallow-deps|--deep-deps]
     Displays a picker to select and jump to the definition of a C++ class.
@@ -590,6 +619,15 @@ Require the API module:
     Automatically switches between **type mode** (class name on cursor →
     searches type references) and **method mode** (method name on cursor →
     searches `ClassName::method()` call sites).
+    `opts` table: currently unused; cursor position is read from the active
+    window.
+
+*uep_api.rename_symbol({opts})*
+    Renames the symbol under the cursor across all usage files. Prompts for
+    a new name (pre-filled), then applies column-precise replacements.
+    Uses the same search scope as `find_usage`. Progress is displayed via
+    `UNL.backend.progress`. Open buffers are reloaded on completion.
+    File names are NOT changed.
     `opts` table: currently unused; cursor position is read from the active
     window.
 ==============================================================================

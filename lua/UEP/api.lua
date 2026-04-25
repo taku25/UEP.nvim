@@ -194,6 +194,14 @@ function M.find_includers(opts)
   cmd_find_includers.execute(opts or {})
 end
 
+local cmd_rename_symbol = nil
+function M.rename_symbol(opts)
+  if not cmd_rename_symbol then
+    cmd_rename_symbol = require("UEP.cmd.rename_symbol")
+  end
+  cmd_rename_symbol.execute(opts or {})
+end
+
 function M.copy_absolute_path(opts)
   cmd_copy_path.copy_absolute(opts or {})
 end
