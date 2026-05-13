@@ -26,6 +26,8 @@ function M.copy_absolute(opts)
   local p = get_path(opts)
   if not p then return end
   local abs = vim.fn.fnamemodify(p, ":p"):gsub("\\", "/")
+  -- 連続スラッシュを正規化 (C:///foo → C:/foo)。先頭の // (UNC) は保持。
+  abs = abs:gsub("(.)//+", "%1/")
   copy_to_clipboard(abs, "absolute path")
 end
 
