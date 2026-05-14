@@ -241,16 +241,19 @@ function M.get_derived_classes(base_class_name, opts, on_complete)
 
         local filtered_symbols = {}
         for _, row in ipairs(raw_derived or {}) do
-          if target_module_names[row.module_name] then
-            local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
+          if not row.module_name or target_module_names[row.module_name] then
+            local class_name = row.class_name or row.name or ""
+            local file_path = row.file_path or row.path or ""
+            local line_num = row.line_number or row.line or 1
+            local display_name = class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
             table.insert(filtered_symbols, {
                 display = display_name,
-                class_name = row.class_name,
+                class_name = class_name,
                 base_class = row.base_class,
-                file_path = row.file_path,
-                path = row.file_path,
-                lnum = row.line_number or 1,
-                filename = row.file_path,
+                file_path = file_path,
+                path = file_path,
+                lnum = line_num,
+                filename = file_path,
                 symbol_type = row.symbol_type
             })
           end
@@ -282,17 +285,21 @@ function M.get_inheritance_chain(child_symbol_name, opts, on_complete)
 
         local filtered_chain = {}
         for _, row in ipairs(raw_chain or {}) do
-          if target_module_names[row.module_name] then
-            local display_name = row.class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
-            if display_name == "" then display_name = row.class_name end
+          -- module_nameがnilの場合（エンジン/外部クラス）はフィルタ対象外として含める
+          if not row.module_name or target_module_names[row.module_name] then
+            local class_name = row.class_name or row.name or ""
+            local file_path = row.file_path or row.path or ""
+            local line_num = row.line_number or row.line or 1
+            local display_name = class_name:gsub("<.*>", ""):gsub("[*().%s]", "")
+            if display_name == "" then display_name = class_name end
             table.insert(filtered_chain, {
                 display = display_name,
-                class_name = row.class_name,
+                class_name = class_name,
                 base_class = row.base_class,
-                file_path = row.file_path,
-                path = row.file_path,
-                lnum = row.line_number or 1,
-                filename = row.file_path,
+                file_path = file_path,
+                path = file_path,
+                lnum = line_num,
+                filename = file_path,
                 symbol_type = row.symbol_type
             })
           end
